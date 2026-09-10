@@ -1,22 +1,23 @@
 #!/usr/bin/env node
 
 /**
- * Capture Spardha Tanpura audio with a real Chromium browser.
+ * Capture Spardha Tanpura audio with a real Playwright browser.
  *
- * Default: all 24 combinations, 60 seconds each, written to tanpura-captures/.
- * The script captures the site's rendered WebAudio/media output and also saves
- * any complete audio responses exposed by the site under original_network_audio/.
+ * Default: Firefox, all 24 combinations, 60 seconds each, written to
+ * tanpura-captures/. The script captures the site's rendered WebAudio/media
+ * output and also saves any complete audio responses exposed by the site under
+ * original_network_audio/.
  *
- * Requirements (Ubuntu):
+ * Requirements (Ubuntu, Firefox mode):
  *   sudo apt install -y ffmpeg
  *   npm install --no-save playwright
- *   npx playwright install chromium
+ *   npx playwright install firefox
  *
  * Examples:
- *   node scripts/capture-tanpura.mjs --headed
- *   node scripts/capture-tanpura.mjs --seconds 120 --headed
- *   node scripts/capture-tanpura.mjs --only-pattern sa-pa --only-key C --seconds 120 --headed
- *   node scripts/capture-tanpura.mjs --output public/assets/tanpura --force --seconds 120 --headed
+ *   node scripts/capture-tanpura.mjs --browser firefox --headed
+ *   node scripts/capture-tanpura.mjs --browser firefox --seconds 120 --headed
+ *   node scripts/capture-tanpura.mjs --browser firefox --only-pattern sa-pa --only-key C --seconds 120 --headed
+ *   node scripts/capture-tanpura.mjs --browser firefox --output public/assets/tanpura --force --seconds 120 --headed
  */
 
 import fs from 'node:fs/promises';
@@ -35,6 +36,7 @@ const PATTERNS = [
 
 function parseArgs(argv) {
   const out = {
+    browser: 'firefox',
     seconds: 60,
     settle: 2.0,
     patternSettle: 3.0,
@@ -51,7 +53,8 @@ function parseArgs(argv) {
       if (i + 1 >= argv.length) throw new Error(`Missing value after ${a}`);
       return argv[++i];
     };
-    if (a === '--seconds') out.seconds = Number(next());
+    if (a === '--browser') out.browser = next().toLowerCase();
+    else if (a === '--seconds') out.seconds = Number(next());
     else if (a === '--settle') out.settle = Number(next());
     else if (a === '--pattern-settle') out.patternSettle = Number(next());
     else if (a === '--output') out.output = next();
@@ -62,6 +65,7 @@ function parseArgs(argv) {
     else if (a === '--force') out.force = true;
     else if (a === '--help' || a === '-h') {
       console.log(`\nTanpura capture\n\n` +
+        `  --browser NAME        firefox or chromium (default firefox)\n` +
         `  --seconds N           seconds per combination (default 60)\n` +
         `  --settle N            wait after key change (default 2.0)\n` +
         `  --pattern-settle N    wait after pattern change (default 3.0)\n` +
@@ -69,11 +73,12 @@ function parseArgs(argv) {
         `  --only-pattern ID     sa-pa or sa-ma\n` +
         `  --only-key KEY        C, C#, D ... B\n` +
         `  --url URL             override source URL\n` +
-        `  --headed              show Chromium\n` +
+        `  --headed              show the browser window\n` +
         `  --force               overwrite existing MP3 files\n`);
       process.exit(0);
     } else throw new Error(`Unknown argument: ${a}`);
   }
+  if (!['firefox','chromium'].includes(out.browser)) throw new Error('--browser must be firefox or chromium');
   if (!Number.isFinite(out.seconds) || out.seconds < 5) throw new Error('--seconds must be >= 5');
   if (out.onlyKey && !KEYS.includes(out.onlyKey)) throw new Error(`Invalid --only-key: ${out.onlyKey}`);
   if (out.onlyPattern && !PATTERNS.some(p => p.id === out.onlyPattern)) throw new Error(`Invalid --only-pattern: ${out.onlyPattern}`);
@@ -330,12 +335,14 @@ async function main() {
     throw new Error('ffmpeg not found. Install with: sudo apt update && sudo apt install -y ffmpeg');
   }
 
-  let chromium;
+  let playwright;
   try {
-    ({ chromium } = await import('playwright'));
+    playwright = await import('playwright');
   } catch {
-    throw new Error('Playwright not installed. Run: npm install --no-save playwright && npx playwright install chromium');
+    throw new Error(`Playwright not installed. Run: npm install --no-save playwright && npx playwright install ${args.browser}`);
   }
+  const launcher = args.browser === 'firefox' ? playwright.firefox : playwright.chromium;
+  if (!launcher) throw new Error(`Playwright launcher unavailable for ${args.browser}`);
 
   const output = path.resolve(args.output);
   const rawDir = path.join(output, 'original_network_audio');
@@ -344,7 +351,17 @@ async function main() {
 
   const selectedPatterns = args.onlyPattern ? PATTERNS.filter(p => p.id === args.onlyPattern) : PATTERNS;
   const selectedKeys = args.onlyKey ? [args.onlyKey] : KEYS;
-  const browser = await chromium.launch({ headless: !args.headed });
+  let browser;
+  try {
+    browser = await launcher.launch({ headless: !args.headed });
+  } catch (err) {
+    const text = String(err?.message || err);
+    if (/executable|browser.*not found|install/i.test(text)) {
+      throw new Error(`${args.browser} for Playwright is not installed. Run: npx playwright install ${args.browser}`);
+    }
+    throw err;
+  }
+  console.log(`[browser] ${args.browser}${args.headed ? ' · headed' : ' · headless'}`);
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.addInitScript({ content: CAPTURE_INIT });
@@ -447,6 +464,7 @@ async function main() {
         key,
         file: path.basename(mp3),
         seconds: args.seconds,
+        browser: args.browser,
         sourceUrl: page.url(),
         capturedAt: new Date().toISOString(),
         encoded: 'mp3 192k / 48kHz',
@@ -457,6 +475,7 @@ async function main() {
   await Promise.allSettled([...rawWrites]);
   await fs.writeFile(path.join(output, 'capture-manifest.json'), JSON.stringify({
     source: page.url(),
+    browser: args.browser,
     requestedSecondsPerCombination: args.seconds,
     combinations: manifest,
   }, null, 2));

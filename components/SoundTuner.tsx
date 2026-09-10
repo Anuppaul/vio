@@ -6,13 +6,15 @@ import { OPEN_STRINGS, median, midiFrequency, noteFromFrequency, rms } from '@/l
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=2048;
-const ANALYSIS_MS=30;
-const CLARITY_MIN=.88;
-const RMS_MIN=.0055;
+const ANALYSIS_MS=24;
+const CLARITY_MIN=.68;
+const RMS_MIN=.0015;
+const STRONG_CLARITY=.86;
 
 function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
 function arcPath(r:number,a0:number,a1:number){const [x0,y0]=arcPoint(360,330,r,a0),[x1,y1]=arcPoint(360,330,r,a1);return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`}
+function levelPercent(value:number){if(value<=0)return 0;const db=20*Math.log10(value);return Math.round(Math.max(0,Math.min(100,(db+60)/50*100)))}
 
 export default function SoundTuner(){
   const [a4,setA4]=useState(440);
@@ -21,16 +23,19 @@ export default function SoundTuner(){
   const [frequency,setFrequency]=useState<number|null>(null);
   const [cents,setCents]=useState<number|null>(null);
   const [clarity,setClarity]=useState(0);
+  const [micLevel,setMicLevel]=useState(0);
   const [status,setStatus]=useState('Ready');
   const [activeRef,setActiveRef]=useState<number|null>(null);
   const [loop,setLoop]=useState(false);
   const ctxRef=useRef<AudioContext|null>(null), analyserRef=useRef<AnalyserNode|null>(null), sourceRef=useRef<MediaStreamAudioSourceNode|null>(null), streamRef=useRef<MediaStream|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const detectorRef=useRef(PitchDetector.forFloat32Array(BUFFER_SIZE));
-  const rafRef=useRef(0),lastRef=useRef(0),missRef=useRef(0),historyRef=useRef<number[]>([]),pendingMidiRef=useRef<number|null>(null),pendingCountRef=useRef(0),lockedMidiRef=useRef<number|null>(null);
+  const rafRef=useRef(0),lastRef=useRef(0),missRef=useRef(0),historyRef=useRef<number[]>([]),pendingMidiRef=useRef<number|null>(null),pendingCountRef=useRef(0),lockedMidiRef=useRef<number|null>(null),lastStatusRef=useRef('');
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
-  function resetReading(){setNote('—');setFrequency(null);setCents(null);setClarity(0);historyRef.current=[];pendingMidiRef.current=null;pendingCountRef.current=0;lockedMidiRef.current=null;missRef.current=0}
+  function clearPitch(){setNote('—');setFrequency(null);setCents(null);setClarity(0);historyRef.current=[];pendingMidiRef.current=null;pendingCountRef.current=0;lockedMidiRef.current=null}
+  function resetReading(){clearPitch();setMicLevel(0);missRef.current=0}
+  function setLiveStatus(text:string){if(lastStatusRef.current===text)return;lastStatusRef.current=text;setStatus(text)}
   function stopReference(){if(audioRef.current){audioRef.current.pause();audioRef.current.src='';audioRef.current=null}try{oscRef.current?.stop()}catch{}oscRef.current=null;gainRef.current=null;setActiveRef(null)}
   async function playReference(midi:number){
     stopReference();setActiveRef(midi);const label=OPEN_LABELS[OPEN_STRINGS.indexOf(midi as typeof OPEN_STRINGS[number])];
@@ -43,25 +48,37 @@ export default function SoundTuner(){
   function acceptPitch(raw:number,quality:number){
     const immediate=noteFromFrequency(raw,a4),midi=immediate.midi;
     if(lockedMidiRef.current!==midi){
-      if(pendingMidiRef.current===midi)pendingCountRef.current++;else{pendingMidiRef.current=midi;pendingCountRef.current=1}
-      if(pendingCountRef.current<2)return;
-      lockedMidiRef.current=midi;pendingMidiRef.current=null;pendingCountRef.current=0;historyRef.current=[];
+      if(quality>=STRONG_CLARITY){lockedMidiRef.current=midi;pendingMidiRef.current=null;pendingCountRef.current=0;historyRef.current=[]}
+      else{
+        if(pendingMidiRef.current===midi)pendingCountRef.current++;else{pendingMidiRef.current=midi;pendingCountRef.current=1}
+        if(pendingCountRef.current<2)return;
+        lockedMidiRef.current=midi;pendingMidiRef.current=null;pendingCountRef.current=0;historyRef.current=[];
+      }
     }
     historyRef.current.push(raw);if(historyRef.current.length>3)historyRef.current.shift();
     const stable=median(historyRef.current),mapped=noteFromFrequency(stable,a4);
-    setNote(mapped.label);setFrequency(stable);setCents(mapped.cents);setClarity(quality);missRef.current=0;
+    setNote(mapped.label);setFrequency(stable);setCents(mapped.cents);setClarity(quality);missRef.current=0;setLiveStatus(`Pitch locked · ${mapped.label}`);
   }
 
   function analyse(ts:number){
-    if(!analyserRef.current)return;
+    const analyser=analyserRef.current,ctx=ctxRef.current;if(!analyser||!ctx)return;
     if(ts-lastRef.current>=ANALYSIS_MS){
-      lastRef.current=ts;const buffer=bufferRef.current;analyserRef.current.getFloatTimeDomainData(buffer);
-      const volume=rms(buffer);
+      lastRef.current=ts;const buffer=bufferRef.current;analyser.getFloatTimeDomainData(buffer);
+      const volume=rms(buffer),level=levelPercent(volume);setMicLevel(level);
       if(volume>=RMS_MIN){
-        const [pitch,quality]=detectorRef.current.findPitch(buffer,ctxRef.current!.sampleRate);
-        if(Number.isFinite(pitch)&&pitch>=150&&pitch<=1800&&quality>=CLARITY_MIN)acceptPitch(pitch,quality);
-        else if(++missRef.current>6)resetReading();
-      }else if(++missRef.current>6)resetReading();
+        const [pitch,quality]=detectorRef.current.findPitch(buffer,ctx.sampleRate);
+        setClarity(Number.isFinite(quality)?quality:0);
+        if(Number.isFinite(pitch)&&pitch>=120&&pitch<=2000&&quality>=CLARITY_MIN)acceptPitch(pitch,quality);
+        else{
+          missRef.current++;
+          setLiveStatus(quality>=.4?'Mic active · finding stable pitch':'Mic signal detected');
+          if(missRef.current>12)clearPitch();
+        }
+      }else{
+        missRef.current++;
+        setClarity(0);setLiveStatus(level>0?'Very low mic signal':'Listening · play a note');
+        if(missRef.current>12)clearPitch();
+      }
     }
     rafRef.current=requestAnimationFrame(analyse);
   }
@@ -71,10 +88,10 @@ export default function SoundTuner(){
     try{
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
       const ctx=ctxRef.current||(ctxRef.current=new AC({latencyHint:'interactive'}));if(ctx.state==='suspended')await ctx.resume();
-      const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser();analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;source.connect(analyser);streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;setRunning(true);resetReading();setStatus('Listening live');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
+      const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser();analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;source.connect(analyser);streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;setRunning(true);resetReading();lastStatusRef.current='';setLiveStatus('Listening · play a note');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
     }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
   }
-  function stop(){cancelAnimationFrame(rafRef.current);rafRef.current=0;try{sourceRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;streamRef.current=null;analyserRef.current=null;setRunning(false);resetReading();setStatus('Microphone stopped')}
+  function stop(){cancelAnimationFrame(rafRef.current);rafRef.current=0;try{sourceRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;streamRef.current=null;analyserRef.current=null;setRunning(false);resetReading();lastStatusRef.current='';setStatus('Microphone stopped')}
   useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop());stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,cents??0))/50*74;
@@ -88,10 +105,10 @@ export default function SoundTuner(){
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">
         <main className="tuner-main">
-          <div className="control-label"><span>Tuning meter</span><span>Signal {Math.round(clarity*100)}%</span></div><div className="signal"><i style={{width:`${Math.round(clarity*100)}%`}}/></div>
+          <div className="control-label"><span>Microphone input</span><span>{running?`${micLevel}% · Pitch ${Math.round(clarity*100)}%`:'0%'}</span></div><div className="signal"><i style={{width:`${micLevel}%`}}/></div>
           <div className="gauge-wrap">
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
-            <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{cents===null?'Play a clear note':inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
+            <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?(micLevel>2?'Sound detected · finding note':'Play a clear note'):inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
           <div className="target-row">{OPEN_STRINGS.map((midi,i)=><span className={`target-chip ${activePitchClass===midi%12?'active':''}`} key={midi}>{OPEN_LABELS[i]} · {midiFrequency(midi,a4).toFixed(1)} Hz</span>)}</div>
         </main>

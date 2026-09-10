@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FLAT_NAMES, NOTE_NAMES, midiFrequency } from '@/lib/music';
 
 const ranges = [62,69,76,83].map(top => Array.from({length:15},(_,i)=>top-i));
-const presets: Record<string, number[]> = { standard:[55,62,69,76], aeae:[57,64,69,76], adae:[57,62,69,76] };
+const presets: Record<string, number[]> = { standard:[55,62,69,76], aeae:[57,64,69,76], adae:[57,62,69,76], pasapasa:[55,60,67,72] };
 
 function displayName(midi:number, flats:boolean, octave=true){
   const names=flats?FLAT_NAMES:NOTE_NAMES;
@@ -86,7 +86,7 @@ export default function EarTuner(){
           <div className="players">{notes.map((midi,i)=><div className="player-card" key={i}><b>{displayName(midi,flats,false)}</b><small>{displayName(midi,flats)} · {midiFrequency(midi).toFixed(2)} Hz</small><button className={active===i?'active':''} onClick={()=>active===i?stop():play(i)}>{active===i?'STOP':'PLAY'}</button></div>)}</div>
         </div>
         <aside className="side">
-          <div className="control"><div className="control-label"><span>Tuning</span></div><select value={preset} onChange={e=>{if(e.target.value)setNotes([...presets[e.target.value]])}}><option value="">Custom</option><option value="standard">Standard · G D A E</option><option value="aeae">Cross · A E A E</option><option value="adae">Cross · A D A E</option></select></div>
+          <div className="control"><div className="control-label"><span>Tuning</span></div><select value={preset} onChange={e=>{if(e.target.value)setNotes([...presets[e.target.value]])}}><option value="">Custom</option><option value="standard">Standard · G D A E</option><option value="aeae">Cross · A E A E</option><option value="adae">Cross · A D A E</option><option value="pasapasa">Cross · G C G C · পা সা পা সা</option></select></div>
           <div className="control"><div className="control-label"><span>Tone</span></div><div className="seg two"><button className={tone==='natural'?'active':''} onClick={()=>setTone('natural')}>Natural</button><button className={tone==='beep'?'active':''} onClick={()=>setTone('beep')}>Beep</button></div></div>
           <div className="control"><div className="control-label"><span>Notation</span></div><div className="seg two"><button className={!flats?'active':''} onClick={()=>setFlats(false)}>Sharps ♯</button><button className={flats?'active':''} onClick={()=>setFlats(true)}>Flats ♭</button></div></div>
           <div className="control"><div className="control-label"><span>Repeat</span></div><div className="seg two"><button className={loop?'active':''} onClick={()=>setLoop(true)}>Loop</button><button className={!loop?'active':''} onClick={()=>setLoop(false)}>Once</button></div></div>

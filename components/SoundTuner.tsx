@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { OPEN_STRINGS, median, midiFrequency, noteFromFrequencyRange, rms } from '@/lib/music';
-import { detectPitch, detectViolinPitch } from '@/lib/yin';
+import { detectPitch } from '@/lib/yin';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=4096;
@@ -89,10 +89,8 @@ export default function SoundTuner(){
       lastRef.current=ts;const input=bufferRef.current,clean=cleanRef.current;analyser.getFloatTimeDomainData(input);cleanFrame(input,clean);
       const volume=rms(clean),level=levelPercent(volume),gate=updateNoiseFloor(volume);setMicLevel(level);
       if(volume>=gate){
-        const targets=OPEN_STRINGS.map(m=>midiFrequency(m,a4));
-        const violin=detectViolinPitch(clean,ctx.sampleRate,targets);
         const minHz=midiFrequency(23.5,a4),maxHz=midiFrequency(103.5,a4);
-        const result=violin&&violin.clarity>=ACCEPT_CLARITY?violin:detectPitch(clean,ctx.sampleRate,minHz,maxHz);
+        const result=detectPitch(clean,ctx.sampleRate,minHz,maxHz);
         const quality=result?.clarity??0;setClarity(quality);
         const ranged=result?noteFromFrequencyRange(result.frequency,a4):null;
         if(result&&ranged&&quality>=ACCEPT_CLARITY)acceptPitch(result.frequency,quality);
@@ -131,7 +129,7 @@ export default function SoundTuner(){
   const activePitchClass=activeRange?activeRange.midi%12:null;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Live microphone tuner</p><h1>Sound Tuner</h1><p>Raw microphone frequency is mapped by exact C1–G7 frequency ranges.</p></div><div className="badge">Hz range → note → cents</div></div>
+    <div className="page-head"><div><p className="eyebrow">Universal live tuner</p><h1>Sound Tuner</h1><p>Any steady instrument, voice or tone is detected as a raw fundamental frequency and mapped by exact C1–G7 ranges.</p></div><div className="badge">Mic → Hz → note → cents</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">
@@ -139,13 +137,13 @@ export default function SoundTuner(){
           <div className="control-label"><span>Microphone input</span><span>{running?`${micLevel}% · Pitch ${Math.round(clarity*100)}%`:'0%'}</span></div><div className="signal"><i style={{width:`${micLevel}%`}}/></div>
           <div className="gauge-wrap jelly-gauge">
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
-            <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?(micLevel>2?'Sound detected · cleaning signal':'Play a clear note'):inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
+            <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?(micLevel>2?'Sound detected · cleaning signal':'Play a clear steady tone'):inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
           <div className="target-row">{OPEN_STRINGS.map((midi,i)=><span className={`target-chip ${activePitchClass===midi%12?'active':''}`} key={midi}>{OPEN_LABELS[i]} · {midiFrequency(midi,a4).toFixed(1)} Hz</span>)}</div>
         </main>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>{setA4(+e.target.value);historyRef.current=[];lockedMidiRef.current=null;hasSmoothRef.current=false}}/><div className="seg three"><button onClick={()=>{setA4(415);hasSmoothRef.current=false}} className={a4===415?'active':''}>415</button><button onClick={()=>{setA4(440);hasSmoothRef.current=false}} className={a4===440?'active':''}>440</button><button onClick={()=>{setA4(442);hasSmoothRef.current=false}} className={a4===442?'active':''}>442</button></div></div>
-          <div className="control"><div className="control-label"><span>Reference strings</span></div><div className="seg four">{OPEN_STRINGS.map((midi,i)=><button key={midi} className={activeRef===midi?'active':''} onClick={()=>activeRef===midi?stopReference():playReference(midi)}>{OPEN_LABELS[i]}</button>)}</div><label className="toggle" style={{marginTop:9}}><span>Loop reference</span><input type="checkbox" checked={loop} onChange={e=>{setLoop(e.target.checked);if(audioRef.current)audioRef.current.loop=e.target.checked}}/></label></div>
+          <div className="control"><div className="control-label"><span>Quick reference tones</span></div><div className="seg four">{OPEN_STRINGS.map((midi,i)=><button key={midi} className={activeRef===midi?'active':''} onClick={()=>activeRef===midi?stopReference():playReference(midi)}>{OPEN_LABELS[i]}</button>)}</div><label className="toggle" style={{marginTop:9}}><span>Loop reference</span><input type="checkbox" checked={loop} onChange={e=>{setLoop(e.target.checked);if(audioRef.current)audioRef.current.loop=e.target.checked}}/></label></div>
           <div className="control"><div className="status">{status}</div></div>
           <button className={`primary ${running?'danger':''}`} onClick={running?stop:start}>{running?'Stop microphone':'Start tuning'}</button>
         </aside>

@@ -3,10 +3,12 @@
 /**
  * Capture Spardha Tanpura audio with a real Playwright browser.
  *
- * Default: Firefox, all 24 combinations, 60 seconds each, written to
- * tanpura-captures/. The script captures the site's rendered WebAudio/media
- * output and also saves any complete audio responses exposed by the site under
- * original_network_audio/.
+ * Defaults:
+ * - Firefox
+ * - source volume forced to 100%
+ * - all 24 combinations
+ * - 60 seconds each
+ * - output: tanpura-captures/
  *
  * Requirements (Ubuntu, Firefox mode):
  *   sudo apt install -y ffmpeg
@@ -36,16 +38,9 @@ const PATTERNS = [
 
 function parseArgs(argv) {
   const out = {
-    browser: 'firefox',
-    seconds: 60,
-    settle: 2.0,
-    patternSettle: 3.0,
-    output: 'tanpura-captures',
-    headed: false,
-    force: false,
-    url: '',
-    onlyKey: '',
-    onlyPattern: '',
+    browser: 'firefox', seconds: 60, settle: 2.0, patternSettle: 3.0,
+    output: 'tanpura-captures', headed: false, force: false,
+    url: '', onlyKey: '', onlyPattern: '',
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -74,7 +69,8 @@ function parseArgs(argv) {
         `  --only-key KEY        C, C#, D ... B\n` +
         `  --url URL             override source URL\n` +
         `  --headed              show the browser window\n` +
-        `  --force               overwrite existing MP3 files\n`);
+        `  --force               overwrite existing MP3 files\n` +
+        `\nSource volume is always forced to 100% before recording.\n`);
       process.exit(0);
     } else throw new Error(`Unknown argument: ${a}`);
   }
@@ -89,12 +85,10 @@ function hasCommand(command) {
   const r = spawnSync(command, ['-version'], { stdio: 'ignore' });
   return !r.error && r.status === 0;
 }
-
 function keySlug(key) { return key.replace('#', 's'); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function sha256(buffer) { return crypto.createHash('sha256').update(buffer).digest('hex'); }
 function escapeRegex(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
 function extensionFor(contentType = '', url = '') {
   const pathname = (() => { try { return new URL(url).pathname; } catch { return ''; } })();
   const ext = path.extname(pathname).toLowerCase();
@@ -176,6 +170,8 @@ const CAPTURE_INIT = String.raw`
     if (originalPlay && !originalPlay.__vioPatched) {
       function patchedPlay(...args) {
         try {
+          this.muted = false;
+          this.volume = 1;
           if (!mediaSeen.has(this)) {
             mediaSeen.add(this);
             const fn = this.captureStream || this.mozCaptureStream;
@@ -222,7 +218,6 @@ const CAPTURE_INIT = String.raw`
     if (mixCtx.state === 'suspended') { try { await mixCtx.resume(); } catch (_) {} }
     const mixDest = mixCtx.createMediaStreamDestination();
     const sources = [];
-
     for (const stream of available) {
       try {
         const source = mixCtx.createMediaStreamSource(stream);
@@ -319,6 +314,76 @@ async function clickPlayIfNeeded(page) {
   return false;
 }
 
+async function forceFullVolume(page) {
+  let mediaCount = 0;
+  let sliderCount = 0;
+
+  for (const frame of page.frames()) {
+    try {
+      const result = await frame.evaluate(() => {
+        let media = 0;
+        let sliders = 0;
+
+        for (const el of document.querySelectorAll('audio,video')) {
+          try {
+            el.muted = false;
+            el.volume = 1;
+            media++;
+          } catch (_) {}
+        }
+
+        const ranges = [...document.querySelectorAll('input[type="range"]')];
+        const volumeRx = /volume|sound|audio/i;
+        const describe = el => {
+          const id = el.id || '';
+          let label = '';
+          if (id) {
+            try { label = document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent || ''; } catch (_) {}
+          }
+          return [
+            el.getAttribute('aria-label') || '',
+            el.getAttribute('name') || '',
+            el.getAttribute('title') || '',
+            id,
+            label,
+            el.parentElement?.textContent || '',
+          ].join(' ');
+        };
+
+        let targets = ranges.filter(el => volumeRx.test(describe(el)));
+        if (!targets.length && ranges.length === 1) targets = ranges;
+
+        const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        for (const el of targets) {
+          try {
+            const max = el.max || '100';
+            if (nativeSetter) nativeSetter.call(el, max);
+            else el.value = max;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            sliders++;
+          } catch (_) {}
+        }
+        return { media, sliders };
+      });
+      mediaCount += result.media;
+      sliderCount += result.sliders;
+    } catch (_) {}
+
+    try {
+      const namedSliders = frame.getByRole('slider', { name: /volume|sound|audio/i });
+      const count = await namedSliders.count().catch(() => 0);
+      for (let i = 0; i < count; i++) {
+        const slider = namedSliders.nth(i);
+        if (!(await slider.isVisible().catch(() => false))) continue;
+        await slider.press('End').catch(() => {});
+      }
+    } catch (_) {}
+  }
+
+  console.log(`[volume] source forced to 100% (${sliderCount} volume slider${sliderCount === 1 ? '' : 's'}, ${mediaCount} media element${mediaCount === 1 ? '' : 's'})`);
+}
+
 function ffmpegConvert(input, output) {
   const r = spawnSync('ffmpeg', [
     '-hide_banner','-loglevel','error','-y',
@@ -331,16 +396,12 @@ function ffmpegConvert(input, output) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (!hasCommand('ffmpeg')) {
-    throw new Error('ffmpeg not found. Install with: sudo apt update && sudo apt install -y ffmpeg');
-  }
+  if (!hasCommand('ffmpeg')) throw new Error('ffmpeg not found. Install with: sudo apt update && sudo apt install -y ffmpeg');
 
   let playwright;
-  try {
-    playwright = await import('playwright');
-  } catch {
-    throw new Error(`Playwright not installed. Run: npm install --no-save playwright && npx playwright install ${args.browser}`);
-  }
+  try { playwright = await import('playwright'); }
+  catch { throw new Error(`Playwright not installed. Run: npm install --no-save playwright && npx playwright install ${args.browser}`); }
+
   const launcher = args.browser === 'firefox' ? playwright.firefox : playwright.chromium;
   if (!launcher) throw new Error(`Playwright launcher unavailable for ${args.browser}`);
 
@@ -351,10 +412,10 @@ async function main() {
 
   const selectedPatterns = args.onlyPattern ? PATTERNS.filter(p => p.id === args.onlyPattern) : PATTERNS;
   const selectedKeys = args.onlyKey ? [args.onlyKey] : KEYS;
+
   let browser;
-  try {
-    browser = await launcher.launch({ headless: !args.headed });
-  } catch (err) {
+  try { browser = await launcher.launch({ headless: !args.headed }); }
+  catch (err) {
     const text = String(err?.message || err);
     if (/executable|browser.*not found|install/i.test(text)) {
       throw new Error(`${args.browser} for Playwright is not installed. Run: npx playwright install ${args.browser}`);
@@ -362,6 +423,7 @@ async function main() {
     throw err;
   }
   console.log(`[browser] ${args.browser}${args.headed ? ' · headed' : ' · headless'}`);
+
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.addInitScript({ content: CAPTURE_INIT });
@@ -408,6 +470,8 @@ async function main() {
   }
   if (!loaded) throw new Error('Could not open the Tanpura site');
 
+  await forceFullVolume(page);
+
   const manifest = [];
   let previousPattern = '';
 
@@ -416,6 +480,7 @@ async function main() {
     await clickPattern(page, pattern.label);
     if (previousPattern !== pattern.id) await page.waitForTimeout(args.patternSettle * 1000);
     previousPattern = pattern.id;
+    await forceFullVolume(page);
 
     for (const key of selectedKeys) {
       const slug = keySlug(key);
@@ -433,21 +498,25 @@ async function main() {
         } catch (_) {}
       }
 
-      console.log(`\n[capture] ${pattern.id} / ${key} / ${args.seconds}s`);
+      console.log(`\n[capture] ${pattern.id} / ${key} / ${args.seconds}s / volume 100%`);
       await clickKey(page, key);
+      await forceFullVolume(page);
       await clickPlayIfNeeded(page);
       await page.waitForTimeout(args.settle * 1000);
+      await forceFullVolume(page);
+      await page.waitForTimeout(250);
 
       let info = await page.evaluate(() => window.__vioCaptureInfo?.() || null);
       if (!info?.streams) {
         await clickPlayIfNeeded(page);
+        await forceFullVolume(page);
         await page.waitForTimeout(1200);
         info = await page.evaluate(() => window.__vioCaptureInfo?.() || null);
       }
       if (!info?.streams) throw new Error(`No capturable audio stream for ${name}. Try --headed and verify the site is audibly playing.`);
 
       const started = await page.evaluate(() => window.__vioStartCapture());
-      console.log(`[recording] ${name} (${started.streams} stream${started.streams === 1 ? '' : 's'})`);
+      console.log(`[recording] ${name} · source volume 100% (${started.streams} stream${started.streams === 1 ? '' : 's'})`);
       await sleep(args.seconds * 1000);
       const captured = await page.evaluate(() => window.__vioStopCapture());
       const bytes = Buffer.from(captured.base64, 'base64');
@@ -464,6 +533,7 @@ async function main() {
         key,
         file: path.basename(mp3),
         seconds: args.seconds,
+        sourceVolume: '100%',
         browser: args.browser,
         sourceUrl: page.url(),
         capturedAt: new Date().toISOString(),
@@ -476,6 +546,7 @@ async function main() {
   await fs.writeFile(path.join(output, 'capture-manifest.json'), JSON.stringify({
     source: page.url(),
     browser: args.browser,
+    sourceVolume: '100%',
     requestedSecondsPerCombination: args.seconds,
     combinations: manifest,
   }, null, 2));
@@ -483,6 +554,7 @@ async function main() {
   await browser.close();
   console.log(`\nComplete. Output: ${output}`);
   console.log(`Captured MP3s: ${manifest.length}`);
+  console.log('Source volume: 100%');
   console.log(`Any complete network audio files found were preserved in: ${rawDir}`);
 }
 

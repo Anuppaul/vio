@@ -88,6 +88,7 @@ function hasCommand(command) {
 function keySlug(key) { return key.replace('#', 's'); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function sha256(buffer) { return crypto.createHash('sha256').update(buffer).digest('hex'); }
+function escapeRegex(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 function extensionFor(contentType = '', url = '') {
   const pathname = (() => { try { return new URL(url).pathname; } catch { return ''; } })();
@@ -191,7 +192,6 @@ const CAPTURE_INIT = String.raw`
     for (const c of contexts) {
       try { if (c.dest?.stream?.getAudioTracks().length) webAudio.push(c.dest.stream); } catch (_) {}
     }
-    // Prefer WebAudio capture when it exists to avoid double-capturing the same sound.
     if (webAudio.length) return webAudio;
     const media = [];
     for (const s of mediaStreams) {
@@ -281,7 +281,7 @@ async function firstVisible(locator) {
 async function clickPattern(page, regex) {
   for (const frame of page.frames()) {
     for (const role of ['button','radio','tab']) {
-      const el = await firstVisible(frame.getByRole(role, { name: regex }).catch ? frame.getByRole(role, { name: regex }) : frame.locator('__none__'));
+      const el = await firstVisible(frame.getByRole(role, { name: regex }));
       if (el) { await el.click({ timeout: 5000 }); return; }
     }
     const text = await firstVisible(frame.getByText(regex));
@@ -291,7 +291,7 @@ async function clickPattern(page, regex) {
 }
 
 async function clickKey(page, key) {
-  const rx = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\s*$`, 'i');
+  const rx = new RegExp(`^\\s*${escapeRegex(key)}\\s*$`, 'i');
   for (const frame of page.frames()) {
     const byButton = await firstVisible(frame.getByRole('button', { name: rx }));
     if (byButton) { await byButton.click({ timeout: 5000 }); return; }

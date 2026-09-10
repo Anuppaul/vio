@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { OPEN_STRINGS, median, midiFrequency, noteFromFrequency, rms } from '@/lib/music';
-import { detectPitch } from '@/lib/yin';
+import { detectPitch, detectViolinPitch } from '@/lib/yin';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=4096;
 const ANALYSIS_MS=30;
 const RMS_MIN=.0012;
-const ACCEPT_CLARITY=.28;
-const STRONG_CLARITY=.72;
+const ACCEPT_CLARITY=.22;
+const STRONG_CLARITY=.65;
 
 function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
@@ -65,13 +65,15 @@ export default function SoundTuner(){
       lastRef.current=ts;const buffer=bufferRef.current;analyser.getFloatTimeDomainData(buffer);
       const volume=rms(buffer),level=levelPercent(volume);setMicLevel(level);
       if(volume>=RMS_MIN){
-        const result=detectPitch(buffer,ctx.sampleRate,150,1800);
+        const targets=OPEN_STRINGS.map(m=>midiFrequency(m,a4));
+        const violin=detectViolinPitch(buffer,ctx.sampleRate,targets);
+        const result=violin&&violin.clarity>=ACCEPT_CLARITY?violin:detectPitch(buffer,ctx.sampleRate,150,1800);
         const quality=result?.clarity??0;setClarity(quality);
         if(result&&quality>=ACCEPT_CLARITY)acceptPitch(result.frequency,quality);
         else if(result){
           const midi=noteFromFrequency(result.frequency,a4).midi;
           if(pendingMidiRef.current===midi)pendingCountRef.current++;else{pendingMidiRef.current=midi;pendingCountRef.current=1}
-          if(pendingCountRef.current>=3)acceptPitch(result.frequency,Math.max(.2,quality));
+          if(pendingCountRef.current>=3)acceptPitch(result.frequency,Math.max(.18,quality));
           else setLiveStatus(`Pitch candidate · ${result.source}`);
         }else{
           missRef.current++;setLiveStatus('Mic active · finding pitch');

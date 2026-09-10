@@ -1,0 +1,3 @@
+.pwa-install{position:fixed;right:18px;bottom:18px;z-index:70;height:42px;padding:0 15px;border:1px solid rgba(208,202,255,.95);border-radius:14px;background:linear-gradient(135deg,#f0edff,#fff1f7);color:#5146bc;font-size:11px;font-weight:900;box-shadow:0 12px 30px rgba(74,67,145,.16);backdrop-filter:blur(16px)}
+.pwa-install:hover{transform:translateY(-1px)}
+@media(max-width:640px){.pwa-install{right:10px;bottom:10px;height:40px;padding:0 13px;border-radius:13px}}

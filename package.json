@@ -8,7 +8,6 @@
     "start": "next start"
   },
   "dependencies": {
-    "@audio/pitch-yin": "1.0.5",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"

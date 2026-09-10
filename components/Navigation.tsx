@@ -24,7 +24,7 @@ export default function Navigation() {
   return (
     <nav className="suite-nav" aria-label="VIO tools">
       <Link className="brand" href="/" aria-label="VIO home" onClick={event=>offlineNavigate(event,'/')}>
-        <img src="/icon.svg" alt="" aria-hidden="true" width="36" height="36" style={{width:36,height:36,objectFit:'contain',flex:'0 0 auto'}} />
+        <img src="/icon.png" alt="" aria-hidden="true" width="36" height="36" style={{width:36,height:36,objectFit:'contain',flex:'0 0 auto'}} />
         <b>VIO</b>
       </Link>
       <div className="nav-items">

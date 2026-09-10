@@ -1,0 +1,19 @@
+{
+  "source": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+  "browser": "firefox",
+  "sourceVolume": "100%",
+  "requestedSecondsPerCombination": 120,
+  "combinations": [
+    {
+      "pattern": "sa-pa",
+      "key": "C",
+      "file": "sa-pa_C.mp3",
+      "seconds": 120,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:10:42.013Z",
+      "encoded": "mp3 192k / 48kHz"
+    }
+  ]
+}

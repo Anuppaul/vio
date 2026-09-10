@@ -15,7 +15,7 @@ const METRONOME_AUDIO=[
   '/assets/metronome/tabla-na.wav','/assets/metronome/tabla-tin.wav','/assets/metronome/tabla-ge.wav',
   '/assets/metronome/drum-kick.wav','/assets/metronome/drum-snare.wav','/assets/metronome/drum-hihat.wav'
 ];
-const ICONS=['/icon.svg','/apple-icon.svg','/icons/icon-192.png?v=13','/icons/icon-512.png?v=13'];
+const ICONS=['/icon.png','/apple-icon.png','/icons/icon-192.png?v=13','/icons/icon-512.png?v=13'];
 const AUDIO=[...EAR_AUDIO,...EXERCISE_AUDIO,...TANPURA_AUDIO,...METRONOME_AUDIO];
 
 async function cacheOne(cache,url){

@@ -1,0 +1,272 @@
+{
+  "source": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+  "browser": "firefox",
+  "sourceVolume": "100%",
+  "requestedSecondsPerCombination": 60,
+  "combinations": [
+    {
+      "pattern": "sa-pa",
+      "key": "C",
+      "file": "sa-pa_C.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:30:46.381Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "C#",
+      "file": "sa-pa_Cs.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:32:00.104Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "D",
+      "file": "sa-pa_D.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:33:13.820Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "D#",
+      "file": "sa-pa_Ds.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:34:27.570Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "E",
+      "file": "sa-pa_E.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:35:41.334Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "F",
+      "file": "sa-pa_F.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:36:55.160Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "F#",
+      "file": "sa-pa_Fs.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:38:08.905Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "G",
+      "file": "sa-pa_G.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:39:22.713Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "G#",
+      "file": "sa-pa_Gs.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:40:36.519Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "A",
+      "file": "sa-pa_A.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:41:50.289Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "A#",
+      "file": "sa-pa_As.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:43:04.082Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-pa",
+      "key": "B",
+      "file": "sa-pa_B.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:44:17.833Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "C",
+      "file": "sa-ma_C.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:45:40.166Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "C#",
+      "file": "sa-ma_Cs.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:46:53.914Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "D",
+      "file": "sa-ma_D.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:48:07.712Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "D#",
+      "file": "sa-ma_Ds.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:49:21.523Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "E",
+      "file": "sa-ma_E.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:50:35.344Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "F",
+      "file": "sa-ma_F.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:51:49.188Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "F#",
+      "file": "sa-ma_Fs.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:53:03.028Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "G",
+      "file": "sa-ma_G.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:54:16.865Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "G#",
+      "file": "sa-ma_Gs.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:55:30.742Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "A",
+      "file": "sa-ma_A.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:56:44.510Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "A#",
+      "file": "sa-ma_As.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:57:58.270Z",
+      "encoded": "mp3 192k / 48kHz"
+    },
+    {
+      "pattern": "sa-ma",
+      "key": "B",
+      "file": "sa-ma_B.mp3",
+      "seconds": 60,
+      "sourceVolume": "100%",
+      "browser": "firefox",
+      "sourceUrl": "https://www.spardhaschoolofmusic.com/tools/tanpura",
+      "capturedAt": "2026-09-10T14:59:12.032Z",
+      "encoded": "mp3 192k / 48kHz"
+    }
+  ]
+}

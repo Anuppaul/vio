@@ -1,0 +1,46 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
+export default function PWARegister(){
+  const [installPrompt,setInstallPrompt]=useState<InstallPromptEvent|null>(null);
+  const [installed,setInstalled]=useState(false);
+
+  useEffect(()=>{
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('/sw.js',{scope:'/'}).then(registration=>{
+        registration.update().catch(()=>{});
+      }).catch(()=>{});
+    }
+
+    const standalone=window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & {standalone?:boolean}).standalone===true;
+    setInstalled(standalone);
+
+    const beforeInstall=(event:Event)=>{
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    const appInstalled=()=>{setInstalled(true);setInstallPrompt(null)};
+    window.addEventListener('beforeinstallprompt',beforeInstall);
+    window.addEventListener('appinstalled',appInstalled);
+    return()=>{
+      window.removeEventListener('beforeinstallprompt',beforeInstall);
+      window.removeEventListener('appinstalled',appInstalled);
+    };
+  },[]);
+
+  async function install(){
+    if(!installPrompt)return;
+    await installPrompt.prompt();
+    const result=await installPrompt.userChoice;
+    if(result.outcome==='accepted')setInstallPrompt(null);
+  }
+
+  if(installed||!installPrompt)return null;
+  return <button className="pwa-install" type="button" onClick={install} aria-label="Install VIO for offline use">Install VIO</button>;
+}

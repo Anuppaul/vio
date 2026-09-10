@@ -4,6 +4,7 @@ import Navigation from '@/components/Navigation';
 import PWARegister from '@/components/PWARegister';
 import './globals.css';
 import './pwa.css';
+import './tuner-jelly.css';
 
 export const metadata: Metadata = {
   title: { default: 'VIO', template: '%s · VIO' },

@@ -1,15 +1,15 @@
 'use client';
 
-import { PitchDetector } from 'pitchy';
 import { useEffect, useRef, useState } from 'react';
 import { OPEN_STRINGS, median, midiFrequency, noteFromFrequency, rms } from '@/lib/music';
+import { detectYin } from '@/lib/yin';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
-const BUFFER_SIZE=2048;
-const ANALYSIS_MS=24;
-const CLARITY_MIN=.68;
-const RMS_MIN=.0015;
-const STRONG_CLARITY=.86;
+const BUFFER_SIZE=4096;
+const ANALYSIS_MS=30;
+const RMS_MIN=.0012;
+const YIN_MIN_CLARITY=.55;
+const STRONG_CLARITY=.82;
 
 function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
@@ -29,7 +29,6 @@ export default function SoundTuner(){
   const [loop,setLoop]=useState(false);
   const ctxRef=useRef<AudioContext|null>(null), analyserRef=useRef<AnalyserNode|null>(null), sourceRef=useRef<MediaStreamAudioSourceNode|null>(null), streamRef=useRef<MediaStream|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
-  const detectorRef=useRef(PitchDetector.forFloat32Array(BUFFER_SIZE));
   const rafRef=useRef(0),lastRef=useRef(0),missRef=useRef(0),historyRef=useRef<number[]>([]),pendingMidiRef=useRef<number|null>(null),pendingCountRef=useRef(0),lockedMidiRef=useRef<number|null>(null),lastStatusRef=useRef('');
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
@@ -66,18 +65,16 @@ export default function SoundTuner(){
       lastRef.current=ts;const buffer=bufferRef.current;analyser.getFloatTimeDomainData(buffer);
       const volume=rms(buffer),level=levelPercent(volume);setMicLevel(level);
       if(volume>=RMS_MIN){
-        const [pitch,quality]=detectorRef.current.findPitch(buffer,ctx.sampleRate);
-        setClarity(Number.isFinite(quality)?quality:0);
-        if(Number.isFinite(pitch)&&pitch>=120&&pitch<=2000&&quality>=CLARITY_MIN)acceptPitch(pitch,quality);
+        const result=detectYin(buffer,ctx.sampleRate,150,1800,.16);
+        const quality=result?.clarity??0;setClarity(quality);
+        if(result&&quality>=YIN_MIN_CLARITY)acceptPitch(result.frequency,quality);
         else{
-          missRef.current++;
-          setLiveStatus(quality>=.4?'Mic active · finding stable pitch':'Mic signal detected');
-          if(missRef.current>12)clearPitch();
+          missRef.current++;setLiveStatus('Mic active · finding pitch');
+          if(missRef.current>10)clearPitch();
         }
       }else{
-        missRef.current++;
-        setClarity(0);setLiveStatus(level>0?'Very low mic signal':'Listening · play a note');
-        if(missRef.current>12)clearPitch();
+        missRef.current++;setClarity(0);setLiveStatus(level>0?'Very low mic signal':'Listening · play a note');
+        if(missRef.current>10)clearPitch();
       }
     }
     rafRef.current=requestAnimationFrame(analyse);
@@ -100,7 +97,7 @@ export default function SoundTuner(){
   const activePitchClass=frequency?noteFromFrequency(frequency,a4).midi%12:null;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Live microphone tuner</p><h1>Sound Tuner</h1><p>Pitchy reads the live frequency; VIO maps that frequency directly to the nearest musical note and cents.</p></div><div className="badge">Frequency → note → cents</div></div>
+    <div className="page-head"><div><p className="eyebrow">Live microphone tuner</p><h1>Sound Tuner</h1><p>Live microphone frequency is detected locally and mapped directly to note and cents.</p></div><div className="badge">Frequency → note → cents</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">

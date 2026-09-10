@@ -1,4 +1,4 @@
-const VERSION='vio-pwa-v11';
+const VERSION='vio-pwa-v12';
 const APP_CACHE=`${VERSION}-app`;
 const AUDIO_CACHE=`${VERSION}-audio`;
 const RUNTIME_CACHE=`${VERSION}-runtime`;
@@ -15,7 +15,7 @@ const METRONOME_AUDIO=[
   '/assets/metronome/tabla-na.wav','/assets/metronome/tabla-tin.wav','/assets/metronome/tabla-ge.wav',
   '/assets/metronome/drum-kick.wav','/assets/metronome/drum-snare.wav','/assets/metronome/drum-hihat.wav'
 ];
-const ICONS=['/icons/icon-192.png','/icons/icon-512.png'];
+const ICONS=['/icons/vio-logo.png','/icons/icon-192.png','/icons/icon-512.png'];
 const AUDIO=[...EAR_AUDIO,...EXERCISE_AUDIO,...TANPURA_AUDIO,...METRONOME_AUDIO];
 
 async function cacheOne(cache,url){

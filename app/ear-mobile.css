@@ -1,0 +1,14 @@
+@media(max-width:650px){
+  .players{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+  .player-card{min-width:0;padding:9px 3px;border-radius:12px}
+  .player-card b{font-size:22px}
+  .player-card small{margin:4px 0 6px;font-size:7px;white-space:nowrap}
+  .player-card button{width:100%;min-width:0;height:29px;padding:0 2px;font-size:8px}
+}
+@media(max-width:360px){
+  .players{gap:4px}
+  .player-card{padding:8px 2px}
+  .player-card b{font-size:20px}
+  .player-card small{font-size:6.5px}
+  .player-card button{height:28px;font-size:7.5px}
+}

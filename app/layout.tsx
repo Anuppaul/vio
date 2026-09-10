@@ -5,6 +5,7 @@ import PWARegister from '@/components/PWARegister';
 import './globals.css';
 import './pwa.css';
 import './tuner-jelly.css';
+import './ear-mobile.css';
 
 export const metadata: Metadata = {
   title: { default: 'VIO', template: '%s · VIO' },

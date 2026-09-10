@@ -23,7 +23,10 @@ export default function Navigation() {
   const pathname = usePathname();
   return (
     <nav className="suite-nav" aria-label="VIO tools">
-      <Link className="brand" href="/" aria-label="VIO home" onClick={event=>offlineNavigate(event,'/')}><span>V</span><b>VIO</b></Link>
+      <Link className="brand" href="/" aria-label="VIO home" onClick={event=>offlineNavigate(event,'/')}>
+        <img src="/icons/vio-logo.png" alt="" aria-hidden="true" width="36" height="36" style={{width:36,height:36,objectFit:'contain',flex:'0 0 auto'}} />
+        <b>VIO</b>
+      </Link>
       <div className="nav-items">
         {items.map(item => {
           const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);

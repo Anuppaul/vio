@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Note Reading Exercise · Violin Tools</title>
+<link rel="stylesheet" href="assets/ui.css">
+<meta name="description" content="Professional note-reading practice with configurable clefs, ranges, accidentals, challenge mode, local tones, keyboard shortcuts and progress tracking.">
+<style>
+:root{
+  --bg:#f5f7fb;--panel:#fff;--ink:#142033;--muted:#66758d;--line:#dfe6ef;
+  --brand:#126d86;--brand2:#1c8eaa;--accent:#0f9d82;--ok:#168a62;--bad:#ca4a4a;
+  --warn:#b97619;--shadow:0 22px 60px rgba(28,45,74,.10);--radius:24px;
+}
+*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;min-height:100vh;color:var(--ink);background:radial-gradient(circle at 15% -10%,#dff7fb 0,transparent 35rem),radial-gradient(circle at 100% 0,#ecf3ff 0,transparent 32rem),var(--bg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:22px}
+button,input,select{font:inherit}.shell{width:min(1100px,100%);margin:0 auto}.suite-nav{display:flex;gap:6px;margin:0 auto 14px;padding:5px;width:max-content;max-width:100%;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 18px rgba(15,23,42,.05);backdrop-filter:blur(12px)}.suite-nav a{min-width:115px;text-align:center;text-decoration:none;color:#526176;font-size:13px;font-weight:750;padding:9px 14px;border-radius:10px;transition:.18s}.suite-nav a:hover{background:#f1f5f9;color:var(--ink)}.suite-nav a.active{color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 6px 18px rgba(18,109,134,.22)}
+.app{background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:22px 24px 18px;border-bottom:1px solid #edf1f6}.eyebrow{margin:0 0 4px;color:var(--brand);font-size:11px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}.topbar h1{margin:0;font-size:25px;letter-spacing:-.03em;line-height:1.15}.topbar p{margin:7px 0 0;color:var(--muted);font-size:13px;line-height:1.45;max-width:600px}.top-actions{display:flex;gap:7px;align-items:center}.icon-btn{height:38px;min-width:38px;border:1px solid var(--line);border-radius:11px;background:#fff;color:#506078;font-weight:800;cursor:pointer;padding:0 11px}.icon-btn:hover{background:#f6f9fc;border-color:#cad6e4}.icon-btn.primary-lite{color:var(--brand);background:#eff9fc;border-color:#c9ebf3}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--line);background:#fbfcfe}.stat{padding:11px 16px;text-align:center;border-right:1px solid #edf1f6}.stat:last-child{border-right:0}.stat strong{display:block;font-size:19px;font-variant-numeric:tabular-nums;line-height:1.1}.stat span{display:block;margin-top:4px;color:#8793a5;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:18px;padding:18px}.practice-card{border:1px solid var(--line);border-radius:20px;background:linear-gradient(180deg,#fff,#fbfcfe);overflow:hidden}.practice-head{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:13px 16px;border-bottom:1px solid #eef2f6}.question-meta{display:flex;align-items:center;gap:8px;color:#708097;font-size:11px;font-weight:750}.dot{width:5px;height:5px;border-radius:50%;background:#c4cedb}.tone-btn{border:1px solid #c9e5eb;background:#f3fbfd;color:var(--brand);border-radius:10px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer}.tone-btn:hover{background:#eaf8fb}.tone-btn.playing{color:#fff;background:var(--brand);border-color:var(--brand)}
+.staff-stage{padding:22px 20px 12px;min-height:310px;display:grid;place-items:center;background:radial-gradient(circle at 50% 25%,#fff 0,#fbfcfe 68%,#f7f9fc 100%)}#staffSvg{width:min(760px,100%);height:auto;display:block;overflow:visible}.staff-line{stroke:#39485b;stroke-width:1.6}.ledger{stroke:#39485b;stroke-width:1.7}.clef{fill:#233247;font-family:"Noto Music","Segoe UI Symbol","Apple Symbols",serif}.notehead{fill:#172437}.note-ring{fill:#fff;stroke:#172437;stroke-width:3.1}.accidental{fill:#172437;font-size:40px;font-family:"Noto Music","Segoe UI Symbol","Arial Unicode MS",serif}.key-symbol{fill:#4a596e;font-size:28px;font-family:"Noto Music","Segoe UI Symbol",serif}.staff-caption{fill:#93a0b1;font-size:12px;font-weight:700}.question-status{padding:0 20px 15px;text-align:center;min-height:44px}.question-status strong{font-size:14px}.question-status small{display:block;color:var(--muted);margin-top:3px}.question-status.good strong{color:var(--ok)}.question-status.bad strong{color:var(--bad)}.question-status.reveal strong{color:var(--warn)}
+.answer-wrap{padding:15px 16px 16px;border-top:1px solid #eef2f6;background:#fff}.answer-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}.answer-btn{height:43px;border:1px solid #d6dee8;border-radius:11px;background:linear-gradient(#fff,#f7f9fc);color:#26364a;font-weight:800;font-size:13px;cursor:pointer;transition:.14s}.answer-btn:hover:not(:disabled){transform:translateY(-1px);border-color:#a8c9d4;box-shadow:0 5px 12px rgba(31,66,87,.08)}.answer-btn:disabled{cursor:default}.answer-btn.correct{color:#fff;background:linear-gradient(135deg,#15926c,#0f7c5c);border-color:#0f7c5c}.answer-btn.wrong{color:#fff;background:linear-gradient(135deg,#df6666,#c84747);border-color:#bf4040}.answer-btn.answer{box-shadow:0 0 0 3px rgba(22,138,98,.18)}.answer-row-label{grid-column:1/-1;color:#98a3b2;font-size:9px;font-weight:850;letter-spacing:.12em;text-transform:uppercase;margin:3px 2px -2px}.action-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}.action{height:38px;border-radius:10px;border:1px solid var(--line);background:#f8fafc;color:#536177;font-size:11px;font-weight:800;cursor:pointer}.action:hover{background:#f1f5f9}.action.next{color:#fff;border-color:var(--brand);background:linear-gradient(135deg,var(--brand),var(--brand2))}.shortcut{display:inline-block;margin-left:5px;color:#9ba7b7;font-size:9px;font-weight:700}
+.sidebar{display:grid;gap:12px;align-content:start}.side-card{border:1px solid var(--line);border-radius:18px;background:#fff;padding:15px}.side-title{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:11px}.side-title h2{margin:0;font-size:12px;font-weight:850;color:#334155}.side-title span{font-size:9px;color:#9aa5b5;text-transform:uppercase;letter-spacing:.09em;font-weight:800}.setting-summary{display:grid;gap:8px}.summary-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f3f7;font-size:11px}.summary-row:last-child{border-bottom:0}.summary-row span{color:#7a8799}.summary-row b{text-align:right;color:#334155;font-size:11px}.open-settings{width:100%;height:39px;border:1px solid #cfe5eb;border-radius:10px;background:#f3fbfd;color:var(--brand);font-size:11px;font-weight:850;cursor:pointer;margin-top:10px}.open-settings:hover{background:#eaf8fb}.challenge-card{background:linear-gradient(145deg,#153e53,#176b82);border-color:#153e53;color:#fff}.challenge-card .side-title h2,.challenge-card .side-title span{color:#fff}.challenge-line{font-size:11px;color:#d9edf3;line-height:1.5}.challenge-line b{color:#fff}.challenge-progress{height:6px;background:rgba(255,255,255,.18);border-radius:99px;margin:11px 0 5px;overflow:hidden}.challenge-progress i{display:block;height:100%;width:0;background:#84e2d0;border-radius:inherit;transition:width .25s}.challenge-btn{width:100%;height:38px;border:1px solid rgba(255,255,255,.26);border-radius:10px;background:rgba(255,255,255,.12);color:#fff;font-size:11px;font-weight:850;cursor:pointer;margin-top:8px}.challenge-btn:hover{background:rgba(255,255,255,.18)}.tip{color:#7b8798;font-size:10px;line-height:1.55}.tip kbd{padding:2px 5px;border:1px solid #d9e0e9;border-bottom-width:2px;border-radius:5px;background:#f8fafc;color:#4d5b6e;font:700 9px ui-monospace,SFMono-Regular,Menlo,monospace}
+.drawer-backdrop{position:fixed;inset:0;background:rgba(12,22,36,.38);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:.2s;z-index:20}.drawer-backdrop.open{opacity:1;pointer-events:auto}.drawer{position:absolute;right:0;top:0;height:100%;width:min(440px,100%);background:#fff;box-shadow:-18px 0 50px rgba(15,23,42,.15);transform:translateX(100%);transition:.25s ease;display:flex;flex-direction:column}.drawer-backdrop.open .drawer{transform:none}.drawer-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:20px 20px 15px;border-bottom:1px solid var(--line)}.drawer-head h2{margin:0;font-size:18px}.drawer-head p{margin:4px 0 0;color:var(--muted);font-size:11px}.close{border:1px solid var(--line);background:#f8fafc;border-radius:10px;width:36px;height:36px;cursor:pointer;color:#617086}.drawer-body{padding:16px 20px 24px;overflow:auto}.set-group{padding:14px 0;border-bottom:1px solid #edf1f5}.set-group:first-child{padding-top:0}.set-group:last-child{border-bottom:0}.set-label{font-size:11px;font-weight:850;color:#334155;margin-bottom:8px}.seg{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.seg.four{grid-template-columns:repeat(4,1fr)}.seg label,.check-grid label{position:relative}.seg input,.check-grid input{position:absolute;opacity:0;pointer-events:none}.seg span,.check-grid span{display:flex;align-items:center;justify-content:center;min-height:36px;padding:6px;border:1px solid #dce3eb;border-radius:9px;background:#fff;color:#657286;font-size:10px;font-weight:800;cursor:pointer;text-align:center}.seg input:checked+span,.check-grid input:checked+span{color:var(--brand);border-color:#9fd1dc;background:#effafd;box-shadow:inset 0 0 0 1px #c8e9ef}.check-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.toggle-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:7px 0;font-size:11px;color:#59677a}.switch{position:relative;width:38px;height:22px;flex:0 0 auto}.switch input{position:absolute;opacity:0}.switch i{position:absolute;inset:0;border-radius:99px;background:#d4dce6;cursor:pointer;transition:.18s}.switch i:after{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);transition:.18s}.switch input:checked+i{background:var(--brand2)}.switch input:checked+i:after{transform:translateX(16px)}.select{width:100%;height:38px;border:1px solid #dbe3ec;border-radius:9px;background:#fff;color:#465469;padding:0 10px;font-size:11px;font-weight:700}.apply-row{position:sticky;bottom:-24px;background:linear-gradient(transparent,#fff 16px);padding-top:28px}.apply{width:100%;height:42px;border:0;border-radius:11px;color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2));font-weight:850;font-size:11px;cursor:pointer;box-shadow:0 7px 16px rgba(18,109,134,.20)}
+.modal-backdrop{position:fixed;inset:0;display:grid;place-items:center;padding:18px;background:rgba(12,22,36,.38);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:.18s;z-index:30}.modal-backdrop.open{opacity:1;pointer-events:auto}.modal{width:min(520px,100%);background:#fff;border-radius:22px;border:1px solid var(--line);box-shadow:0 25px 70px rgba(15,23,42,.22);padding:20px}.modal h2{margin:0;font-size:20px}.modal p{color:var(--muted);font-size:11px;line-height:1.5}.report-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:15px 0}.report-cell{padding:12px;border:1px solid #e3e8ef;border-radius:12px;background:#fafbfd}.report-cell strong{display:block;font-size:19px}.report-cell span{display:block;margin-top:3px;color:#8b96a6;font-size:9px;text-transform:uppercase;font-weight:850;letter-spacing:.08em}.modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:14px}.modal-actions button{height:37px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#f8fafc;color:#526176;font-size:10px;font-weight:850;cursor:pointer}.modal-actions .primary{color:#fff;background:var(--brand);border-color:var(--brand)}
+.toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);padding:9px 13px;border-radius:999px;background:#1e293b;color:#fff;font-size:10px;font-weight:800;opacity:0;pointer-events:none;transition:.2s;z-index:50;box-shadow:0 8px 22px rgba(15,23,42,.22)}.toast.show{opacity:1;transform:translate(-50%,0)}
+@media(max-width:830px){body{padding:12px}.workspace{grid-template-columns:1fr}.sidebar{grid-template-columns:1fr 1fr}.side-card:last-child{grid-column:1/-1}.staff-stage{min-height:270px}.stats{grid-template-columns:repeat(5,1fr)}}
+@media(max-width:580px){body{padding:0;background:#fff}.shell{width:100%}.suite-nav{width:calc(100% - 16px);margin:8px 8px 6px}.suite-nav a{min-width:0;flex:1;padding:9px 4px;font-size:10px}.app{border-radius:0;border-left:0;border-right:0;box-shadow:none}.topbar{padding:16px 14px 13px}.topbar h1{font-size:21px}.topbar p{font-size:11px}.top-actions{gap:4px}.icon-btn{height:34px;font-size:10px;padding:0 8px}.stats{grid-template-columns:repeat(3,1fr)}.stat:nth-child(3){border-right:0}.stat:nth-child(n+4){border-top:1px solid #edf1f6}.stat:nth-child(5){border-right:0}.workspace{padding:10px;gap:10px}.practice-head{padding:11px 12px}.staff-stage{padding:14px 6px 5px;min-height:230px}.question-status{padding:0 12px 11px}.answer-wrap{padding:11px 9px}.answer-grid{gap:4px}.answer-btn{height:39px;border-radius:9px;font-size:11px}.action-row{grid-template-columns:1fr 1fr}.action-row .next{grid-column:1/-1}.shortcut{display:none}.sidebar{display:block}.side-card{margin-bottom:10px}.drawer{width:100%}.seg.four{grid-template-columns:repeat(2,1fr)}.check-grid{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body class="candy-page">
+<div class="shell">
+<nav class="suite-nav-v2" aria-label="Music tools navigation">
+  <a href="index.html"><span class="nav-dot">♪</span>Ear Tuner</a>
+  <a href="sound-tuner.html"><span class="nav-dot">◌</span>Sound Tuner</a>
+  <a href="tanpura.html"><span class="nav-dot">ॐ</span>Tanpura</a>
+  <a href="exercise.html" class="active"><span class="nav-dot">𝄞</span>Exercise</a>
+  <a href="metronome.html"><span class="nav-dot">●</span>Metronome</a>
+</nav>
+<main class="app">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Sight-reading trainer</p>
+      <h1>Note Reading Exercise</h1>
+      <p>Identify notes on the staff, build speed and accuracy, and customize the exercise to your level.</p>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="reportTop" type="button" title="Progress report (Shift+P)">Report</button>
+      <button class="icon-btn primary-lite" id="settingsTop" type="button">Settings</button>
+    </div>
+  </header>
+
+  <section class="stats" aria-label="Exercise statistics">
+    <div class="stat"><strong id="correctStat">0</strong><span>Correct</span></div>
+    <div class="stat"><strong id="attemptStat">0</strong><span>Questions</span></div>
+    <div class="stat"><strong id="accuracyStat">—</strong><span>Accuracy</span></div>
+    <div class="stat"><strong id="streakStat">0</strong><span>Streak</span></div>
+    <div class="stat"><strong id="timeStat">00:00</strong><span>Time</span></div>
+  </section>
+
+  <div class="workspace">
+    <section class="practice-card" aria-label="Note identification exercise">
+      <div class="practice-head">
+        <div class="question-meta"><span id="clefMeta">Treble clef</span><i class="dot"></i><span id="rangeMeta">Standard range</span></div>
+        <button class="tone-btn" id="toneButton" type="button" title="Hear this note">♪ Hear note</button>
+      </div>
+      <div class="staff-stage">
+        <svg id="staffSvg" viewBox="0 0 780 290" role="img" aria-labelledby="staffTitle staffDesc">
+          <title id="staffTitle">Music staff question</title>
+          <desc id="staffDesc">Identify the displayed note.</desc>
+          <g id="staffDrawing"></g>
+        </svg>
+      </div>
+      <div class="question-status" id="questionStatus"><strong>What note is this?</strong><small>Choose the note name below or use your keyboard.</small></div>
+      <div class="answer-wrap">
+        <div class="answer-grid" id="answerGrid"></div>
+        <div class="action-row">
+          <button class="action" id="revealBtn" type="button">Reveal <span class="shortcut">Shift+R</span></button>
+          <button class="action" id="resetBtn" type="button">Reset score</button>
+          <button class="action next" id="nextBtn" type="button">New question <span class="shortcut">Shift+N</span></button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="sidebar">
+      <section class="side-card">
+        <div class="side-title"><h2>Current setup</h2><span>Live</span></div>
+        <div class="setting-summary">
+          <div class="summary-row"><span>Clefs</span><b id="sumClefs">Treble</b></div>
+          <div class="summary-row"><span>Range</span><b id="sumRange">Standard</b></div>
+          <div class="summary-row"><span>Key signatures</span><b id="sumKeys">C major</b></div>
+          <div class="summary-row"><span>Accidentals</span><b id="sumAccidentals">Off</b></div>
+          <div class="summary-row"><span>Notes</span><b id="sumNotes">C D E F G A B</b></div>
+        </div>
+        <button class="open-settings" id="settingsSide" type="button">Customize exercise</button>
+      </section>
+
+      <section class="side-card challenge-card">
+        <div class="side-title"><h2>Challenge mode</h2><span id="challengeBadge">Off</span></div>
+        <div class="challenge-line" id="challengeText">Practice without a limit, or enable a timed/question challenge in Settings.</div>
+        <div class="challenge-progress"><i id="challengeProgress"></i></div>
+        <button class="challenge-btn" id="challengeAction" type="button">Configure challenge</button>
+      </section>
+
+      <section class="side-card">
+        <div class="side-title"><h2>Keyboard</h2><span>Shortcuts</span></div>
+        <div class="tip"><kbd>A</kbd>–<kbd>G</kbd> answers naturals. Hold <kbd>↑</kbd> for sharp or <kbd>↓</kbd> for flat. <kbd>Shift+R</kbd> reveals, <kbd>Shift+N</kbd> skips, and <kbd>Shift+P</kbd> opens your report.</div>
+      </section>
+    </aside>
+  </div>
+</main>
+</div>
+
+<div class="drawer-backdrop" id="settingsBackdrop" aria-hidden="true">
+  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="drawer-head">
+      <div><h2 id="settingsTitle">Customize exercise</h2><p>Changes apply immediately to the next question.</p></div>
+      <button class="close" id="settingsClose" type="button" aria-label="Close settings">×</button>
+    </div>
+    <div class="drawer-body">
+      <div class="set-group">
+        <div class="set-label">Clefs</div>
+        <div class="check-grid" id="clefOptions">
+          <label><input type="checkbox" value="treble" checked><span>Treble</span></label>
+          <label><input type="checkbox" value="bass"><span>Bass</span></label>
+          <label><input type="checkbox" value="alto"><span>Alto</span></label>
+          <label><input type="checkbox" value="tenor"><span>Tenor</span></label>
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Staff range</div>
+        <div class="seg">
+          <label><input type="radio" name="range" value="easy"><span>Easy · staff only</span></label>
+          <label><input type="radio" name="range" value="standard" checked><span>Standard · ±1 ledger</span></label>
+          <label><input type="radio" name="range" value="extended"><span>Extended · ±2 ledgers</span></label>
+          <label><input type="radio" name="range" value="wide"><span>Wide · ±3 ledgers</span></label>
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Answer notes</div>
+        <div class="check-grid" id="noteOptions">
+          <label><input type="checkbox" value="C" checked><span>C</span></label>
+          <label><input type="checkbox" value="D" checked><span>D</span></label>
+          <label><input type="checkbox" value="E" checked><span>E</span></label>
+          <label><input type="checkbox" value="F" checked><span>F</span></label>
+          <label><input type="checkbox" value="G" checked><span>G</span></label>
+          <label><input type="checkbox" value="A" checked><span>A</span></label>
+          <label><input type="checkbox" value="B" checked><span>B</span></label>
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Key signatures · Major</div>
+        <div class="check-grid" id="keyOptions">
+          <label><input type="checkbox" value="C" checked><span>C</span></label>
+          <label><input type="checkbox" value="G"><span>G</span></label>
+          <label><input type="checkbox" value="D"><span>D</span></label>
+          <label><input type="checkbox" value="A"><span>A</span></label>
+          <label><input type="checkbox" value="E"><span>E</span></label>
+          <label><input type="checkbox" value="B"><span>B</span></label>
+          <label><input type="checkbox" value="Fs"><span>F♯</span></label>
+          <label><input type="checkbox" value="Cs"><span>C♯</span></label>
+          <label><input type="checkbox" value="F"><span>F</span></label>
+          <label><input type="checkbox" value="Bb"><span>B♭</span></label>
+          <label><input type="checkbox" value="Eb"><span>E♭</span></label>
+          <label><input type="checkbox" value="Ab"><span>A♭</span></label>
+          <label><input type="checkbox" value="Db"><span>D♭</span></label>
+          <label><input type="checkbox" value="Gb"><span>G♭</span></label>
+          <label><input type="checkbox" value="Cb"><span>C♭</span></label>
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Accidentals</div>
+        <select class="select" id="accidentalMode">
+          <option value="off">Off · natural notes only</option>
+          <option value="simple">On · sharps and flats</option>
+          <option value="sharp">Sharps only</option>
+          <option value="flat">Flats only</option>
+        </select>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Question behavior</div>
+        <div class="toggle-row"><span>Multiple attempts before reveal</span><label class="switch"><input id="multipleAttempts" type="checkbox" checked><i></i></label></div>
+        <div class="toggle-row"><span>Auto-advance after correct answer</span><label class="switch"><input id="autoAdvance" type="checkbox" checked><i></i></label></div>
+        <div class="toggle-row"><span>Play pitch after correct answer</span><label class="switch"><input id="soundOnCorrect" type="checkbox" checked><i></i></label></div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Challenge mode</div>
+        <select class="select" id="challengeMode">
+          <option value="off">Off · unlimited practice</option>
+          <option value="q10">10 questions</option>
+          <option value="q20">20 questions</option>
+          <option value="q50">50 questions</option>
+          <option value="t60">60 seconds</option>
+          <option value="t120">2 minutes</option>
+          <option value="t300">5 minutes</option>
+        </select>
+      </div>
+      <div class="apply-row"><button class="apply" id="applySettings" type="button">Apply &amp; start fresh question</button></div>
+    </div>
+  </aside>
+</div>
+
+<div class="modal-backdrop" id="reportBackdrop" aria-hidden="true">
+  <section class="modal" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+    <h2 id="reportTitle">Progress report</h2>
+    <p id="reportSubtitle">Your current session summary.</p>
+    <div class="report-grid">
+      <div class="report-cell"><strong id="reportCorrect">0</strong><span>Correct</span></div>
+      <div class="report-cell"><strong id="reportQuestions">0</strong><span>Questions</span></div>
+      <div class="report-cell"><strong id="reportAccuracy">—</strong><span>Accuracy</span></div>
+      <div class="report-cell"><strong id="reportTime">00:00</strong><span>Elapsed</span></div>
+      <div class="report-cell"><strong id="reportBest">0</strong><span>Best streak</span></div>
+      <div class="report-cell"><strong id="reportMode">Practice</strong><span>Mode</span></div>
+    </div>
+    <div class="modal-actions"><button id="reportClose" type="button">Close</button><button class="primary" id="reportReset" type="button">Reset session</button></div>
+  </section>
+</div>
+<div class="toast" id="toast"></div>
+<script src="assets/exercise/tone_manifest.js"></script>
+<script src="assets/exercise/exercise.js"></script>
+</body>
+</html>

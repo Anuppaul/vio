@@ -64,7 +64,16 @@ export default function EarTuner(){
       audio.play().then(()=>{setActive(index);setStatus(`${displayName(midi,flats)} · natural sample`)}).catch(()=>{i++;attempt()});
     };attempt();
   }
-  function play(index:number){const midi=notes[index];tone==='natural'?playSample(midi,index):beep(midi,index)}
+  function playMidi(midi:number,index:number){
+    if(tone==='natural')playSample(midi,index);
+    else{stop(false);void beep(midi,index)}
+  }
+  function play(index:number){playMidi(notes[index],index)}
+  function selectNote(index:number,midi:number){
+    const wasPlaying=active===index;
+    setNotes(v=>v.map((n,i)=>i===index?midi:n));
+    if(wasPlaying)playMidi(midi,index);
+  }
 
   return <>
     <div className="page-head"><div><p className="eyebrow">Reference tuner</p><h1>Ear Tuner</h1><p>Choose a note for each string and match the reference tone.</p></div><div className="badge">G · D · A · E</div></div>
@@ -73,7 +82,7 @@ export default function EarTuner(){
       <div className="grid-2">
         <div className="section">
           <div className="string-heads"><span>String 4</span><span>String 3</span><span>String 2</span><span>String 1</span></div>
-          <div className="note-grid">{Array.from({length:15},(_,row)=>ranges.map((range,s)=>{const midi=range[row];return <button key={`${s}-${midi}`} className={`note-cell ${notes[s]===midi?'active':''}`} onClick={()=>setNotes(v=>v.map((n,i)=>i===s?midi:n))}>{displayName(midi,flats)}</button>}))}</div>
+          <div className="note-grid">{Array.from({length:15},(_,row)=>ranges.map((range,s)=>{const midi=range[row];return <button key={`${s}-${midi}`} className={`note-cell ${notes[s]===midi?'active':''}`} onClick={()=>selectNote(s,midi)}>{displayName(midi,flats)}</button>}))}</div>
           <div className="players">{notes.map((midi,i)=><div className="player-card" key={i}><b>{displayName(midi,flats,false)}</b><small>{displayName(midi,flats)} · {midiFrequency(midi).toFixed(2)} Hz</small><button className={active===i?'active':''} onClick={()=>active===i?stop():play(i)}>{active===i?'STOP':'PLAY'}</button></div>)}</div>
         </div>
         <aside className="side">

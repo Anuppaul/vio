@@ -115,21 +115,27 @@
   }
 
   /**
-   * Matches a detected spectral/autocorrelation pitch to a violin open string,
-   * considering harmonics 1..4. This fixes the common bowed-string problem where
-   * the 2nd harmonic is stronger than the fundamental.
+   * Match a detected partial to G3/D4/A4/E5.
+   *
+   * Violin strings are tuned in fifths, so a higher string's 2nd harmonic lies
+   * almost on top of the lower adjacent string's 3rd harmonic:
+   * D4×2 ≈ G3×3, A4×2 ≈ D4×3, E5×2 ≈ A4×3.
+   * Pure nearest-cents matching can therefore report E as A (and similarly A as D,
+   * D as G). When two candidates are effectively tied, prefer the lower harmonic
+   * order because it is the stronger/more plausible partial for the played string.
    */
   function matchViolinString(rawFrequency, a4=440, maxCents=70){
     if (!(rawFrequency > 0)) return null;
-    let best = null;
+
+    const candidates = [];
     for (const midi of VIOLIN_MIDI){
       const target = midiFrequency(midi, a4);
       for (let harmonic=1; harmonic<=4; harmonic++){
         const harmonicTarget = target * harmonic;
         const cents = centsBetween(rawFrequency, harmonicTarget);
-        const abs = Math.abs(cents);
-        if (!best || abs < best.absCents){
-          best = {
+        const absCents = Math.abs(cents);
+        if (absCents <= maxCents){
+          candidates.push({
             midi,
             note: noteName(midi),
             ascii: asciiNoteName(midi),
@@ -137,12 +143,22 @@
             harmonic,
             correctedFrequency: rawFrequency / harmonic,
             cents,
-            absCents: abs
-          };
+            absCents
+          });
         }
       }
     }
-    return best && best.absCents <= maxCents ? best : null;
+    if (!candidates.length) return null;
+
+    const HARMONIC_TIE_CENTS = 4;
+    candidates.sort((a,b)=>{
+      const distanceGap = Math.abs(a.absCents - b.absCents);
+      if (distanceGap <= HARMONIC_TIE_CENTS && a.harmonic !== b.harmonic){
+        return a.harmonic - b.harmonic || a.absCents - b.absCents;
+      }
+      return a.absCents - b.absCents || a.harmonic - b.harmonic;
+    });
+    return candidates[0];
   }
 
   function nearestChromatic(rawFrequency, a4=440){

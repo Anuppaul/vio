@@ -13,9 +13,10 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#7c6ff1',
     categories: ['music', 'education', 'utilities'],
     icons: [
-      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+      { src: '/icons/icon-192.png?v=13', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-512.png?v=13', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-512.png?v=13', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
     ]
   };
 }

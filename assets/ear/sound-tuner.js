@@ -11,7 +11,9 @@
   let buffer=null, lastAnalysis=0, noPitchCount=0, lockKey=null, pendingKey=null, pendingCount=0, centsHistory=[], freqHistory=[];
   let shownCents=0, targetAngle=0, currentAngle=0, currentColor='#64748b';
 
-  const IN_TUNE=3.0, ANALYSIS_MS=42, RELEASE_FRAMES=9;
+  // Low-latency tuning: a 2048-sample window still contains enough cycles for G3
+  // while cutting the capture window roughly in half versus the previous 4096 size.
+  const IN_TUNE=3.0, ANALYSIS_MS=24, RELEASE_FRAMES=5, INSTANT_LOCK_CLARITY=.88;
 
   function arcPoint(cx,cy,r,deg){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
   function arcPath(r,a0,a1){const [x0,y0]=arcPoint(360,330,r,a0),[x1,y1]=arcPoint(360,330,r,a1);return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`}
@@ -59,9 +61,15 @@
     lockKey=pendingKey=null;pendingCount=0;centsHistory=[];freqHistory=[];shownCents=0;targetAngle=0;noPitchCount=0;noteEl.textContent='—';noteEl.style.color='#94a3b8';stringEl.textContent=running?'Listening for an open string':'Waiting for microphone';freqEl.textContent='-- Hz';centsEl.textContent='-- cents';hintEl.textContent=message;needleLine.style.stroke=needleCap.style.fill='#64748b';currentColor='#64748b';clearTargetChips();setQuality(0,0)
   }
 
-  function stableLock(candidate){
+  function stableLock(candidate,clarity){
     const key=candidate ? `v:${candidate.midi}` : null;if(!key)return null;
     if(lockKey===key)return candidate;
+
+    // First clean note should appear immediately. For a weaker/noisier change,
+    // require just one confirming frame to avoid random note flicker.
+    if(lockKey===null||clarity>=INSTANT_LOCK_CLARITY){
+      lockKey=key;pendingKey=null;pendingCount=0;centsHistory=[];freqHistory=[];shownCents=candidate.cents;return candidate;
+    }
     if(pendingKey===key)pendingCount++;else{pendingKey=key;pendingCount=1}
     if(pendingCount>=2){lockKey=key;pendingKey=null;pendingCount=0;centsHistory=[];freqHistory=[];shownCents=candidate.cents;return candidate}
     return null;
@@ -76,12 +84,12 @@
   }
 
   function showReading(result){
-    noPitchCount=0;setQuality(result.clarity,result.rms);const {candidate,isViolin}=classify(result),accepted=stableLock(candidate);
+    noPitchCount=0;setQuality(result.clarity,result.rms);const {candidate,isViolin}=classify(result),accepted=stableLock(candidate,result.clarity);
     if(!accepted)return;
 
-    const fresh=classify(result);let c=fresh.candidate;if(`v:${c.midi}`!==lockKey){return}
-    const oldMedian=centsHistory.length?Core.median(centsHistory):c.cents;if(centsHistory.length&&Math.abs(c.cents-oldMedian)>18){centsHistory=[c.cents];shownCents=c.cents}else{centsHistory.push(c.cents);if(centsHistory.length>3)centsHistory.shift()}freqHistory.push(c.correctedFrequency);if(freqHistory.length>3)freqHistory.shift();
-    const medCents=Core.median(centsHistory),medFreq=Core.median(freqHistory),delta=Math.abs(medCents-shownCents),alpha=delta>8?.68:.38;shownCents=shownCents*(1-alpha)+medCents*alpha;
+    let c=accepted;if(`v:${c.midi}`!==lockKey)return;
+    const oldMedian=centsHistory.length?Core.median(centsHistory):c.cents;if(centsHistory.length&&Math.abs(c.cents-oldMedian)>18){centsHistory=[c.cents];shownCents=c.cents}else{centsHistory.push(c.cents);if(centsHistory.length>2)centsHistory.shift()}freqHistory.push(c.correctedFrequency);if(freqHistory.length>2)freqHistory.shift();
+    const medCents=Core.median(centsHistory),medFreq=Core.median(freqHistory),delta=Math.abs(medCents-shownCents),alpha=delta>5?.85:.68;shownCents=shownCents*(1-alpha)+medCents*alpha;
     const clipped=Math.max(-50,Math.min(50,shownCents));targetAngle=clipped/50*74;
     const abs=Math.abs(shownCents);let color,msg;
     if(abs<=IN_TUNE){color='#0d9488';msg='In tune'}else if(shownCents<0){color='#d97706';msg='Flat · tune higher'}else{color='#dc2626';msg='Sharp · tune lower'}
@@ -95,13 +103,13 @@
   }
 
   function animateNeedle(){
-    // Critically damped-looking interpolation: no overshoot, no jumpy CSS transition.
-    currentAngle += (targetAngle-currentAngle)*.16;if(Math.abs(targetAngle-currentAngle)<.03)currentAngle=targetAngle;needleGroup.style.transform=`rotate(${currentAngle.toFixed(3)}deg)`;needleRAF=requestAnimationFrame(animateNeedle)
+    // Fast interpolation keeps motion stable without visibly trailing the live pitch.
+    currentAngle += (targetAngle-currentAngle)*.32;if(Math.abs(targetAngle-currentAngle)<.03)currentAngle=targetAngle;needleGroup.style.transform=`rotate(${currentAngle.toFixed(3)}deg)`;needleRAF=requestAnimationFrame(animateNeedle)
   }
   animateNeedle();
 
   function analyse(ts){
-    if(!running||!analyser)return;if(ts-lastAnalysis>=ANALYSIS_MS){lastAnalysis=ts;analyser.getFloatTimeDomainData(buffer);const result=Core.detectPitch(buffer,audioCtx.sampleRate,{minFreq:150,maxFreq:1500,rmsFloor:.0055,clarityFloor:.70,peakRatio:.88});if(result)showReading(result);else releaseReading()}analyseRAF=requestAnimationFrame(analyse)
+    if(!running||!analyser)return;if(ts-lastAnalysis>=ANALYSIS_MS){lastAnalysis=ts;analyser.getFloatTimeDomainData(buffer);const result=Core.detectPitch(buffer,audioCtx.sampleRate,{minFreq:170,maxFreq:1500,rmsFloor:.0055,clarityFloor:.70,peakRatio:.88});if(result)showReading(result);else releaseReading()}analyseRAF=requestAnimationFrame(analyse)
   }
 
   async function start(){
@@ -109,7 +117,7 @@
     if(!navigator.mediaDevices?.getUserMedia){status.textContent='Microphone API is unavailable. Open this page on HTTPS or http://localhost.';return}
     try{
       stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
-      const AC=window.AudioContext||window.webkitAudioContext;audioCtx=audioCtx||new AC({latencyHint:'interactive'});if(audioCtx.state==='suspended')await audioCtx.resume();source=audioCtx.createMediaStreamSource(stream);analyser=audioCtx.createAnalyser();analyser.fftSize=4096;analyser.smoothingTimeConstant=0;source.connect(analyser);buffer=new Float32Array(analyser.fftSize);running=true;lastAnalysis=0;resetReading('Play G, D, A or E and let it ring');startBtn.disabled=true;stopBtn.disabled=false;setLive(true,'Listening');status.textContent='Listening locally · optimized for violin G3, D4, A4 and E5';analyseRAF=requestAnimationFrame(analyse);
+      const AC=window.AudioContext||window.webkitAudioContext;audioCtx=audioCtx||new AC({latencyHint:'interactive'});if(audioCtx.state==='suspended')await audioCtx.resume();source=audioCtx.createMediaStreamSource(stream);analyser=audioCtx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0;source.connect(analyser);buffer=new Float32Array(analyser.fftSize);running=true;lastAnalysis=0;resetReading('Play G, D, A or E');startBtn.disabled=true;stopBtn.disabled=false;setLive(true,'Listening');status.textContent='Listening live · low-latency violin detection';analyseRAF=requestAnimationFrame(analyse);
     }catch(err){setLive(false,'Ready');status.textContent=`Microphone unavailable: ${err?.message||'permission denied'}`}
   }
 

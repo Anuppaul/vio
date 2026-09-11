@@ -1,29 +1,33 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { PitchDetector } from 'pitchy';
 import { OPEN_STRINGS, median, midiFrequency, noteFromFrequencyRange, rms } from '@/lib/music';
-import { detectPitch } from '@/lib/yin';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const LEVEL_BUFFER_SIZE=8192;
 const CAPTURE_CHUNK_SIZE=1024;
 const HPS_BUFFER_SIZE=CAPTURE_CHUNK_SIZE*50;
-const ANALYSIS_MS=70;
+const ANALYSIS_MS=65;
 const RMS_MIN=.00045;
+const MPM_MIN_CLARITY=.72;
+const MPM_STRONG_CLARITY=.86;
 const MIN_CANDIDATE_CLARITY=.26;
 const ACCEPT_CLARITY=.42;
 const STRONG_CLARITY=.76;
 const NOISE_MARGIN=2.15;
-const CLEAR_AFTER_MISSES=10;
+const CLEAR_AFTER_MISSES=12;
 const CENTS_DEADBAND=.22;
 
 function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
 function arcPath(r:number,a0:number,a1:number){const [x0,y0]=arcPoint(360,330,r,a0),[x1,y1]=arcPoint(360,330,r,a1);return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`}
 function levelPercent(value:number){if(value<=0)return 0;const db=20*Math.log10(value);return Math.round(Math.max(0,Math.min(100,(db+60)/50*100)))}
+function centsApart(a:number,b:number){return Math.abs(1200*Math.log2(a/b))}
 
-type HpsWorkerResult={frequency:number;clarity:number;source:'hps'|'direct';hpsFrequency?:number;directFrequency?:number};
+type HpsWorkerResult={frequency:number;clarity:number;source:'hps'|'direct';hpsFrequency?:number;directFrequency?:number;octaveCorrected?:boolean};
 type HpsWorkerMessage={id:number;result?:HpsWorkerResult|null;error?:string};
+type PitchEvidence={frequency:number;clarity:number;at:number};
 
 export default function SoundTuner(){
   const [a4,setA4]=useState(440);
@@ -42,8 +46,16 @@ export default function SoundTuner(){
   const captureRef=useRef(new Float32Array(HPS_BUFFER_SIZE)),captureWriteRef=useRef(0),captureCountRef=useRef(0);
   const rafRef=useRef(0),lastRef=useRef(0),missRef=useRef(0),historyRef=useRef<number[]>([]),pendingMidiRef=useRef<number|null>(null),pendingCountRef=useRef(0),lockedMidiRef=useRef<number|null>(null),lastStatusRef=useRef('');
   const noiseFloorRef=useRef(.00032),smoothedCentsRef=useRef(0),hasCentsSmoothRef=useRef(false),smoothedFrequencyRef=useRef<number|null>(null),a4Ref=useRef(440);
-  const workerRef=useRef<Worker|null>(null),workerBusyRef=useRef(false),workerSeqRef=useRef(0),fallbackRef=useRef(false);
+  const workerRef=useRef<Worker|null>(null),workerBusyRef=useRef(false),workerSeqRef=useRef(0),latestMpmRef=useRef<PitchEvidence|null>(null);
+  const mpmDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
+
+  if(!mpmDetectorRef.current){
+    const detector=PitchDetector.forFloat32Array(LEVEL_BUFFER_SIZE);
+    detector.clarityThreshold=.90;
+    detector.minVolumeAbsolute=0;
+    mpmDetectorRef.current=detector;
+  }
 
   useEffect(()=>{a4Ref.current=a4},[a4]);
 
@@ -81,7 +93,7 @@ export default function SoundTuner(){
     const alpha=Math.abs(delta)>12?.46:Math.abs(delta)>5?.31:.20;smoothedCentsRef.current+=delta*alpha;return smoothedCentsRef.current;
   }
   function resetPitchSmoothing(){historyRef.current=[];smoothedFrequencyRef.current=null;hasCentsSmoothRef.current=false}
-  function clearPitch(){setNote('—');setFrequency(null);setCents(null);setClarity(0);pendingMidiRef.current=null;pendingCountRef.current=0;lockedMidiRef.current=null;resetPitchSmoothing()}
+  function clearPitch(){setNote('—');setFrequency(null);setCents(null);setClarity(0);pendingMidiRef.current=null;pendingCountRef.current=0;lockedMidiRef.current=null;latestMpmRef.current=null;resetPitchSmoothing()}
   function resetReading(){clearPitch();setMicLevel(0);missRef.current=0;noiseFloorRef.current=.00032;resetCapture()}
   function setLiveStatus(text:string){if(lastStatusRef.current===text)return;lastStatusRef.current=text;setStatus(text)}
   function stopReference(){if(audioRef.current){audioRef.current.pause();audioRef.current.src='';audioRef.current=null}try{oscRef.current?.stop()}catch{}oscRef.current=null;gainRef.current=null;setActiveRef(null)}
@@ -94,7 +106,7 @@ export default function SoundTuner(){
     }
   }
 
-  function acceptPitch(raw:number,quality:number,engine='HPS'){
+  function acceptPitch(raw:number,quality:number,engine='McLeod'){
     const tuning=a4Ref.current,immediate=noteFromFrequencyRange(raw,tuning);if(!immediate)return;
     const candidate=immediate.midi,current=lockedMidiRef.current;
     if(current===null||current!==candidate){
@@ -109,22 +121,43 @@ export default function SoundTuner(){
     const softCents=smoothCents(mapped.cents);setNote(mapped.label);setFrequency(stable);setCents(softCents);setClarity(quality);missRef.current=0;setLiveStatus(`${engine} locked · ${mapped.label}`);
   }
 
-  function handleDetectedPitch(result:HpsWorkerResult|null,engine='HPS'){
-    const tuning=a4Ref.current,quality=result?.clarity??0;setClarity(quality);const ranged=result?noteFromFrequencyRange(result.frequency,tuning):null;
-    if(result&&ranged&&quality>=MIN_CANDIDATE_CLARITY){acceptPitch(result.frequency,quality,engine);return}
-    missRef.current++;setLiveStatus(result?`${engine} pitch present · building confidence`:`${engine} analysing · no stable pitch yet`);if(missRef.current>CLEAR_AFTER_MISSES)clearPitch();
+  function resolveHpsAgainstMpm(result:HpsWorkerResult|null){
+    if(!result)return null;
+    const mpm=latestMpmRef.current;
+    if(!mpm||Date.now()-mpm.at>450||mpm.clarity<MPM_MIN_CLARITY)return result;
+    const distance=centsApart(result.frequency,mpm.frequency);
+    if(distance<=45){
+      const wm=Math.max(.1,mpm.clarity),wh=Math.max(.1,result.clarity),frequency=Math.exp((Math.log(mpm.frequency)*wm+Math.log(result.frequency)*wh)/(wm+wh));
+      return {frequency,clarity:Math.min(.99,Math.max(mpm.clarity,result.clarity)+.04),source:'hps' as const};
+    }
+    const octaveDistance=Math.abs(distance-1200),twoOctaveDistance=Math.abs(distance-2400);
+    if(octaveDistance<=70||twoOctaveDistance<=70){
+      return {frequency:mpm.frequency,clarity:Math.max(mpm.clarity,result.clarity*.82),source:'direct' as const};
+    }
+    if(mpm.clarity>=MPM_STRONG_CLARITY){
+      return {frequency:mpm.frequency,clarity:mpm.clarity,source:'direct' as const};
+    }
+    return result;
+  }
+
+  function handleHpsPitch(result:HpsWorkerResult|null){
+    const resolved=resolveHpsAgainstMpm(result),quality=resolved?.clarity??0;
+    if(resolved&&noteFromFrequencyRange(resolved.frequency,a4Ref.current)&&quality>=MIN_CANDIDATE_CLARITY){
+      acceptPitch(resolved.frequency,quality,result?.octaveCorrected?'HPS octave-corrected':'HPS corroboration');return;
+    }
+    if(!latestMpmRef.current){missRef.current++;if(missRef.current>CLEAR_AFTER_MISSES)clearPitch()}
   }
 
   function startHpsWorker(){
-    if(typeof Worker==='undefined'){fallbackRef.current=true;return}
+    if(typeof Worker==='undefined')return;
     try{
       const worker=new Worker('/hps-worker.js');
-      worker.onmessage=(event:MessageEvent<HpsWorkerMessage>)=>{workerBusyRef.current=false;if(!analyserRef.current)return;if(event.data?.error){fallbackRef.current=true;setLiveStatus('HPS unavailable · using time-domain fallback');return}handleDetectedPitch(event.data?.result??null,event.data?.result?.source==='direct'?'FFT':'HPS')};
-      worker.onerror=()=>{workerBusyRef.current=false;fallbackRef.current=true;try{worker.terminate()}catch{}if(workerRef.current===worker)workerRef.current=null;setLiveStatus('HPS worker unavailable · using fallback')};
-      workerRef.current=worker;workerBusyRef.current=false;fallbackRef.current=false;
-    }catch{fallbackRef.current=true;workerRef.current=null}
+      worker.onmessage=(event:MessageEvent<HpsWorkerMessage>)=>{workerBusyRef.current=false;if(!analyserRef.current)return;if(event.data?.error){setLiveStatus('HPS helper unavailable · McLeod remains active');return}handleHpsPitch(event.data?.result??null)};
+      worker.onerror=()=>{workerBusyRef.current=false;try{worker.terminate()}catch{}if(workerRef.current===worker)workerRef.current=null;setLiveStatus('HPS helper unavailable · McLeod remains active')};
+      workerRef.current=worker;workerBusyRef.current=false;
+    }catch{workerRef.current=null}
   }
-  function stopHpsWorker(){try{workerRef.current?.terminate()}catch{}workerRef.current=null;workerBusyRef.current=false;fallbackRef.current=false}
+  function stopHpsWorker(){try{workerRef.current?.terminate()}catch{}workerRef.current=null;workerBusyRef.current=false}
 
   function analyse(ts:number){
     const analyser=analyserRef.current,ctx=ctxRef.current;if(!analyser||!ctx)return;
@@ -132,16 +165,31 @@ export default function SoundTuner(){
       lastRef.current=ts;const input=bufferRef.current,clean=cleanRef.current;analyser.getFloatTimeDomainData(input);cleanFrame(input,clean);
       const volume=rms(clean),level=levelPercent(volume),gate=updateNoiseFloor(volume);setMicLevel(level);
       if(volume>=gate){
-        const tuning=a4Ref.current,minHz=midiFrequency(23.5,tuning),maxHz=midiFrequency(103.5,tuning),worker=workerRef.current;
+        const tuning=a4Ref.current,minHz=midiFrequency(23.5,tuning),maxHz=midiFrequency(103.5,tuning);
+        const detector=mpmDetectorRef.current;
+        const [mpmFrequency,mpmClarity]=detector?detector.findPitch(clean,ctx.sampleRate):[0,0];
+        const mpmMapped=mpmFrequency>0?noteFromFrequencyRange(mpmFrequency,tuning):null;
+        if(mpmMapped&&mpmClarity>=MPM_MIN_CLARITY){
+          latestMpmRef.current={frequency:mpmFrequency,clarity:mpmClarity,at:Date.now()};
+          acceptPitch(mpmFrequency,mpmClarity,'McLeod');
+        }else{
+          const prior=latestMpmRef.current;if(prior&&Date.now()-prior.at>450)latestMpmRef.current=null;
+        }
+
+        const worker=workerRef.current;
         if(worker&&!workerBusyRef.current){
           const frame=captureFrame();
-          if(frame){workerBusyRef.current=true;const id=++workerSeqRef.current;worker.postMessage({id,samples:frame.buffer,sampleRate:ctx.sampleRate,minFreq:minHz,maxFreq:maxHz},[frame.buffer]);setLiveStatus('FFT + HPS analysing 51,200-sample buffer')}
-          else setLiveStatus(`Building HPS buffer · ${Math.min(100,Math.round(captureCountRef.current/HPS_BUFFER_SIZE*100))}%`);
-        }else if(!worker&&fallbackRef.current){
-          const result=detectPitch(clean,ctx.sampleRate,minHz,maxHz);handleDetectedPitch(result?{frequency:result.frequency,clarity:result.clarity,source:'hps'}:null,'Fallback');
+          if(frame){
+            workerBusyRef.current=true;const id=++workerSeqRef.current;
+            worker.postMessage({id,samples:frame.buffer,sampleRate:ctx.sampleRate,minFreq:Math.max(50,minHz),maxFreq:maxHz},[frame.buffer]);
+          }
+        }
+
+        if(!mpmMapped||mpmClarity<MPM_MIN_CLARITY){
+          setClarity(mpmClarity);setLiveStatus(captureCountRef.current<HPS_BUFFER_SIZE?`McLeod analysing · HPS buffer ${Math.min(100,Math.round(captureCountRef.current/HPS_BUFFER_SIZE*100))}%`:'McLeod ambiguous · checking HPS harmonics');
         }
       }else{
-        missRef.current++;setClarity(0);setLiveStatus(level>0?'Noise filtered · play a steady note':'Listening · play a note');if(missRef.current>CLEAR_AFTER_MISSES)clearPitch();
+        latestMpmRef.current=null;missRef.current++;setClarity(0);setLiveStatus(level>0?'Noise filtered · play a steady note':'Listening · play a note');if(missRef.current>CLEAR_AFTER_MISSES)clearPitch();
       }
     }
     rafRef.current=requestAnimationFrame(analyse);
@@ -159,7 +207,7 @@ export default function SoundTuner(){
       processor.onaudioprocess=e=>{const channel=e.inputBuffer.getChannelData(0);pushCapture(channel);for(let c=0;c<e.outputBuffer.numberOfChannels;c++)e.outputBuffer.getChannelData(c).fill(0)};
       source.connect(highPass).connect(lowPass);lowPass.connect(analyser);lowPass.connect(processor).connect(silentGain).connect(ctx.destination);
       streamRef.current=stream;sourceRef.current=source;highPassRef.current=highPass;lowPassRef.current=lowPass;analyserRef.current=analyser;processorRef.current=processor;silentGainRef.current=silentGain;
-      startHpsWorker();setRunning(true);resetReading();lastStatusRef.current='';setLiveStatus('Listening · building GuitarTuner-style 51,200-sample HPS buffer');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
+      startHpsWorker();setRunning(true);resetReading();lastStatusRef.current='';setLiveStatus('Listening · McLeod primary + HPS octave check active');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
     }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
   }
   function stop(){
@@ -177,7 +225,7 @@ export default function SoundTuner(){
   const activePitchClass=activeRange?activeRange.midi%12:null;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Universal FFT/HPS tuner</p><h1>Sound Tuner</h1><p>GuitarTuner-style long-buffer FFT + Harmonic Product Spectrum detects the fundamental of guitar, violin, piano, bass, winds, voice and other steady sounds, then maps it to exact C1–G7 note ranges.</p></div><div className="badge">Mic → 51,200 samples → FFT/HPS → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Universal chromatic tuner</p><h1>Sound Tuner</h1><p>McLeod Pitch Method tracks the live fundamental from C1 to G7. GuitarTuner-style FFT/HPS runs as a harmonic and octave cross-check instead of deciding the note by itself.</p></div><div className="badge">Mic → McLeod + HPS check → note → cents</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">
@@ -185,7 +233,7 @@ export default function SoundTuner(){
           <div className="control-label"><span>Microphone input</span><span>{running?`${micLevel}% · Confidence ${Math.round(clarity*100)}%`:'0%'}</span></div><div className="signal"><i style={{width:`${micLevel}%`}}/></div>
           <div className="gauge-wrap jelly-gauge">
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
-            <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?(micLevel>2?'Sound detected · analysing harmonic spectrum':'Play a clear steady tone'):inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
+            <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?(micLevel>2?'Sound detected · identifying the fundamental':'Play a clear steady tone'):inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
           <div className="target-row">{OPEN_STRINGS.map((midi,i)=><span className={`target-chip ${activePitchClass===midi%12?'active':''}`} key={midi}>{OPEN_LABELS[i]} · {midiFrequency(midi,a4).toFixed(1)} Hz</span>)}</div>
         </main>

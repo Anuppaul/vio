@@ -7,6 +7,7 @@ import './pwa.css';
 import './tuner-jelly.css';
 import './ear-mobile.css';
 import './exercise-range.css';
+import './scale-practice.css';
 
 export const metadata: Metadata = {
   title: { default: 'VIO', template: '%s · VIO' },

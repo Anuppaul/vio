@@ -40,10 +40,11 @@ export default function ScalePractice(){
   const[status,setStatus]=useState('Start the microphone, sing Sa, then set it as your reference.');
 
   const ctxRef=useRef<AudioContext|null>(null),analyserRef=useRef<AnalyserNode|null>(null),sourceRef=useRef<MediaStreamAudioSourceNode|null>(null),streamRef=useRef<MediaStream|null>(null);
-  const bufferRef=useRef(new Float32Array(BUFFER_SIZE)),rafRef=useRef(0),lastRef=useRef(0);
+  const bufferRef=useRef(new Float32Array(BUFFER_SIZE)),rafRef=useRef(0),lastRef=useRef(0),saFrequencyRef=useRef<number|null>(null);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
 
   if(!detectorRef.current){const detector=PitchDetector.forFloat32Array(BUFFER_SIZE);detector.minVolumeAbsolute=0;detectorRef.current=detector}
+  useEffect(()=>{saFrequencyRef.current=saFrequency},[saFrequency]);
 
   const current=frequency&&saFrequency?relativePitch(frequency,saFrequency):null;
   const cents=current?.cents??null;
@@ -57,7 +58,7 @@ export default function ScalePractice(){
     if(ts-lastRef.current>=ANALYSIS_MS){
       lastRef.current=ts;const input=bufferRef.current;analyser.getFloatTimeDomainData(input);setMicLevel(levelPercent(rms(input)));
       const[rawFrequency]=detector.findPitch(input,ctx.sampleRate);
-      if(rawFrequency>0&&Number.isFinite(rawFrequency)){setFrequency(rawFrequency);setStatus(saFrequency?'Practice live · sing any swara':'Sing your Sa, then tap “Set current pitch as Sa”.')}
+      if(rawFrequency>0&&Number.isFinite(rawFrequency)){setFrequency(rawFrequency);setStatus(saFrequencyRef.current?'Practice live · sing any swara':'Sing your Sa, then tap “Set current pitch as Sa”.')}
       else{setFrequency(null);setStatus('Listening · no pitch detected')}
     }
     rafRef.current=requestAnimationFrame(analyse);
@@ -68,12 +69,12 @@ export default function ScalePractice(){
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
       const ctx=ctxRef.current||(ctxRef.current=new AC({latencyHint:'interactive'}));if(ctx.state==='suspended')await ctx.resume();
       const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser();analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;source.connect(analyser);
-      streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;setRunning(true);clearLive();setStatus(saFrequency?'Practice live · sing any swara':'Sing your Sa, then tap “Set current pitch as Sa”.');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
+      streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;setRunning(true);clearLive();setStatus(saFrequencyRef.current?'Practice live · sing any swara':'Sing your Sa, then tap “Set current pitch as Sa”.');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
     }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
   }
   function stop(){cancelAnimationFrame(rafRef.current);rafRef.current=0;try{sourceRef.current?.disconnect();analyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;analyserRef.current=null;streamRef.current=null;setRunning(false);clearLive();setStatus('Microphone stopped')}
-  function setSa(){if(!frequency)return;setSaFrequency(frequency);setStatus(`Sa set at ${frequency.toFixed(2)} Hz · now sing through the scale`)}
-  function resetSa(){setSaFrequency(null);setStatus('Sa cleared · sing Sa again and set a new reference')}
+  function setSa(){if(!frequency)return;saFrequencyRef.current=frequency;setSaFrequency(frequency);setStatus(`Sa set at ${frequency.toFixed(2)} Hz · now sing through the scale`)}
+  function resetSa(){saFrequencyRef.current=null;setSaFrequency(null);setStatus('Sa cleared · sing Sa again and set a new reference')}
   useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
 
   function scaleRow(kind:Saptak,offsets:number[]){

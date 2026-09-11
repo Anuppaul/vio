@@ -1,9 +1,9 @@
-const VERSION='vio-pwa-v33';
+const VERSION='vio-pwa-v34';
 const APP_CACHE=`${VERSION}-app`;
 const AUDIO_CACHE=`${VERSION}-audio`;
 const RUNTIME_CACHE=`${VERSION}-runtime`;
 
-const ROUTES=['/','/sound-tuner','/tanpura','/exercise','/metronome','/manifest.webmanifest'];
+const ROUTES=['/','/sound-tuner','/scale-practice','/tanpura','/exercise','/metronome','/manifest.webmanifest'];
 const EAR_NOTES=['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
 const EAR_AUDIO=[];
 for(let octave=3;octave<=5;octave++) for(const note of EAR_NOTES) EAR_AUDIO.push(`/assets/ear/${note}${octave}.mp3`);

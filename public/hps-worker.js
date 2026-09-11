@@ -1,11 +1,16 @@
 /* GuitarTuner-style FFT + Harmonic Product Spectrum pitch detector.
    Runs off the UI thread. The original desktop tuner uses a long Hann-windowed
    microphone buffer, zero-padding, and HPS with 2x/3x spectral decimation.
-   This browser port keeps that detection model and extends the search to C1-G7. */
+   This browser port keeps that detection model and extends the search to C1-G7.
+
+   HPS is known to produce octave-too-high errors on overtone-rich signals, so
+   the final HPS peak is explicitly checked against a real peak near f/2 before
+   it is returned. */
 
 const ZERO_PADDING = 3;
 const NUM_HPS = 3;
 const EPS = 1e-18;
+const OCTAVE_DOWN_RATIO = 0.18;
 let cachedInputSize = 0;
 let cachedFftSize = 0;
 let bitReverse = null;
@@ -69,7 +74,6 @@ function fftWindowed(samples) {
   for (let i = 0; i < samples.length; i++) mean += samples[i];
   mean /= samples.length;
 
-  // Write input directly in bit-reversed order; the rest stays zero-padded.
   for (let i = 0; i < samples.length; i++) {
     real[bitReverse[i]] = (samples[i] - mean) * hann[i];
   }
@@ -123,6 +127,17 @@ function harmonicIntegerRatio(high, low) {
   return cents <= 35 ? nearest : 0;
 }
 
+function bestHpsNear(center, radius, minBin, maxBin) {
+  const lo = Math.max(minBin, Math.floor(center - radius));
+  const hi = Math.min(maxBin, Math.ceil(center + radius));
+  let bestBin = -1, bestScore = -Infinity;
+  for (let bin = lo; bin <= hi; bin++) {
+    const score = hpsScore(bin);
+    if (score > bestScore) { bestScore = score; bestBin = bin; }
+  }
+  return { bin: bestBin, score: bestScore };
+}
+
 function detect(samples, sampleRate, minFreq, maxFreq) {
   fftWindowed(samples);
 
@@ -138,21 +153,26 @@ function detect(samples, sampleRate, minFreq, maxFreq) {
   }
 
   let peakBin = minBin, peakScore = -Infinity;
-  let secondScore = -Infinity;
   for (let bin = minBin; bin <= maxHpsBin; bin++) {
     const score = hpsScore(bin);
-    if (score > peakScore) {
-      secondScore = peakScore;
-      peakScore = score;
-      peakBin = bin;
-    } else if (score > secondScore) {
-      secondScore = score;
+    if (score > peakScore) { peakScore = score; peakBin = bin; }
+  }
+
+  let octaveCorrected = false;
+  if (peakBin / 2 >= minBin) {
+    const lower = bestHpsNear(peakBin / 2, Math.max(4, peakBin * 0.018), minBin, maxHpsBin);
+    if (lower.bin > 0) {
+      const ratio = Math.exp(Math.min(0, lower.score - peakScore));
+      const nearHalf = Math.abs(lower.bin * 2 - peakBin) <= Math.max(6, peakBin * 0.025);
+      if (nearHalf && ratio >= OCTAVE_DOWN_RATIO) {
+        peakBin = lower.bin;
+        peakScore = lower.score;
+        octaveCorrected = true;
+      }
     }
   }
 
-  // Recompute the runner-up away from the main peak so adjacent FFT bins do
-  // not make a strong, narrow peak look artificially ambiguous.
-  secondScore = -Infinity;
+  let secondScore = -Infinity;
   for (let bin = minBin; bin <= maxHpsBin; bin++) {
     if (Math.abs(bin - peakBin) <= 5) continue;
     const score = hpsScore(bin);
@@ -166,12 +186,6 @@ function detect(samples, sampleRate, minFreq, maxFreq) {
   const ratio = harmonicIntegerRatio(directFreq, hpsFreq);
   const fundamentalSupport = directMag > 0 ? magnitude[peakBin] / directMag : 0;
 
-  // HPS can intentionally create f/2 or f/3 candidates for nearly pure sine
-  // waves because their only strong spectral line appears as a higher harmonic
-  // of a lower candidate. Guitar/violin spectra normally contain real energy
-  // at the HPS fundamental. If that bin is essentially absent, use the direct
-  // spectral peak instead. This preserves the original HPS behavior on rich
-  // instruments while making the detector universal for flute/sine-like tones.
   if (ratio && fundamentalSupport < 0.012) {
     chosenBin = directBin;
     mode = 'direct';
@@ -193,7 +207,14 @@ function detect(samples, sampleRate, minFreq, maxFreq) {
   const support = mode === 'direct' ? 0.55 : Math.min(1, fundamentalSupport * 4 + 0.35);
   const clarity = clamp(0.52 + Math.min(0.30, prominence * 0.045) + support * 0.16, 0, 0.99);
 
-  return { frequency, clarity, source: mode, hpsFrequency: hpsFreq, directFrequency: directFreq };
+  return {
+    frequency,
+    clarity,
+    source: mode,
+    hpsFrequency: hpsFreq,
+    directFrequency: directFreq,
+    octaveCorrected
+  };
 }
 
 self.onmessage = (event) => {

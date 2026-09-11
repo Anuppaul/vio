@@ -19,7 +19,6 @@ const CLEFS={
 type Clef=keyof typeof CLEFS;
 type StaffClef=Exclude<Clef,'grand'>;
 const CLEF_ORDER:Clef[]=['grand','treble','bass','alto','tenor','soprano','mezzo','baritone'];
-const STAFF_CLEFS:StaffClef[]=['treble','bass','alto','tenor','soprano','mezzo','baritone'];
 
 const LEGACY_RANGES={easy:{min:0,max:8},standard:{min:-2,max:10},extended:{min:-4,max:12},wide:{min:-6,max:14}} as const;
 const KEYS:Record<string,{label:string;type:string;count:number;acc:Record<string,string>}>= {
@@ -49,7 +48,7 @@ const NOTE_VALUES=[
 ] as const;
 const SOLFEGE=['Do','Re','Mi','Fa','Sol','La','Ti'];
 const SOLFEGE_SI=['Do','Re','Mi','Fa','Sol','La','Si'];
-const FIXED_CHROMATIC:Record<string,string>={C:'Do','C#':'Di',Cb:'Do♭',D:'Re','D#':'Ri',Db:'Ra',E:'Mi',E#:'Mi♯',Eb:'Me',F:'Fa',F#:'Fi',Fb:'Fa♭',G:'Sol',G#:'Si',Gb:'Se',A:'La',A#:'Li',Ab:'Le',B:'Ti',B#:'Ti♯',Bb:'Te'};
+const FIXED_CHROMATIC:Record<string,string>={C:'Do','C#':'Di',Cb:'Do♭',D:'Re','D#':'Ri',Db:'Ra',E:'Mi','E#':'Mi♯',Eb:'Me',F:'Fa','F#':'Fi',Fb:'Fa♭',G:'Sol','G#':'Si',Gb:'Se',A:'La','A#':'Li',Ab:'Le',B:'Ti','B#':'Ti♯',Bb:'Te'};
 
 const DEFAULT_RANGES={
  grand:{min:36,max:96},

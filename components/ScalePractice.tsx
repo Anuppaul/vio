@@ -7,7 +7,8 @@ import { rms } from '@/lib/music';
 const BUFFER_SIZE=8192;
 const ANALYSIS_MS=35;
 const SA_READY_FRAMES=7;
-const SA_READY_TOLERANCE_CENTS=5;
+const SA_READY_MIN_INLIERS=5;
+const SA_READY_TOLERANCE_CENTS=12;
 const BASE_SWARAS=['সা','ঋ','র','জ্ঞ','গ','ম','ক্ষ','প','দ','ধ','ণ','ন'];
 const SAPTAK_OFFSETS={
   mandra:Array.from({length:12},(_,i)=>i-12),
@@ -29,8 +30,8 @@ function stablePitch(values:number[]){
   if(values.length<SA_READY_FRAMES)return null;
   const logs=values.map(v=>Math.log2(v)).sort((a,b)=>a-b),mid=Math.floor(logs.length/2),median=logs.length%2?logs[mid]:(logs[mid-1]+logs[mid])/2;
   const reference=Math.pow(2,median);
-  const allWithinTolerance=values.every(v=>Math.abs(1200*Math.log2(v/reference))<=SA_READY_TOLERANCE_CENTS);
-  return allWithinTolerance?reference:null;
+  const inliers=values.filter(v=>Math.abs(1200*Math.log2(v/reference))<=SA_READY_TOLERANCE_CENTS).length;
+  return inliers>=SA_READY_MIN_INLIERS?reference:null;
 }
 function relativePitch(frequency:number,sa:number):RelativePitch|null{
   if(!(frequency>0)||!(sa>0))return null;
@@ -75,7 +76,7 @@ export default function ScalePractice(){
         else{
           const samples=saSamplesRef.current;samples.push(rawFrequency);if(samples.length>SA_READY_FRAMES)samples.shift();
           const ready=stablePitch(samples);setSaReadyFrequency(ready);
-          setStatus(ready?'Sa detected · ready to set':'Hold Sa steady · keep within ±5 cents');
+          setStatus(ready?'Sa detected · ready to set':'Hold Sa steady · 5 of 7 samples must stay within ±12 cents');
         }
       }else{
         setFrequency(null);clearSaReadiness();setStatus('Listening · no pitch detected');
@@ -89,12 +90,12 @@ export default function ScalePractice(){
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
       const ctx=ctxRef.current||(ctxRef.current=new AC({latencyHint:'interactive'}));if(ctx.state==='suspended')await ctx.resume();
       const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser();analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;source.connect(analyser);
-      streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;setRunning(true);clearLive();setStatus(saFrequencyRef.current?'Practice live · sing any swara':'Sing and hold your Sa within ±5 cents until the indicator turns green.');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
+      streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;setRunning(true);clearLive();setStatus(saFrequencyRef.current?'Practice live · sing any swara':'Sing and hold your Sa; natural variation up to ±12 cents is allowed.');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
     }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
   }
   function stop(){cancelAnimationFrame(rafRef.current);rafRef.current=0;try{sourceRef.current?.disconnect();analyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;analyserRef.current=null;streamRef.current=null;setRunning(false);clearLive();setStatus('Microphone stopped')}
   function setSa(){const chosen=saFrequency?frequency:saReadyFrequency;if(!chosen)return;saFrequencyRef.current=chosen;setSaFrequency(chosen);clearSaReadiness();setStatus(`Sa set at ${chosen.toFixed(2)} Hz · now sing through the scale`)}
-  function resetSa(){saFrequencyRef.current=null;setSaFrequency(null);clearSaReadiness();setStatus('Sa cleared · sing and hold Sa within ±5 cents until the indicator turns green')}
+  function resetSa(){saFrequencyRef.current=null;setSaFrequency(null);clearSaReadiness();setStatus('Sa cleared · sing and hold Sa; natural variation up to ±12 cents is allowed')}
   useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
 
   function scaleRow(kind:Saptak,offsets:number[]){
@@ -113,13 +114,13 @@ export default function ScalePractice(){
           <div className="control-label"><span>Raw microphone input</span><span>{running?`${micLevel}%`:'0%'}</span></div><div className="signal"><i style={{width:`${micLevel}%`}}/></div>
           <div className="scale-gauge-wrap">
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Swara pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-7,7)}/>{current&&<><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></>}</svg>
-            <div className="scale-readout">{!saFrequency?<><div className="scale-prompt">সা</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'Sing your Sa'}</div>{saReady?<div className="sa-ready"><i/>Sa detected · ready to set</div>:<div className="hint">Sing and hold Sa steadily within ±5 cents until the indicator turns green</div>}</>:current?<><div className={`scale-swara ${current.saptak==='mandra'?'mandra-mark':''}`} style={{color}}>{current.label}</div><div className="scale-saptak-name">{saptakName(current.saptak)}</div><div className="frequency">Actual {frequency?.toFixed(2)} Hz · Target {current.target.toFixed(2)} Hz · {current.cents>=0?'+':''}{current.cents.toFixed(1)} cents</div><div className="hint">{inTune?'সঠিক সুর':current.cents<0?`${Math.abs(current.cents).toFixed(1)} cents নিচে`:`${current.cents.toFixed(1)} cents উপরে`}</div></>:<><div className="scale-prompt">—</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'}</div><div className="hint">Outside Mandra–Madhya–Taar practice range</div></>}</div>
+            <div className="scale-readout">{!saFrequency?<><div className="scale-prompt">সা</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'Sing your Sa'}</div>{saReady?<div className="sa-ready"><i/>Sa detected · ready to set</div>:<div className="hint">Hold Sa steadily; 5 of 7 samples may vary within ±12 cents</div>}</>:current?<><div className={`scale-swara ${current.saptak==='mandra'?'mandra-mark':''}`} style={{color}}>{current.label}</div><div className="scale-saptak-name">{saptakName(current.saptak)}</div><div className="frequency">Actual {frequency?.toFixed(2)} Hz · Target {current.target.toFixed(2)} Hz · {current.cents>=0?'+':''}{current.cents.toFixed(1)} cents</div><div className="hint">{inTune?'সঠিক সুর':current.cents<0?`${Math.abs(current.cents).toFixed(1)} cents নিচে`:`${current.cents.toFixed(1)} cents উপরে`}</div></>:<><div className="scale-prompt">—</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'}</div><div className="hint">Outside Mandra–Madhya–Taar practice range</div></>}</div>
           </div>
           <div className="saptak-stack">{scaleRow('mandra',SAPTAK_OFFSETS.mandra)}{scaleRow('madhya',SAPTAK_OFFSETS.madhya)}{scaleRow('taar',SAPTAK_OFFSETS.taar)}</div>
         </main>
         <aside className="side scale-practice-side">
           <div className="control"><div className="control-label"><span>Step 1 · Microphone</span></div><button className={`primary ${running?'danger':''}`} onClick={running?stop:start}>{running?'Stop microphone':'Start microphone'}</button></div>
-          <div className="control"><div className="control-label"><span>Step 2 · Set your Sa</span><span>{saReady?`${saReadyFrequency?.toFixed(2)} Hz`:frequency?`${frequency.toFixed(2)} Hz`:'No pitch'}</span></div>{!saFrequency&&<div className={`sa-ready-row ${saReady?'ready':''}`}><i/><span>{saReady?'Sa detected · ready to set':'Hold Sa steady within ±5 cents'}</span></div>}<button className={`primary ${saReady?'sa-ready-button':''}`} disabled={!canSetSa} onClick={setSa}>{saFrequency?'Set current pitch as new Sa':'Set current pitch as Sa'}</button>{saFrequency&&<button className="soft-btn scale-reset" onClick={resetSa}>Clear Sa</button>}</div>
+          <div className="control"><div className="control-label"><span>Step 2 · Set your Sa</span><span>{saReady?`${saReadyFrequency?.toFixed(2)} Hz`:frequency?`${frequency.toFixed(2)} Hz`:'No pitch'}</span></div>{!saFrequency&&<div className={`sa-ready-row ${saReady?'ready':''}`}><i/><span>{saReady?'Sa detected · ready to set':'Hold Sa steady · ±12 cents allowed'}</span></div>}<button className={`primary ${saReady?'sa-ready-button':''}`} disabled={!canSetSa} onClick={setSa}>{saFrequency?'Set current pitch as new Sa':'Set current pitch as Sa'}</button>{saFrequency&&<button className="soft-btn scale-reset" onClick={resetSa}>Clear Sa</button>}</div>
           <div className="control"><div className="control-label"><span>Your tonic</span></div><div className="sa-reference"><b>{saFrequency?'সা':'—'}</b><span>{saFrequency?`${saFrequency.toFixed(2)} Hz`:'Sing Sa first'}</span></div></div>
           <div className="control"><div className="status">{status}</div></div>
         </aside>

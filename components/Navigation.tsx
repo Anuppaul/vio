@@ -7,6 +7,7 @@ import type { MouseEvent } from 'react';
 const items = [
   { href: '/', label: 'Ear Tuner', icon: '♪' },
   { href: '/sound-tuner', label: 'Sound Tuner', icon: '◌' },
+  { href: '/scale-practice', label: 'Scale Practice', icon: 'সা' },
   { href: '/tanpura', label: 'Tanpura', icon: 'ॐ' },
   { href: '/exercise', label: 'Exercise', icon: '𝄞' },
   { href: '/metronome', label: 'Metronome', icon: '●' }

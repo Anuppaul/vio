@@ -24,6 +24,11 @@ const AUDIO_MIN_MIDI=36;
 const AUDIO_MAX_MIDI=96;
 const CHROMATIC_NAMES=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
 const NOTE_TOKENS=[...LETTERS.map(l=>`${l}#`),...LETTERS,...LETTERS.map(l=>`${l}b`)];
+const NOTE_VALUES=[
+ {value:'whole',label:'Whole',symbol:'𝅝'},
+ {value:'half',label:'Half',symbol:'𝅗𝅥'},
+ {value:'quarter',label:'Quarter',symbol:'𝅘𝅥'}
+] as const;
 const SOLFEGE=['Do','Re','Mi','Fa','Sol','La','Ti'];
 const SOLFEGE_SI=['Do','Re','Mi','Fa','Sol','La','Si'];
 const FIXED_CHROMATIC:Record<string,string>={C:'Do','C#':'Di',Cb:'Do♭',D:'Re','D#':'Ri',Db:'Ra',E:'Mi','E#':'Mi♯',Eb:'Me',F:'Fa','F#':'Fi',Fb:'Fa♭',G:'Sol','G#':'Si',Gb:'Se',A:'La','A#':'Li',Ab:'Le',B:'Ti','B#':'Ti♯',Bb:'Te'};
@@ -39,13 +44,16 @@ type Clef=keyof typeof CLEFS;
 type LegacyRange=keyof typeof LEGACY_RANGES;
 type PositionMode='all'|'lines'|'spaces';
 type NoteNameMode='letters'|'german'|'fixed-do-ti'|'fixed-do-si'|'fixed-chromatic'|'movable-major-do'|'movable-minor-la'|'scale-degrees';
+type NoteValue=typeof NOTE_VALUES[number]['value'];
 type NextQuestionMode='immediately'|'after-audio';
 type RangeSetting={min:number;max:number};
+type SettingsPane='main'|'clefs'|'positions'|'keys'|'note-values'|'note-names'|'note-filter'|'next'|'challenge'|`range:${Clef}`;
 type Settings={
  clefs:Clef[];
  ranges:Record<Clef,RangeSetting>;
  positions:PositionMode;
  keys:string[];
+ noteValues:NoteValue[];
  noteNames:NoteNameMode;
  helpers:boolean;
  accidentals:boolean;
@@ -57,7 +65,7 @@ type Settings={
  questionLimit:number;
  multiple:boolean;
 };
-type Question={clef:Clef;key:string;step:number;letter:string;octave:number;acc:string;written:string;midi:number;id:string};
+type Question={clef:Clef;key:string;step:number;letter:string;octave:number;acc:string;written:string;midi:number;noteValue:NoteValue;id:string};
 type RangeHandle='low'|'high';
 
 const DEFAULTS:Settings={
@@ -65,6 +73,7 @@ const DEFAULTS:Settings={
  ranges:{treble:{...DEFAULT_RANGES.treble},bass:{...DEFAULT_RANGES.bass},alto:{...DEFAULT_RANGES.alto},tenor:{...DEFAULT_RANGES.tenor}},
  positions:'all',
  keys:['C'],
+ noteValues:['whole'],
  noteNames:'letters',
  helpers:false,
  accidentals:false,
@@ -92,6 +101,7 @@ function audioContextCtor(){return window.AudioContext||(window as typeof window
 
 function tokenParts(token:string){const last=token.slice(-1);return{letter:token[0]||'C',acc:last==='#'||last==='b'?last:''}}
 function signatureLabel(key:string){const k=KEYS[key]||KEYS.C;if(!k.count)return'None';return`${k.count}${k.type==='b'?'♭':'♯'} · ${k.label}`}
+function noteValuesLabel(values:NoteValue[]){return values.map(v=>NOTE_VALUES.find(n=>n.value===v)?.label||v).join(', ')}
 function tokenPitchClass(token:string){const{letter,acc}=tokenParts(token);return mod(SEMITONES[letter]+(acc==='#'?1:acc==='b'?-1:0),12)}
 function degreeInfo(token:string,key:string){
  const tonic=KEY_TONICS[key]||KEY_TONICS.C,{letter}=tokenParts(token),degree=mod(LETTERS.indexOf(letter)-LETTERS.indexOf(tonic.letter),7),expected=mod(tonic.pc+MAJOR_STEPS[degree],12),actual=tokenPitchClass(token);
@@ -126,6 +136,7 @@ function migrateSettings(value:unknown):Settings{
  let noteFilter=Boolean(raw.noteFilter),noteFilterValues=Array.isArray(raw.noteFilterValues)?raw.noteFilterValues.filter(v=>NOTE_TOKENS.includes(v)):[];
  if(!noteFilterValues.length&&Array.isArray(raw.notes)&&raw.notes.length&&raw.notes.length<LETTERS.length){noteFilter=true;noteFilterValues=NOTE_TOKENS.filter(t=>raw.notes?.includes(t[0]))}
  if(!noteFilterValues.length)noteFilterValues=[...NOTE_TOKENS];
+ const noteValues=(Array.isArray(raw.noteValues)?raw.noteValues.filter((v):v is NoteValue=>v==='whole'||v==='half'||v==='quarter'):[]);if(!noteValues.length)noteValues.push('whole');
  let challengeMode=Boolean(raw.challengeMode),timeLimitMinutes=Math.max(0,Number(raw.timeLimitMinutes)||0),questionLimit=Math.max(0,Math.round(Number(raw.questionLimit)||0));
  if(typeof raw.challenge==='string'&&raw.challenge!=='off'){challengeMode=true;if(raw.challenge.startsWith('q'))questionLimit=Math.max(0,+raw.challenge.slice(1)||0);if(raw.challenge.startsWith('t'))timeLimitMinutes=Math.max(0,(+raw.challenge.slice(1)||0)/60)}
  const oldAcc=raw.accidentals as unknown,accidentals=typeof oldAcc==='boolean'?oldAcc:typeof oldAcc==='string'?oldAcc!=='off':DEFAULTS.accidentals;
@@ -133,31 +144,31 @@ function migrateSettings(value:unknown):Settings{
  return{
   ...DEFAULTS,...raw,clefs:[...new Set(clefs)],ranges,
   positions:raw.positions==='lines'||raw.positions==='spaces'?raw.positions:'all',
-  keys:[...new Set(keys)],noteNames:(raw.noteNames||'letters') as NoteNameMode,helpers:Boolean(raw.helpers),accidentals,noteFilter,noteFilterValues,
+  keys:[...new Set(keys)],noteValues:[...new Set(noteValues)],noteNames:(raw.noteNames||'letters') as NoteNameMode,helpers:Boolean(raw.helpers),accidentals,noteFilter,noteFilterValues,
   nextQuestion:raw.nextQuestion==='immediately'?'immediately':'after-audio',challengeMode,timeLimitMinutes,questionLimit,multiple:raw.multiple!==false
  };
 }
 
 export default function Exercise(){
  const [settings,setSettings]=useState<Settings>(DEFAULTS),[draft,setDraft]=useState<Settings>(DEFAULTS),[question,setQuestion]=useState<Question|null>(null),[wrong,setWrong]=useState(false),[wrongAnswers,setWrongAnswers]=useState<string[]>([]),[resolved,setResolved]=useState(false);
- const [correct,setCorrect]=useState(0),[questions,setQuestions]=useState(0),[streak,setStreak]=useState(0),[best,setBest]=useState(0),[started,setStarted]=useState(Date.now()),[now,setNow]=useState(Date.now()),[ended,setEnded]=useState(false),[settingsOpen,setSettingsOpen]=useState(false),[reportOpen,setReportOpen]=useState(false),[status,setStatus]=useState('What note is this?');
+ const [correct,setCorrect]=useState(0),[questions,setQuestions]=useState(0),[streak,setStreak]=useState(0),[best,setBest]=useState(0),[started,setStarted]=useState(Date.now()),[now,setNow]=useState(Date.now()),[ended,setEnded]=useState(false),[settingsOpen,setSettingsOpen]=useState(false),[settingsPane,setSettingsPane]=useState<SettingsPane>('main'),[reportOpen,setReportOpen]=useState(false),[status,setStatus]=useState('What note is this?');
  const lastId=useRef(''),autoTimer=useRef<ReturnType<typeof setTimeout>|null>(null),audioRef=useRef<HTMLAudioElement|null>(null),ctxRef=useRef<AudioContext|null>(null),sharpHeld=useRef(false),flatHeld=useRef(false);
  useEffect(()=>{try{const saved=localStorage.getItem('vio-exercise-settings');if(saved){const s=migrateSettings(JSON.parse(saved));setSettings(s);setDraft(s)}}catch{}},[]);
  useEffect(()=>{const id=setInterval(()=>setNow(Date.now()),250);return()=>clearInterval(id)},[]);
  const elapsed=now-started,timeLimitMs=settings.challengeMode&&settings.timeLimitMinutes>0?settings.timeLimitMinutes*60000:0,remaining=timeLimitMs?Math.max(0,timeLimitMs-elapsed):0,accuracy=questions?Math.round(correct/questions*100):null;
- const challengeLabel=useMemo(()=>{if(!settings.challengeMode)return'Practice';const bits:string[]=[];if(settings.timeLimitMinutes>0)bits.push(`${settings.timeLimitMinutes} min`);if(settings.questionLimit>0)bits.push(`${settings.questionLimit} questions`);return bits.length?bits.join(' · '):'Challenge'},[settings.challengeMode,settings.timeLimitMinutes,settings.questionLimit]);
+ const challengeLabel=useMemo(()=>{if(!settings.challengeMode)return'Off';const bits:string[]=[];if(settings.timeLimitMinutes>0)bits.push(`${settings.timeLimitMinutes} min`);if(settings.questionLimit>0)bits.push(`${settings.questionLimit} questions`);return bits.length?bits.join(' · '):'On'},[settings.challengeMode,settings.timeLimitMinutes,settings.questionLimit]);
  useEffect(()=>{if(ended||!settings.challengeMode)return;const timeDone=timeLimitMs>0&&remaining<=0,questionDone=settings.questionLimit>0&&questions>=settings.questionLimit;if(timeDone||questionDone){setEnded(true);setReportOpen(true);if(autoTimer.current)clearTimeout(autoTimer.current)}},[remaining,timeLimitMs,questions,settings.challengeMode,settings.questionLimit,ended]);
 
  const chooseAcc=useCallback((keyAcc:string)=>{if(!settings.accidentals)return{final:keyAcc,written:''};const final=rand(['','#','b']);return{final,written:final===keyAcc?'':(!final&&keyAcc?'n':final)}},[settings.accidentals]);
  const newQuestion=useCallback(()=>{
   if(autoTimer.current)clearTimeout(autoTimer.current);setResolved(false);setWrong(false);setWrongAnswers([]);setStatus('What note is this?');
-  const clef=rand<Clef>(settings.clefs.length?settings.clefs:['treble']),cfg=CLEFS[clef],range=settings.ranges[clef]||DEFAULTS.ranges[clef],key=rand<string>(settings.keys.length?settings.keys:['C']),sig=KEYS[key];
+  const clef=rand<Clef>(settings.clefs.length?settings.clefs:['treble']),cfg=CLEFS[clef],range=settings.ranges[clef]||DEFAULTS.ranges[clef],key=rand<string>(settings.keys.length?settings.keys:['C']),sig=KEYS[key],noteValue=rand<NoteValue>(settings.noteValues.length?settings.noteValues:['whole']);
   const minStep=14-cfg.bottom,maxStep=49-cfg.bottom;let q:Question|null=null;
   for(let i=0;i<420;i++){
    const step=minStep+Math.floor(Math.random()*(maxStep-minStep+1));if(settings.positions==='lines'&&mod(step,2)!==0)continue;if(settings.positions==='spaces'&&mod(step,2)===0)continue;
    const n=noteAt(cfg.bottom+step),a=chooseAcc(sig.acc[n.letter]||''),token=n.letter+a.final;if(settings.noteFilter&&!settings.noteFilterValues.includes(token))continue;
    const midi=midiFor(n.letter,n.octave,a.final);if(midi<range.min||midi>range.max||midi<AUDIO_MIN_MIDI||midi>AUDIO_MAX_MIDI)continue;
-   const id=`${clef}:${key}:${step}:${a.final}:${a.written}`;if(id===lastId.current&&i<360)continue;q={clef,key,step,letter:n.letter,octave:n.octave,acc:a.final,written:a.written,midi,id};break;
+   const id=`${clef}:${key}:${step}:${a.final}:${a.written}:${noteValue}`;if(id===lastId.current&&i<360)continue;q={clef,key,step,letter:n.letter,octave:n.octave,acc:a.final,written:a.written,midi,noteValue,id};break;
   }
   if(q){lastId.current=q.id;setQuestion(q)}else{setQuestion(null);setStatus('No notes match these settings. Adjust ranges, key signatures, accidentals, or Note Filter.')}
  },[settings,chooseAcc]);
@@ -173,13 +184,15 @@ export default function Exercise(){
  function answerToken(token:string){if(!question||resolved||ended)return;if(token===questionToken(question)){finishCorrect();return}setWrong(true);setStreak(0);setWrongAnswers(v=>v.includes(token)?v:[...v,token]);if(settings.multiple){setStatus('Try again');return}const nextQuestions=questions+1;setResolved(true);setQuestions(nextQuestions);setStatus(`Answer: ${correctDisplay(question)}`);void playTone();scheduleNext(nextQuestions)}
  function reveal(){if(!question||resolved||ended)return;setResolved(true);setWrong(true);setStreak(0);setQuestions(v=>v+1);setStatus(`Answer: ${correctDisplay(question)}`)}
  function skip(){if(!question||ended)return;if(!resolved)setQuestions(v=>v+1);setStreak(0);newQuestion()}
+ function openSettings(){setDraft(settings);setSettingsPane('main');setSettingsOpen(true)}
  function apply(){
   const ranges={...draft.ranges} as Record<Clef,RangeSetting>;for(const c of Object.keys(CLEFS) as Clef[])ranges[c]=normalizeRange(ranges[c],DEFAULTS.ranges[c]);
-  const s:Settings={...draft,clefs:draft.clefs.length?draft.clefs:['treble'],ranges,keys:draft.keys.length?draft.keys:['C'],noteFilterValues:draft.noteFilterValues.length?draft.noteFilterValues:[...NOTE_TOKENS],timeLimitMinutes:Math.max(0,Number(draft.timeLimitMinutes)||0),questionLimit:Math.max(0,Math.round(Number(draft.questionLimit)||0))};
-  setSettings(s);try{localStorage.setItem('vio-exercise-settings',JSON.stringify(s))}catch{}setSettingsOpen(false);setCorrect(0);setQuestions(0);setStreak(0);setBest(0);setStarted(Date.now());setNow(Date.now());setEnded(false)
+  const s:Settings={...draft,clefs:draft.clefs.length?draft.clefs:['treble'],ranges,keys:draft.keys.length?draft.keys:['C'],noteValues:draft.noteValues.length?draft.noteValues:['whole'],noteFilterValues:draft.noteFilterValues.length?draft.noteFilterValues:[...NOTE_TOKENS],timeLimitMinutes:Math.max(0,Number(draft.timeLimitMinutes)||0),questionLimit:Math.max(0,Math.round(Number(draft.questionLimit)||0))};
+  setSettings(s);try{localStorage.setItem('vio-exercise-settings',JSON.stringify(s))}catch{}setSettingsOpen(false);setSettingsPane('main');setCorrect(0);setQuestions(0);setStreak(0);setBest(0);setStarted(Date.now());setNow(Date.now());setEnded(false)
  }
  function toggleClef(c:Clef){setDraft(d=>{const on=d.clefs.includes(c);if(on&&d.clefs.length===1)return d;return{...d,clefs:on?d.clefs.filter(x=>x!==c):[...d.clefs,c]}})}
  function toggleKey(k:string){setDraft(d=>{const on=d.keys.includes(k);if(on&&d.keys.length===1)return d;return{...d,keys:on?d.keys.filter(x=>x!==k):[...d.keys,k]}})}
+ function toggleNoteValue(value:NoteValue){setDraft(d=>{const on=d.noteValues.includes(value);if(on&&d.noteValues.length===1)return d;return{...d,noteValues:on?d.noteValues.filter(v=>v!==value):[...d.noteValues,value]}})}
  function toggleFilter(token:string){setDraft(d=>({...d,noteFilterValues:d.noteFilterValues.includes(token)?d.noteFilterValues.filter(x=>x!==token):[...d.noteFilterValues,token]}))}
  function setDraftRange(clef:Clef,min:number,max:number){setDraft(d=>({...d,ranges:{...d.ranges,[clef]:{min,max}}}))}
 
@@ -200,24 +213,42 @@ export default function Exercise(){
  const currentRange=question?settings.ranges[question.clef]:settings.ranges[settings.clefs[0]||'treble'],rangeText=`${midiName(currentRange.min)}–${midiName(currentRange.max)}`;
  const helperSteps=settings.positions==='lines'?[0,2,4,6,8]:settings.positions==='spaces'?[1,3,5,7]:[0,1,2,3,4,5,6,7,8];
  const challengeProgress=settings.challengeMode?(settings.questionLimit>0?`${Math.min(questions,settings.questionLimit)}/${settings.questionLimit}`:settings.timeLimitMinutes>0?`${fmt(remaining)} remaining`:'Unlimited challenge'):'Unlimited practice';
+ const stemDown=!!question&&question.step>=4,stemX=stemDown?x-13:x+13,stemEnd=stemDown?y+38:y-38;
+ const paneClef=settingsPane.startsWith('range:')?settingsPane.slice(6) as Clef:null;
 
  return <section className="card exercise-app">
-  <header className="exercise-top"><div><p className="eyebrow">Sight reading</p><h1>Note Reading Exercise</h1></div><div className="top-actions"><button onClick={()=>setReportOpen(true)}>Report</button><button onClick={()=>{setDraft(settings);setSettingsOpen(true)}}>Settings</button></div></header>
+  <header className="exercise-top"><div><p className="eyebrow">Sight reading</p><h1>Note Reading Exercise</h1></div><div className="top-actions"><button onClick={()=>setReportOpen(true)}>Report</button><button onClick={openSettings}>Settings</button></div></header>
   <div className="stats"><div className="stat"><b>{correct}</b><span>Correct</span></div><div className="stat"><b>{questions}</b><span>Questions</span></div><div className="stat"><b>{accuracy===null?'—':`${accuracy}%`}</b><span>Accuracy</span></div><div className="stat"><b>{streak}</b><span>Streak</span></div><div className="stat"><b>{timeLimitMs?fmt(remaining):fmt(elapsed)}</b><span>Time</span></div></div>
-  <div className="exercise-work"><div className="practice"><div className="practice-head"><span>{cfg.label} · {question?signatureLabel(question.key):'None'} · {rangeText}</span><button className="soft-btn" onClick={playTone}>♪ Hear</button></div><div className="staff-stage"><svg viewBox={`0 ${viewTop} 780 ${viewHeight}`} aria-label="Note reading question"><rect x="44" y="64" width="706" height="164" rx="18" fill="#fff" stroke="#edf1f5"/>{[0,1,2,3,4].map(i=><line key={i} x1="70" y1={bottomY-i*20} x2="735" y2={bottomY-i*20} stroke="#39485b" strokeWidth="1.6"/>)}<text x="110" y={cfg.glyphY} fontSize={cfg.glyphSize} textAnchor="middle" fill="#233247">{cfg.glyph}</text>{sig.count>0&&sig.type&&KEY_STEPS[question?.clef||'treble'][sig.type].slice(0,sig.count).map((step,i)=><text key={i} x={174+i*22} y={bottomY-step*half+10} fontSize="28" textAnchor="middle" fill="#4a596e">{accidental(sig.type)}</text>)}{ledger.map(s=><line key={s} x1={x-31} y1={bottomY-s*half} x2={x+31} y2={bottomY-s*half} stroke="#39485b" strokeWidth="1.7"/>)}{question?.written&&<text x={x-42} y={y+12} fontSize="40" textAnchor="middle">{accidental(question.written)}</text>}{question&&<ellipse cx={x} cy={y} rx="15" ry="10" fill="#fff" stroke="#172437" strokeWidth="3.1" transform={`rotate(-13 ${x} ${y})`}/>} {settings.helpers&&question&&helperSteps.map(step=>{const n=noteAt(cfg.bottom+step),token=n.letter+(sig.acc[n.letter]||'');return <text key={`h${step}`} x="730" y={bottomY-step*half+4} textAnchor="end" className="exercise-helper-label">{answerLabel(token,settings.noteNames,question.key)}</text>})}</svg></div><div className="question-status">{status}</div><div className="answer-grid music-theory-answers">{answerRows.flatMap(row=>row.tokens.map(token=>{const correctId=question?questionToken(question):'';return <button key={token} disabled={resolved||!question} className={resolved&&token===correctId?'correct':wrongAnswers.includes(token)?'wrong':''} onClick={()=>answerToken(token)}>{answerLabel(token,settings.noteNames,question?.key||settings.keys[0]||'C')}</button>}))}</div><div className="exercise-actions"><button onClick={reveal}>Reveal</button><button onClick={resetSession}>Reset</button><button onClick={skip}>New question</button></div></div><aside className="exercise-side"><div className="side-card"><h3>Current setup</h3><div className="summary"><div><span>Clefs</span><b>{settings.clefs.map(c=>CLEFS[c].label).join(', ')}</b></div><div><span>Positions</span><b>{settings.positions==='all'?'Lines + spaces':settings.positions==='lines'?'Lines only':'Spaces only'}</b></div><div><span>Key signatures</span><b>{settings.keys.length>3?`${settings.keys.slice(0,2).map(signatureLabel).join(', ')} +${settings.keys.length-2}`:settings.keys.map(signatureLabel).join(', ')}</b></div><div><span>Note names</span><b>{NOTE_NAME_OPTIONS.find(o=>o.value===settings.noteNames)?.short||'Letters'}</b></div><div><span>Accidentals</span><b>{settings.accidentals?'On':'Off'}</b></div><div><span>Note filter</span><b>{settings.noteFilter?`${settings.noteFilterValues.length} notes`:'Off'}</b></div></div><button className="primary" style={{marginTop:10}} onClick={()=>{setDraft(settings);setSettingsOpen(true)}}>Customize</button></div><div className="side-card challenge"><h3>Challenge · {challengeLabel}</h3><p>{ended?'Finished':challengeProgress}</p></div></aside></div>
+  <div className="exercise-work"><div className="practice"><div className="practice-head"><span>{cfg.label} · {question?signatureLabel(question.key):'None'} · {rangeText}</span><button className="soft-btn" onClick={playTone}>♪ Hear</button></div><div className="staff-stage"><svg viewBox={`0 ${viewTop} 780 ${viewHeight}`} aria-label="Note reading question"><rect x="44" y="64" width="706" height="164" rx="18" fill="#fff" stroke="#edf1f5"/>{[0,1,2,3,4].map(i=><line key={i} x1="70" y1={bottomY-i*20} x2="735" y2={bottomY-i*20} stroke="#39485b" strokeWidth="1.6"/>)}<text x="110" y={cfg.glyphY} fontSize={cfg.glyphSize} textAnchor="middle" fill="#233247">{cfg.glyph}</text>{sig.count>0&&sig.type&&KEY_STEPS[question?.clef||'treble'][sig.type].slice(0,sig.count).map((step,i)=><text key={i} x={174+i*22} y={bottomY-step*half+10} fontSize="28" textAnchor="middle" fill="#4a596e">{accidental(sig.type)}</text>)}{ledger.map(s=><line key={s} x1={x-31} y1={bottomY-s*half} x2={x+31} y2={bottomY-s*half} stroke="#39485b" strokeWidth="1.7"/>)}{question?.written&&<text x={x-42} y={y+12} fontSize="40" textAnchor="middle">{accidental(question.written)}</text>}{question&&<><ellipse cx={x} cy={y} rx="15" ry="10" fill={question.noteValue==='quarter'?'#172437':'#fff'} stroke="#172437" strokeWidth="3.1" transform={`rotate(-13 ${x} ${y})`}/>{question.noteValue!=='whole'&&<line x1={stemX} y1={y} x2={stemX} y2={stemEnd} stroke="#172437" strokeWidth="3.1"/>}</>} {settings.helpers&&question&&helperSteps.map(step=>{const n=noteAt(cfg.bottom+step),token=n.letter+(sig.acc[n.letter]||'');return <text key={`h${step}`} x="730" y={bottomY-step*half+4} textAnchor="end" className="exercise-helper-label">{answerLabel(token,settings.noteNames,question.key)}</text>})}</svg></div><div className="question-status">{status}</div><div className="answer-grid music-theory-answers">{answerRows.flatMap(row=>row.tokens.map(token=>{const correctId=question?questionToken(question):'';return <button key={token} disabled={resolved||!question} className={resolved&&token===correctId?'correct':wrongAnswers.includes(token)?'wrong':''} onClick={()=>answerToken(token)}>{answerLabel(token,settings.noteNames,question?.key||settings.keys[0]||'C')}</button>}))}</div><div className="exercise-actions"><button onClick={reveal}>Reveal</button><button onClick={resetSession}>Reset</button><button onClick={skip}>New question</button></div></div><aside className="exercise-side"><div className="side-card"><h3>Current setup</h3><div className="summary"><div><span>Clefs</span><b>{settings.clefs.map(c=>CLEFS[c].label).join(', ')}</b></div><div><span>Positions</span><b>{settings.positions==='all'?'Lines and Spaces':settings.positions==='lines'?'Lines Only':'Spaces Only'}</b></div><div><span>Key signatures</span><b>{settings.keys.length>3?`${settings.keys.slice(0,2).map(signatureLabel).join(', ')} +${settings.keys.length-2}`:settings.keys.map(signatureLabel).join(', ')}</b></div><div><span>Note values</span><b>{noteValuesLabel(settings.noteValues)}</b></div><div><span>Note names</span><b>{NOTE_NAME_OPTIONS.find(o=>o.value===settings.noteNames)?.short||'Letters'}</b></div><div><span>Accidentals</span><b>{settings.accidentals?'On':'Off'}</b></div><div><span>Note filter</span><b>{settings.noteFilter?`${settings.noteFilterValues.length} notes`:'Off'}</b></div></div><button className="primary" style={{marginTop:10}} onClick={openSettings}>Customize</button></div><div className="side-card challenge"><h3>Challenge · {challengeLabel}</h3><p>{ended?'Finished':challengeProgress}</p></div></aside></div>
 
-  {settingsOpen&&<div className="drawer-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><div className="drawer exercise-settings-drawer"><div className="drawer-head"><div><h2>Exercise settings</h2><p>Note Identification settings</p></div><button onClick={()=>setSettingsOpen(false)}>×</button></div>
-   <SettingGroup label="Clefs"><p className="settings-help">Select one or more clefs.</p><div className="check-grid">{(Object.keys(CLEFS) as Clef[]).map(c=><button key={c} className={draft.clefs.includes(c)?'active':''} onClick={()=>toggleClef(c)}>{CLEFS[c].label}</button>)}</div></SettingGroup>
-   <SettingGroup label="Range"><div className="range-stack">{draft.clefs.map(c=><div key={c} className="range-block"><div className="range-block-title"><b>{CLEFS[c].label} Range</b><span>{midiName(draft.ranges[c].min)}–{midiName(draft.ranges[c].max)}</span></div><StaffRangePicker clef={c} low={draft.ranges[c].min} high={draft.ranges[c].max} onChange={(min,max)=>setDraftRange(c,min,max)}/></div>)}</div></SettingGroup>
-   <SettingGroup label="Positions"><div className="seg three"><button className={draft.positions==='all'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'all'}))}>Lines + spaces</button><button className={draft.positions==='lines'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'lines'}))}>Lines only</button><button className={draft.positions==='spaces'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'spaces'}))}>Spaces only</button></div></SettingGroup>
-   <SettingGroup label="Key Signatures"><p className="settings-help">Select any combination of signatures.</p><div className="key-signature-grid">{KEY_ORDER.map(k=><button key={k} className={draft.keys.includes(k)?'active':''} onClick={()=>toggleKey(k)}><b>{KEYS[k].count?`${KEYS[k].count}${KEYS[k].type==='b'?'♭':'♯'}`:'None'}</b><small>{KEYS[k].label}</small></button>)}</div></SettingGroup>
-   <SettingGroup label="Note Names"><select value={draft.noteNames} onChange={e=>setDraft(d=>({...d,noteNames:e.target.value as NoteNameMode}))}>{NOTE_NAME_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingGroup>
-   <SettingGroup label="Helpers"><label className="toggle"><span>Show note-name helpers on the staff</span><input type="checkbox" checked={draft.helpers} onChange={e=>setDraft(d=>({...d,helpers:e.target.checked}))}/></label></SettingGroup>
-   <SettingGroup label="Accidentals"><label className="toggle"><span>Add naturals, sharps, and flats to questions</span><input type="checkbox" checked={draft.accidentals} onChange={e=>setDraft(d=>({...d,accidentals:e.target.checked}))}/></label></SettingGroup>
-   <SettingGroup label="Note Filter"><label className="toggle"><span>Limit questions and answer buttons to selected notes</span><input type="checkbox" checked={draft.noteFilter} onChange={e=>setDraft(d=>({...d,noteFilter:e.target.checked}))}/></label>{draft.noteFilter&&<div className="note-filter-grid">{['#','','b'].map(acc=><div key={acc||'n'} className="note-filter-row"><span>{acc==='#'?'Sharps':acc==='b'?'Flats':'Naturals'}</span><div>{NOTE_TOKENS.filter(t=>tokenParts(t).acc===acc).map(t=><button key={t} className={draft.noteFilterValues.includes(t)?'active':''} onClick={()=>toggleFilter(t)}>{t[0]}{accidental(acc)}</button>)}</div></div>)}</div>}</SettingGroup>
-   <SettingGroup label="Next Question"><div className="seg two"><button className={draft.nextQuestion==='immediately'?'active':''} onClick={()=>setDraft(d=>({...d,nextQuestion:'immediately'}))}>Immediately</button><button className={draft.nextQuestion==='after-audio'?'active':''} onClick={()=>setDraft(d=>({...d,nextQuestion:'after-audio'}))}>After audio</button></div></SettingGroup>
-   <SettingGroup label="Challenge Mode"><label className="toggle"><span>Challenge Mode</span><input type="checkbox" checked={draft.challengeMode} onChange={e=>setDraft(d=>({...d,challengeMode:e.target.checked}))}/></label>{draft.challengeMode&&<div className="challenge-settings-grid"><label><span>Time limit</span><div><input type="number" min="0" max="120" step="1" value={draft.timeLimitMinutes} onChange={e=>setDraft(d=>({...d,timeLimitMinutes:Math.max(0,+e.target.value||0)}))}/><small>minutes · 0 = Off</small></div></label><label><span>Question limit</span><div><input type="number" min="0" max="500" step="1" value={draft.questionLimit} onChange={e=>setDraft(d=>({...d,questionLimit:Math.max(0,Math.round(+e.target.value||0))}))}/><small>questions · 0 = Off</small></div></label><label className="toggle"><span>Multiple attempts</span><input type="checkbox" checked={draft.multiple} onChange={e=>setDraft(d=>({...d,multiple:e.target.checked}))}/></label></div>}</SettingGroup>
-   <button className="primary" style={{marginTop:14}} onClick={apply}>Apply</button>
+  {settingsOpen&&<div className="drawer-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><div className="drawer exercise-settings-drawer">
+   <div className="drawer-head"><div>{settingsPane!=='main'&&<button className="settings-back" onClick={()=>setSettingsPane('main')}>‹</button>}<div><h2>{settingsPane==='main'?'Settings':settingsPane==='clefs'?'Clefs':paneClef?`${CLEFS[paneClef].label} Range`:settingsPane==='positions'?'Positions':settingsPane==='keys'?'Key Signatures':settingsPane==='note-values'?'Note Values':settingsPane==='note-names'?'Note Names':settingsPane==='note-filter'?'Note Filter':settingsPane==='next'?'Next Question':'Challenge Mode'}</h2><p>Note Identification</p></div></div><button onClick={()=>setSettingsOpen(false)}>×</button></div>
+
+   {settingsPane==='main'&&<div className="mt-settings-list">
+    <SettingsMenuRow label="Clefs" value={draft.clefs.map(c=>CLEFS[c].label).join(', ')} preview={<span className="mt-clef-preview">{draft.clefs.map(c=>CLEFS[c].glyph).join(' ')}</span>} onClick={()=>setSettingsPane('clefs')}/>
+    {draft.clefs.map(c=><SettingsMenuRow key={c} label={`${CLEFS[c].label} Range`} value={`${midiName(draft.ranges[c].min)} – ${midiName(draft.ranges[c].max)}`} onClick={()=>setSettingsPane(`range:${c}`)}/>) }
+    <SettingsMenuRow label="Positions" value={draft.positions==='all'?'Lines and Spaces':draft.positions==='lines'?'Lines Only':'Spaces Only'} onClick={()=>setSettingsPane('positions')}/>
+    <SettingsMenuRow label="Key Signatures" value={draft.keys.length===1?signatureLabel(draft.keys[0]):`${draft.keys.length} selected`} onClick={()=>setSettingsPane('keys')}/>
+    <SettingsMenuRow label="Note Values" value={noteValuesLabel(draft.noteValues)} preview={<span className="mt-note-value-preview">{draft.noteValues.map(v=>NOTE_VALUES.find(n=>n.value===v)?.symbol).join(' ')}</span>} onClick={()=>setSettingsPane('note-values')}/>
+    <SettingsMenuRow label="Note Names" value={NOTE_NAME_OPTIONS.find(o=>o.value===draft.noteNames)?.short||'Letters'} onClick={()=>setSettingsPane('note-names')}/>
+    <SettingsToggleRow label="Helpers" checked={draft.helpers} onChange={checked=>setDraft(d=>({...d,helpers:checked}))}/>
+    <SettingsToggleRow label="Accidentals" checked={draft.accidentals} onChange={checked=>setDraft(d=>({...d,accidentals:checked}))}/>
+    <SettingsToggleRow label="Note Filter" checked={draft.noteFilter} onChange={checked=>setDraft(d=>({...d,noteFilter:checked}))}/>
+    {draft.noteFilter&&<SettingsMenuRow label="Filtered Notes" value={`${draft.noteFilterValues.length} selected`} onClick={()=>setSettingsPane('note-filter')}/>} 
+    <SettingsMenuRow label="Next Question" value={draft.nextQuestion==='after-audio'?'After Audio':'Immediately'} onClick={()=>setSettingsPane('next')}/>
+    <SettingsMenuRow label="Challenge Mode" value={draft.challengeMode?'On':'Off'} onClick={()=>setSettingsPane('challenge')}/>
+    <button className="primary mt-settings-apply" onClick={apply}>Apply</button>
+   </div>}
+
+   {settingsPane==='clefs'&&<SettingGroup label="Select Clefs"><div className="check-grid">{(Object.keys(CLEFS) as Clef[]).map(c=><button key={c} className={draft.clefs.includes(c)?'active':''} onClick={()=>toggleClef(c)}>{CLEFS[c].label}</button>)}</div></SettingGroup>}
+   {paneClef&&<SettingGroup label={`${CLEFS[paneClef].label} Range`}><StaffRangePicker clef={paneClef} low={draft.ranges[paneClef].min} high={draft.ranges[paneClef].max} onChange={(min,max)=>setDraftRange(paneClef,min,max)}/></SettingGroup>}
+   {settingsPane==='positions'&&<SettingGroup label="Positions"><div className="seg three"><button className={draft.positions==='all'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'all'}))}>Lines and Spaces</button><button className={draft.positions==='lines'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'lines'}))}>Lines Only</button><button className={draft.positions==='spaces'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'spaces'}))}>Spaces Only</button></div></SettingGroup>}
+   {settingsPane==='keys'&&<SettingGroup label="Key Signatures"><div className="key-signature-grid">{KEY_ORDER.map(k=><button key={k} className={draft.keys.includes(k)?'active':''} onClick={()=>toggleKey(k)}><b>{KEYS[k].count?`${KEYS[k].count}${KEYS[k].type==='b'?'♭':'♯'}`:'None'}</b><small>{KEYS[k].label}</small></button>)}</div></SettingGroup>}
+   {settingsPane==='note-values'&&<SettingGroup label="Note Values"><div className="note-values-grid">{NOTE_VALUES.map(item=><button key={item.value} className={draft.noteValues.includes(item.value)?'active':''} onClick={()=>toggleNoteValue(item.value)}><b>{item.symbol}</b><span>{item.label}</span></button>)}</div><p className="settings-help">Whole, half, and quarter notes change the written note shape only; the pitch-identification task stays the same.</p></SettingGroup>}
+   {settingsPane==='note-names'&&<SettingGroup label="Note Names"><select value={draft.noteNames} onChange={e=>setDraft(d=>({...d,noteNames:e.target.value as NoteNameMode}))}>{NOTE_NAME_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingGroup>}
+   {settingsPane==='note-filter'&&<SettingGroup label="Note Filter"><div className="note-filter-grid">{['#','','b'].map(acc=><div key={acc||'n'} className="note-filter-row"><span>{acc==='#'?'Sharps':acc==='b'?'Flats':'Naturals'}</span><div>{NOTE_TOKENS.filter(t=>tokenParts(t).acc===acc).map(t=><button key={t} className={draft.noteFilterValues.includes(t)?'active':''} onClick={()=>toggleFilter(t)}>{t[0]}{accidental(acc)}</button>)}</div></div>)}</div></SettingGroup>}
+   {settingsPane==='next'&&<SettingGroup label="Next Question"><div className="seg two"><button className={draft.nextQuestion==='immediately'?'active':''} onClick={()=>setDraft(d=>({...d,nextQuestion:'immediately'}))}>Immediately</button><button className={draft.nextQuestion==='after-audio'?'active':''} onClick={()=>setDraft(d=>({...d,nextQuestion:'after-audio'}))}>After Audio</button></div></SettingGroup>}
+   {settingsPane==='challenge'&&<SettingGroup label="Challenge Mode"><div className="seg two"><button className={!draft.challengeMode?'active':''} onClick={()=>setDraft(d=>({...d,challengeMode:false}))}>Off</button><button className={draft.challengeMode?'active':''} onClick={()=>setDraft(d=>({...d,challengeMode:true}))}>On</button></div>{draft.challengeMode&&<div className="challenge-settings-grid"><label><span>Time Limit</span><div><input type="number" min="0" max="120" step="1" value={draft.timeLimitMinutes} onChange={e=>setDraft(d=>({...d,timeLimitMinutes:Math.max(0,+e.target.value||0)}))}/><small>minutes · 0 = Off</small></div></label><label><span>Question Limit</span><div><input type="number" min="0" max="500" step="1" value={draft.questionLimit} onChange={e=>setDraft(d=>({...d,questionLimit:Math.max(0,Math.round(+e.target.value||0))}))}/><small>questions · 0 = Off</small></div></label><label className="toggle"><span>Multiple Attempts</span><input type="checkbox" checked={draft.multiple} onChange={e=>setDraft(d=>({...d,multiple:e.target.checked}))}/></label></div>}</SettingGroup>}
   </div></div>}
 
   {reportOpen&&<div className="report-modal" onMouseDown={e=>{if(e.target===e.currentTarget)setReportOpen(false)}}><div className="report-card"><h2>Progress report</h2><div className="report-grid"><div><b>{correct}</b><span>Correct</span></div><div><b>{questions}</b><span>Questions</span></div><div><b>{accuracy===null?'—':`${accuracy}%`}</b><span>Accuracy</span></div><div><b>{best}</b><span>Best streak</span></div><div><b>{fmt(elapsed)}</b><span>Elapsed</span></div><div><b>{challengeLabel}</b><span>Mode</span></div></div><div className="actions"><button className="soft-btn" onClick={()=>setReportOpen(false)}>Close</button><button className="primary" onClick={()=>{setReportOpen(false);resetSession()}}>Reset</button></div></div></div>}
@@ -235,6 +266,8 @@ const NOTE_NAME_OPTIONS:{value:NoteNameMode;label:string;short:string}[]=[
  {value:'scale-degrees',label:'Scale Degrees',short:'Scale Degrees'}
 ];
 
+function SettingsMenuRow({label,value,preview,onClick}:{label:string;value?:string;preview?:ReactNode;onClick:()=>void}){return <button className="mt-setting-row" onClick={onClick}><span className="mt-setting-label">{label}</span><span className="mt-setting-right">{preview||<span className="mt-setting-value">{value}</span>}<i>›</i></span></button>}
+function SettingsToggleRow({label,checked,onChange}:{label:string;checked:boolean;onChange:(checked:boolean)=>void}){return <label className="mt-setting-row mt-toggle-row"><span className="mt-setting-label">{label}</span><input type="checkbox" checked={checked} onChange={e=>onChange(e.target.checked)}/></label>}
 function ledgerSteps(step:number){const out:number[]=[];if(step<0)for(let s=-2;s>=step-(step%2!==0?1:0);s-=2)out.push(s);if(step>8)for(let s=10;s<=step+(step%2!==0?1:0);s+=2)out.push(s);return out}
 function StaffRangePicker({clef,low,high,onChange}:{clef:Clef;low:number;high:number;onChange:(low:number,high:number)=>void}){
  const svgRef=useRef<SVGSVGElement|null>(null),dragRef=useRef<RangeHandle|null>(null),cfg=CLEFS[clef];

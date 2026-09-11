@@ -33,9 +33,7 @@ function localMin(values:ArrayLike<number>,center:number,radius:number,min:numbe
   }
   return best;
 }
-function tail(samples:Float32Array,size:number){
-  return samples.subarray(Math.max(0,samples.length-size));
-}
+function tail(samples:Float32Array,size:number){return samples.subarray(Math.max(0,samples.length-size))}
 function downsample2(samples:Float32Array){
   const length=Math.floor(samples.length/2);
   if(lowDecimated.length!==length)lowDecimated=new Float32Array(length);
@@ -44,9 +42,30 @@ function downsample2(samples:Float32Array){
 }
 
 /**
- * Low-allocation YIN/NSDF period estimator. minFreq/maxFreq are intentionally
- * supplied per analysis band by detectPitch(), so the same primitive can work
- * from C1 through G7 without teaching it any instrument/string-specific notes.
+ * Reduce an accidentally selected repeated period to its primitive period.
+ * A high note repeats perfectly after 2x, 3x ... N times its true period, so
+ * a broad detector can otherwise report an artificial low subharmonic. We
+ * only divide when the shorter period is itself an almost-equally clean
+ * periodic match. This is instrument-agnostic and preserves genuine bass
+ * fundamentals whose full waveform does not repeat at the shorter divisor.
+ */
+function primitivePeriod(cmnd:ArrayLike<number>,corr:ArrayLike<number>,period:number,minTau:number,maxTau:number){
+  let best=period;
+  for(let divisor=12;divisor>=2;divisor--){
+    const center=period/divisor;if(center<=minTau+1)continue;
+    const candidate=localMin(cmnd,center,Math.max(2,center*.08),minTau,maxTau);if(candidate<0)continue;
+    const comparable=cmnd[candidate]<=cmnd[period]*1.55+.008&&corr[candidate]>=corr[period]-.045;
+    const stronglyPeriodic=cmnd[candidate]<=.11&&corr[candidate]>=.87;
+    if(comparable&&stronglyPeriodic){best=candidate;break}
+  }
+  return best;
+}
+
+/**
+ * Low-allocation YIN/NSDF period estimator. The search itself is always given
+ * the widest physically useful pitch range by detectPitch(). Different time
+ * resolutions are used for low/mid/high responsiveness instead of artificial
+ * upper band ceilings, which avoids creating fake 1/N subharmonics.
  */
 function detectCore(samples:Float32Array,sampleRate:number,minFreq:number,maxFreq:number,threshold=.12,source:PitchSource='hybrid'):PitchResult{
   const n=samples.length;if(n<256||!Number.isFinite(sampleRate)||sampleRate<=0||maxFreq<=minFreq)return null;
@@ -95,16 +114,17 @@ function detectCore(samples:Float32Array,sampleRate:number,minFreq:number,maxFre
     if(primary<0)primary=global;
   }
 
-  let period=primary;
+  let period=primitivePeriod(cmnd,corr,primary,minTau,maxTau);
 
-  // Resolve the common one-octave ambiguity inside each band. Cross-band
-  // consensus below handles larger harmonic mistakes without biasing low/high.
-  if(period*2<=maxTau){
-    const doubled=localMin(cmnd,period*2,Math.max(2,period*.10),minTau,maxTau);
-    if(doubled>0&&cmnd[doubled]<cmnd[period]*.74&&corr[doubled]>corr[period]+.045)period=doubled;
+  // If a dominant harmonic was selected too high, allow a longer true period
+  // only when the longer waveform repeat is materially cleaner.
+  let bestLong=period;
+  for(let multiple=2;multiple<=4;multiple++){
+    if(period*multiple>maxTau)break;
+    const candidate=localMin(cmnd,period*multiple,Math.max(2,period*.10),minTau,maxTau);if(candidate<0)continue;
+    if(cmnd[candidate]<cmnd[bestLong]*.72&&corr[candidate]>corr[bestLong]+.045)bestLong=candidate;
   }
-  const halved=localMin(cmnd,period/2,Math.max(2,period*.05),minTau,maxTau);
-  if(halved>0&&cmnd[halved]<=cmnd[period]*1.38+.006&&cmnd[halved]<=.16&&corr[halved]>=corr[period]-.065)period=halved;
+  period=bestLong;
 
   const refined=parabolic(cmnd,period),frequency=sampleRate/refined;
   if(!Number.isFinite(frequency)||frequency<minFreq||frequency>maxFreq)return null;
@@ -122,7 +142,13 @@ function clusterCenter(items:Candidate[]){
 function clusterScore(items:Candidate[]){
   let score=0;
   for(const c of items)score+=c.weight*(.40+.60*c.clarity);
+  if(items.length>1)score+=Math.min(.35,(items.length-1)*.10);
   return score;
+}
+function hasResolution(items:Candidate[],...names:string[]){return items.some(c=>names.includes(c.band))}
+function harmonicRatio(a:number,b:number){
+  const hi=Math.max(a,b),lo=Math.min(a,b),ratio=hi/lo,nearest=Math.round(ratio);
+  return nearest>=2&&nearest<=12&&Math.abs(1200*Math.log2(ratio/nearest))<=42?nearest:0;
 }
 function fuseCandidates(candidates:Candidate[]):PitchResult{
   if(!candidates.length)return null;
@@ -139,19 +165,32 @@ function fuseCandidates(candidates:Candidate[]):PitchResult{
   }
 
   clusters.sort((a,b)=>clusterScore(b.items)-clusterScore(a.items));
-  const winner=clusters[0],frequency=clusterCenter(winner.items);
-  let qualityWeight=0,qualityTotal=0;
-  for(const c of winner.items){const w=c.weight;qualityTotal+=c.clarity*w;qualityWeight+=w}
+  let winner=clusters[0];
+
+  // Resolution-aware harmonic arbitration. A low fundamental supported by the
+  // long/full windows beats short-window harmonics. Conversely, a lone low
+  // subharmonic cannot beat a higher pitch independently confirmed by two
+  // faster windows. This is based on temporal evidence, never instrument type.
+  for(const other of clusters.slice(1)){
+    const wf=clusterCenter(winner.items),of=clusterCenter(other.items),ratio=harmonicRatio(wf,of);if(!ratio)continue;
+    const low=wf<of?winner:other,high=wf<of?other:winner;
+    const lowLong=hasResolution(low.items,'long','full'),highLong=hasResolution(high.items,'long','full');
+    const lowScore=clusterScore(low.items),highScore=clusterScore(high.items);
+    if(lowLong&&low.items.length>=2&&(!highLong||lowScore>=highScore*.78)){winner=low;continue}
+    if(low.items.length===1&&!lowLong&&high.items.length>=2){winner=high;continue}
+    if(low.items.length===1&&highLong&&high.items.length>=2&&highScore>lowScore*1.15){winner=high}
+  }
+
+  const frequency=clusterCenter(winner.items);let qualityWeight=0,qualityTotal=0;
+  for(const c of winner.items){qualityTotal+=c.clarity*c.weight;qualityWeight+=c.weight}
   const baseQuality=qualityWeight?qualityTotal/qualityWeight:0;
-  const supportBonus=Math.min(.18,Math.max(0,winner.items.length-1)*.07);
-  const clarity=clamp01(baseQuality+supportBonus);
-  return {frequency,clarity,source:'multi'};
+  const supportBonus=Math.min(.20,Math.max(0,winner.items.length-1)*.06);
+  return {frequency,clarity:clamp01(baseQuality+supportBonus),source:'multi'};
 }
 
 export function detectYin(samples:Float32Array,sampleRate:number,minFreq=31.77,maxFreq=3227.85,threshold=.10):PitchResult{
   return detectCore(samples,sampleRate,minFreq,maxFreq,threshold,'yin');
 }
-
 export function detectAutocorrelation(samples:Float32Array,sampleRate:number,minFreq=31.77,maxFreq=3227.85):PitchResult{
   return detectCore(samples,sampleRate,minFreq,maxFreq,.12,'acf');
 }
@@ -159,32 +198,29 @@ export function detectAutocorrelation(samples:Float32Array,sampleRate:number,min
 /**
  * Full-range universal detector.
  *
- * A single analysis window cannot be equally optimal for a ~33 Hz bass note
- * and a >3 kHz violin/flute/piano note. We therefore analyse overlapping
- * low/mid/high bands at different time resolutions and choose the frequency
- * supported by the strongest cross-band consensus.
- *
- * - Low: downsampled long window for C1/E1/bass fundamentals.
- * - Mid: medium window for guitar/voice/piano middle register.
- * - High: short window for upper strings/keys/winds.
- * - Upper/top: extra short constrained windows that prevent a high note from
- *   collapsing to a 1/2, 1/3 or 1/4 subharmonic.
+ * Every resolution is allowed to see the real upper pitch. Long windows give
+ * bass notes enough cycles; short windows make high notes fast and stable.
+ * Critically, no low-resolution pass is capped at e.g. 350 Hz, so a D4 cannot
+ * be forced into a fake C1/C2-style subharmonic merely because D4 is outside
+ * that pass's search range.
  */
 export function detectPitch(samples:Float32Array,sampleRate:number,minFreq=31.77,maxFreq=3227.85):PitchResult{
   if(samples.length<1024||!Number.isFinite(sampleRate)||sampleRate<=0)return null;
   const candidates:Candidate[]=[];
-  const add=(band:string,frame:Float32Array,rate:number,min:number,max:number,weight:number,threshold:number)=>{
-    if(max<=min)return;
-    const result=detectCore(frame,rate,min,max,threshold,'hybrid');
+  const add=(band:string,frame:Float32Array,rate:number,min:number,weight:number,threshold:number)=>{
+    const effectiveMin=Math.max(minFreq,min);if(maxFreq<=effectiveMin)return;
+    const result=detectCore(frame,rate,effectiveMin,maxFreq,threshold,'hybrid');
     if(result)candidates.push({frequency:result.frequency,clarity:result.clarity,weight,band});
   };
 
-  const low=downsample2(samples);
-  add('low',low,sampleRate/2,minFreq,Math.min(maxFreq,350),1.15,.12);
-  add('mid',tail(samples,4096),sampleRate,Math.max(minFreq,70),Math.min(maxFreq,900),1.10,.12);
-  add('high',tail(samples,2048),sampleRate,Math.max(minFreq,250),Math.min(maxFreq,1800),1.05,.13);
-  add('upper',tail(samples,1536),sampleRate,Math.max(minFreq,800),maxFreq,1.00,.15);
-  add('top',tail(samples,1024),sampleRate,Math.max(minFreq,1600),maxFreq,1.00,.18);
+  // Long downsampled view: ~5+ cycles even around C1 at 48 kHz input.
+  add('long',downsample2(samples),sampleRate/2,minFreq,1.45,.105);
+  // Full-rate medium view: accurate cents throughout the normal instrument range.
+  add('full',tail(samples,4096),sampleRate,minFreq,1.25,.11);
+  // Faster views cannot physically resolve the very lowest fundamentals, so
+  // their minimum is raised; their maximum is never lowered.
+  add('short',tail(samples,2048),sampleRate,60,.90,.125);
+  add('fast',tail(samples,1024),sampleRate,180,.65,.15);
 
   return fuseCandidates(candidates);
 }

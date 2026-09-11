@@ -222,7 +222,7 @@ export default function SoundTuner(){
   const inTune=cents!==null&&Math.abs(cents)<=3;
   const color=cents===null?'#94a3b8':inTune?'#0d9488':cents<0?'#d97706':'#dc2626';
   const activeRange=frequency?noteFromFrequencyRange(frequency,a4):null;
-  const activePitchClass=activeRange?activeRange.midi%12:null;
+  const activeMidi=activeRange?activeRange.midi:null;
 
   return <>
     <div className="page-head"><div><p className="eyebrow">Universal chromatic tuner</p><h1>Sound Tuner</h1><p>McLeod Pitch Method tracks the live fundamental from C1 to G7. GuitarTuner-style FFT/HPS runs as a harmonic and octave cross-check instead of deciding the note by itself.</p></div><div className="badge">Mic → McLeod + HPS check → note → cents</div></div>
@@ -235,7 +235,7 @@ export default function SoundTuner(){
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
             <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?(micLevel>2?'Sound detected · identifying the fundamental':'Play a clear steady tone'):inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
-          <div className="target-row">{OPEN_STRINGS.map((midi,i)=><span className={`target-chip ${activePitchClass===midi%12?'active':''}`} key={midi}>{OPEN_LABELS[i]} · {midiFrequency(midi,a4).toFixed(1)} Hz</span>)}</div>
+          <div className="target-row">{OPEN_STRINGS.map((midi,i)=><span className={`target-chip ${activeMidi===midi?'active':''}`} key={midi}>{OPEN_LABELS[i]} · {midiFrequency(midi,a4).toFixed(1)} Hz</span>)}</div>
         </main>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>{setA4(+e.target.value);historyRef.current=[];lockedMidiRef.current=null;pendingMidiRef.current=null;pendingCountRef.current=0;smoothedFrequencyRef.current=null;hasCentsSmoothRef.current=false}}/><div className="seg three"><button onClick={()=>{setA4(415);resetPitchSmoothing();lockedMidiRef.current=null}} className={a4===415?'active':''}>415</button><button onClick={()=>{setA4(440);resetPitchSmoothing();lockedMidiRef.current=null}} className={a4===440?'active':''}>440</button><button onClick={()=>{setA4(442);resetPitchSmoothing();lockedMidiRef.current=null}} className={a4===442?'active':''}>442</button></div></div>

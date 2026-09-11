@@ -18,6 +18,8 @@ const STRONG_CLARITY=.76;
 const NOISE_MARGIN=2.15;
 const CLEAR_AFTER_MISSES=12;
 const CENTS_DEADBAND=.22;
+const LOW_OCTAVE_VERIFY_MAX_HZ=400;
+const HPS_EVIDENCE_MAX_AGE_MS=1400;
 
 function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
@@ -28,6 +30,7 @@ function centsApart(a:number,b:number){return Math.abs(1200*Math.log2(a/b))}
 type HpsWorkerResult={frequency:number;clarity:number;source:'hps'|'direct';hpsFrequency?:number;directFrequency?:number;octaveCorrected?:boolean};
 type HpsWorkerMessage={id:number;result?:HpsWorkerResult|null;error?:string};
 type PitchEvidence={frequency:number;clarity:number;at:number};
+type HpsEvidence={result:HpsWorkerResult;at:number};
 
 export default function SoundTuner(){
   const [a4,setA4]=useState(440);
@@ -46,7 +49,7 @@ export default function SoundTuner(){
   const captureRef=useRef(new Float32Array(HPS_BUFFER_SIZE)),captureWriteRef=useRef(0),captureCountRef=useRef(0);
   const rafRef=useRef(0),lastRef=useRef(0),missRef=useRef(0),historyRef=useRef<number[]>([]),pendingMidiRef=useRef<number|null>(null),pendingCountRef=useRef(0),lockedMidiRef=useRef<number|null>(null),lastStatusRef=useRef('');
   const noiseFloorRef=useRef(.00032),smoothedCentsRef=useRef(0),hasCentsSmoothRef=useRef(false),smoothedFrequencyRef=useRef<number|null>(null),a4Ref=useRef(440);
-  const workerRef=useRef<Worker|null>(null),workerBusyRef=useRef(false),workerSeqRef=useRef(0),latestMpmRef=useRef<PitchEvidence|null>(null);
+  const workerRef=useRef<Worker|null>(null),workerBusyRef=useRef(false),workerSeqRef=useRef(0),latestMpmRef=useRef<PitchEvidence|null>(null),latestHpsRef=useRef<HpsEvidence|null>(null);
   const mpmDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
@@ -93,7 +96,7 @@ export default function SoundTuner(){
     const alpha=Math.abs(delta)>12?.46:Math.abs(delta)>5?.31:.20;smoothedCentsRef.current+=delta*alpha;return smoothedCentsRef.current;
   }
   function resetPitchSmoothing(){historyRef.current=[];smoothedFrequencyRef.current=null;hasCentsSmoothRef.current=false}
-  function clearPitch(){setNote('—');setFrequency(null);setCents(null);setClarity(0);pendingMidiRef.current=null;pendingCountRef.current=0;lockedMidiRef.current=null;latestMpmRef.current=null;resetPitchSmoothing()}
+  function clearPitch(){setNote('—');setFrequency(null);setCents(null);setClarity(0);pendingMidiRef.current=null;pendingCountRef.current=0;lockedMidiRef.current=null;latestMpmRef.current=null;latestHpsRef.current=null;resetPitchSmoothing()}
   function resetReading(){clearPitch();setMicLevel(0);missRef.current=0;noiseFloorRef.current=.00032;resetCapture()}
   function setLiveStatus(text:string){if(lastStatusRef.current===text)return;lastStatusRef.current=text;setStatus(text)}
   function stopReference(){if(audioRef.current){audioRef.current.pause();audioRef.current.src='';audioRef.current=null}try{oscRef.current?.stop()}catch{}oscRef.current=null;gainRef.current=null;setActiveRef(null)}
@@ -121,31 +124,34 @@ export default function SoundTuner(){
     const softCents=smoothCents(mapped.cents);setNote(mapped.label);setFrequency(stable);setCents(softCents);setClarity(quality);missRef.current=0;setLiveStatus(`${engine} locked · ${mapped.label}`);
   }
 
-  function resolveHpsAgainstMpm(result:HpsWorkerResult|null){
-    if(!result)return null;
-    const mpm=latestMpmRef.current;
-    if(!mpm||Date.now()-mpm.at>450||mpm.clarity<MPM_MIN_CLARITY)return result;
-    const distance=centsApart(result.frequency,mpm.frequency);
+  function resolvePrimaryPitch(mpmFrequency:number,mpmClarity:number){
+    const evidence=latestHpsRef.current;
+    if(!evidence||Date.now()-evidence.at>HPS_EVIDENCE_MAX_AGE_MS)return {frequency:mpmFrequency,clarity:mpmClarity,engine:'McLeod'};
+    const hps=evidence.result,distance=centsApart(hps.frequency,mpmFrequency);
     if(distance<=45){
-      const wm=Math.max(.1,mpm.clarity),wh=Math.max(.1,result.clarity),frequency=Math.exp((Math.log(mpm.frequency)*wm+Math.log(result.frequency)*wh)/(wm+wh));
-      return {frequency,clarity:Math.min(.99,Math.max(mpm.clarity,result.clarity)+.04),source:'hps' as const};
+      const wm=Math.max(.1,mpmClarity),wh=Math.max(.1,hps.clarity),frequency=Math.exp((Math.log(mpmFrequency)*wm+Math.log(hps.frequency)*wh)/(wm+wh));
+      return {frequency,clarity:Math.min(.99,Math.max(mpmClarity,hps.clarity)+.04),engine:'McLeod + HPS'};
     }
-    const octaveDistance=Math.abs(distance-1200),twoOctaveDistance=Math.abs(distance-2400);
-    if(octaveDistance<=70||twoOctaveDistance<=70){
-      return {frequency:mpm.frequency,clarity:Math.max(mpm.clarity,result.clarity*.82),source:'direct' as const};
+    const oneOctave=Math.abs(distance-1200)<=70;
+    if(oneOctave&&hps.frequency<mpmFrequency){
+      const directSupportsUpper=!!hps.directFrequency&&centsApart(hps.directFrequency,mpmFrequency)<=90;
+      const reliableLower=hps.source==='hps'&&hps.clarity>=.58&&(hps.octaveCorrected||directSupportsUpper);
+      if(reliableLower){
+        return {frequency:hps.frequency,clarity:Math.max(hps.clarity,mpmClarity*.90),engine:'Low-octave corrected'};
+      }
     }
-    if(mpm.clarity>=MPM_STRONG_CLARITY){
-      return {frequency:mpm.frequency,clarity:mpm.clarity,source:'direct' as const};
-    }
-    return result;
+    return {frequency:mpmFrequency,clarity:mpmClarity,engine:'McLeod'};
   }
 
   function handleHpsPitch(result:HpsWorkerResult|null){
-    const resolved=resolveHpsAgainstMpm(result),quality=resolved?.clarity??0;
-    if(resolved&&noteFromFrequencyRange(resolved.frequency,a4Ref.current)&&quality>=MIN_CANDIDATE_CLARITY){
-      acceptPitch(resolved.frequency,quality,result?.octaveCorrected?'HPS octave-corrected':'HPS corroboration');return;
+    if(result)latestHpsRef.current={result,at:Date.now()};
+    const mpm=latestMpmRef.current;
+    if(mpm&&Date.now()-mpm.at<=450&&mpm.clarity>=MPM_MIN_CLARITY)return;
+    const quality=result?.clarity??0;
+    if(result&&noteFromFrequencyRange(result.frequency,a4Ref.current)&&quality>=MIN_CANDIDATE_CLARITY){
+      acceptPitch(result.frequency,quality,result.octaveCorrected?'HPS octave-corrected':'HPS fallback');return;
     }
-    if(!latestMpmRef.current){missRef.current++;if(missRef.current>CLEAR_AFTER_MISSES)clearPitch()}
+    if(!mpm){missRef.current++;if(missRef.current>CLEAR_AFTER_MISSES)clearPitch()}
   }
 
   function startHpsWorker(){
@@ -171,7 +177,14 @@ export default function SoundTuner(){
         const mpmMapped=mpmFrequency>0?noteFromFrequencyRange(mpmFrequency,tuning):null;
         if(mpmMapped&&mpmClarity>=MPM_MIN_CLARITY){
           latestMpmRef.current={frequency:mpmFrequency,clarity:mpmClarity,at:Date.now()};
-          acceptPitch(mpmFrequency,mpmClarity,'McLeod');
+          const hpsEvidence=latestHpsRef.current,hpsFresh=!!hpsEvidence&&Date.now()-hpsEvidence.at<=HPS_EVIDENCE_MAX_AGE_MS;
+          const needsLowOctaveCheck=mpmFrequency<LOW_OCTAVE_VERIFY_MAX_HZ&&lockedMidiRef.current===null&&!!workerRef.current;
+          if(needsLowOctaveCheck&&!hpsFresh){
+            setClarity(mpmClarity);setLiveStatus(`Verifying low-register octave · HPS buffer ${Math.min(100,Math.round(captureCountRef.current/HPS_BUFFER_SIZE*100))}%`);
+          }else{
+            const resolved=resolvePrimaryPitch(mpmFrequency,mpmClarity);
+            acceptPitch(resolved.frequency,resolved.clarity,resolved.engine);
+          }
         }else{
           const prior=latestMpmRef.current;if(prior&&Date.now()-prior.at>450)latestMpmRef.current=null;
         }
@@ -189,7 +202,7 @@ export default function SoundTuner(){
           setClarity(mpmClarity);setLiveStatus(captureCountRef.current<HPS_BUFFER_SIZE?`McLeod analysing · HPS buffer ${Math.min(100,Math.round(captureCountRef.current/HPS_BUFFER_SIZE*100))}%`:'McLeod ambiguous · checking HPS harmonics');
         }
       }else{
-        latestMpmRef.current=null;missRef.current++;setClarity(0);setLiveStatus(level>0?'Noise filtered · play a steady note':'Listening · play a note');if(missRef.current>CLEAR_AFTER_MISSES)clearPitch();
+        latestMpmRef.current=null;latestHpsRef.current=null;missRef.current++;setClarity(0);setLiveStatus(level>0?'Noise filtered · play a steady note':'Listening · play a note');if(missRef.current>CLEAR_AFTER_MISSES)clearPitch();
       }
     }
     rafRef.current=requestAnimationFrame(analyse);

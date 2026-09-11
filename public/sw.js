@@ -1,4 +1,4 @@
-const VERSION='vio-pwa-v34';
+const VERSION='vio-pwa-v35';
 const APP_CACHE=`${VERSION}-app`;
 const AUDIO_CACHE=`${VERSION}-audio`;
 const RUNTIME_CACHE=`${VERSION}-runtime`;

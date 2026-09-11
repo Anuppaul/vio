@@ -114,17 +114,10 @@ function detectCore(samples:Float32Array,sampleRate:number,minFreq:number,maxFre
     if(primary<0)primary=global;
   }
 
-  let period=primitivePeriod(cmnd,corr,primary,minTau,maxTau);
-
-  // If a dominant harmonic was selected too high, allow a longer true period
-  // only when the longer waveform repeat is materially cleaner.
-  let bestLong=period;
-  for(let multiple=2;multiple<=4;multiple++){
-    if(period*multiple>maxTau)break;
-    const candidate=localMin(cmnd,period*multiple,Math.max(2,period*.10),minTau,maxTau);if(candidate<0)continue;
-    if(cmnd[candidate]<cmnd[bestLong]*.72&&corr[candidate]>corr[bestLong]+.045)bestLong=candidate;
-  }
-  period=bestLong;
+  // Keep the earliest credible primitive period. Do not expand it to a longer
+  // 2x/3x/4x repeat: that is exactly how a real high pitch can collapse into
+  // a false lower subharmonic even though its true short period was detected.
+  const period=primitivePeriod(cmnd,corr,primary,minTau,maxTau);
 
   const refined=parabolic(cmnd,period),frequency=sampleRate/refined;
   if(!Number.isFinite(frequency)||frequency<minFreq||frequency>maxFreq)return null;

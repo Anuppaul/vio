@@ -70,7 +70,7 @@ export default function ScalePractice(){
   const color=cents===null?'#94a3b8':inTune?'#0d9488':cents<0?'#d97706':'#dc2626';
 
   function clearCapture(){captureChunksRef.current=[];captureSamplesRef.current=0;candidateVoiceRef.current=null}
-  function appendCapture(input:Float32Array,sampleRate:number){
+  function appendCapture(input:Float32Array<ArrayBufferLike>,sampleRate:number){
     const copy=new Float32Array(input.length);copy.set(input);captureChunksRef.current.push(copy);captureSamplesRef.current+=copy.length;
     const maxSamples=Math.ceil(sampleRate*SA_CAPTURE_MAX_SECONDS);
     while(captureSamplesRef.current>maxSamples&&captureChunksRef.current.length>1){const first=captureChunksRef.current.shift();if(first)captureSamplesRef.current-=first.length}

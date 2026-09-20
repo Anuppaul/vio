@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - 'capacitor.config.json'
+      - 'next.config.ts'
+      - 'package.json'
       - 'scripts/*android*'
       - 'scripts/build-apk.mjs'
       - '.github/workflows/android-apk.yml'
@@ -25,17 +27,21 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       VIO_VERSION_CODE: ${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '21'
       - name: Install dependencies
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Inspect dependency audit
+        run: |
+          npm audit --json > "$RUNNER_TEMP/vio-npm-audit.json" || true
+          cat "$RUNNER_TEMP/vio-npm-audit.json"
       - name: Install Android SDK components
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
@@ -49,7 +55,7 @@ jobs:
       - name: Test bundled pages, audio and raw tuner
         run: npm run test:android:web
       - name: Upload APK and verification results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: vio-android-apk
           path: |
@@ -65,7 +71,7 @@ jobs:
           mkdir -p native-publish/android
           rsync -a --exclude='.gradle' --exclude='.idea' --exclude='build' --exclude='local.properties' --exclude='capacitor-cordova-android-plugins' --exclude='app/src/main/assets/' android/ native-publish/android/
           cp package-lock.json native-publish/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: vio-native-source
           path: native-publish/
@@ -74,7 +80,7 @@ jobs:
           retention-days: 3
       - name: Upload failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: vio-android-build-diagnostics
           path: |
@@ -91,7 +97,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: main
           fetch-depth: 0
@@ -99,11 +105,11 @@ jobs:
         env:
           BUILD_SHA: ${{ github.sha }}
         run: test "$(git rev-parse HEAD)" = "$BUILD_SHA"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: vio-android-apk
           path: release/
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: vio-native-source
           path: ./

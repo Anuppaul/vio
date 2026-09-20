@@ -1,14 +1,14 @@
 {
   "appId": "com.anuppaul.vio",
   "version": "1.0.0",
-  "versionCode": 2,
+  "versionCode": 3,
   "variant": "debug",
-  "sourceCommit": "8c1f1d61bbb7d0cec9ccb3a996c025c5a7cee217",
+  "sourceCommit": "9d353ad8aeb8255108f8f580bbbc90be0f3ce7d0",
   "file": "vio-1.0.0-debug.apk",
-  "bytes": 49825351,
-  "sha256": "6e2057ae6229631fa36a0fc54690ceda44a832c3c92d3d36295f6fd6934ebcf4",
+  "bytes": 49830627,
+  "sha256": "2464ef9ac2a483532a82a604400f5bc9b28cb37a3e2ee70701563a51c6e74c4d",
   "capacitor": "8.5.2",
-  "builtAt": "2026-09-20T12:20:05.023Z",
+  "builtAt": "2026-09-20T12:28:53.237Z",
   "bundledOffline": true,
   "signing": "Android development key; not for Play Store"
 }

@@ -40,8 +40,11 @@ jobs:
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - name: Inspect dependency audit
         run: |
-          npm audit --json > "$RUNNER_TEMP/vio-npm-audit.json" || true
-          cat "$RUNNER_TEMP/vio-npm-audit.json"
+          mkdir -p release/test-results
+          npm audit --json > release/test-results/dependency-audit.json || true
+          cat release/test-results/dependency-audit.json
+          node -e "const a=require('./release/test-results/dependency-audit.json'); if(!a.metadata || a.metadata.vulnerabilities.total!==0) process.exit(1)"
+          node -e "const r=require('node:module').createRequire(require.resolve('xcode/package.json')); require('node:assert/strict').equal(r('uuid').v4().length,36); require('xcode')"
       - name: Install Android SDK components
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true

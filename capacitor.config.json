@@ -1,0 +1,24 @@
+{
+  "appId": "com.anuppaul.vio",
+  "appName": "VIO",
+  "webDir": "out",
+  "backgroundColor": "#f8f9fd",
+  "loggingBehavior": "debug",
+  "server": {
+    "hostname": "localhost",
+    "androidScheme": "https",
+    "errorPath": "webview-error.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "minWebViewVersion": 111,
+    "backgroundColor": "#f8f9fd"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "LIGHT",
+      "hidden": false
+    }
+  }
+}

@@ -1,0 +1,121 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'capacitor.config.json'
+      - 'scripts/*android*'
+      - 'scripts/build-apk.mjs'
+      - '.github/workflows/android-apk.yml'
+
+concurrency:
+  group: vio-android-apk
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      VIO_VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Install Android SDK components
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build web version as a regression check
+        run: npm run build
+      - name: Build and verify installable Android test APK
+        run: npm run android:apk
+      - name: Install browser for bundled UI checks
+        run: npx playwright install --with-deps chromium
+      - name: Test bundled pages, audio and raw tuner
+        run: npm run test:android:web
+      - name: Upload APK and verification results
+        uses: actions/upload-artifact@v4
+        with:
+          name: vio-android-apk
+          path: |
+            release/*.apk
+            release/*.sha256
+            release/build-*.json
+            release/test-results/*.json
+            release/test-results/*.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Collect reproducible native project sources
+        run: |
+          mkdir -p native-publish/android
+          rsync -a --exclude='.gradle' --exclude='.idea' --exclude='build' --exclude='local.properties' --exclude='capacitor-cordova-android-plugins' --exclude='app/src/main/assets/' android/ native-publish/android/
+          cp package-lock.json native-publish/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vio-native-source
+          path: native-publish/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vio-android-build-diagnostics
+          path: |
+            android/app/build/reports/
+            release/test-results/*.json
+            release/test-results/*.png
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Refuse to publish an APK built from stale source
+        env:
+          BUILD_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$BUILD_SHA"
+      - uses: actions/download-artifact@v4
+        with:
+          name: vio-android-apk
+          path: release/
+      - uses: actions/download-artifact@v4
+        with:
+          name: vio-native-source
+          path: ./
+      - name: Commit verified APK to the requested release folder
+        run: |
+          cd release
+          sha256sum --check *.sha256
+          cd ..
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add android package-lock.json release
+          git update-index --chmod=+x android/gradlew
+          git diff --cached --quiet && exit 0
+          git commit -m 'build: publish verified VIO Android APK [skip ci]'
+          git push origin HEAD:main

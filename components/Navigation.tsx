@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { MouseEvent } from 'react';
 
+const nativeBuild = process.env.NEXT_PUBLIC_VIO_NATIVE === '1';
 const items = [
   { href: '/', label: 'Ear Tuner', icon: '♪' },
   { href: '/sound-tuner', label: 'Sound Tuner', icon: '◌' },
@@ -21,17 +22,25 @@ function offlineNavigate(event: MouseEvent<HTMLAnchorElement>, href: string){
 }
 
 export default function Navigation() {
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const pathname = rawPathname.replace(/\/index\.html$/, '/').replace(/\.html$/, '');
+  const brand = <>
+    <img src="/icon.png" alt="" aria-hidden="true" width="36" height="36" style={{width:36,height:36,objectFit:'contain',flex:'0 0 auto'}} />
+    <b>VIO</b>
+  </>;
   return (
     <nav className="suite-nav" aria-label="VIO tools">
-      <Link className="brand" href="/" aria-label="VIO home" onClick={event=>offlineNavigate(event,'/')}>
-        <img src="/icon.png" alt="" aria-hidden="true" width="36" height="36" style={{width:36,height:36,objectFit:'contain',flex:'0 0 auto'}} />
-        <b>VIO</b>
-      </Link>
+      {nativeBuild ? <a className="brand" href="/index.html" aria-label="VIO home">{brand}</a> :
+        <Link className="brand" href="/" aria-label="VIO home" onClick={event=>offlineNavigate(event,'/')}>{brand}</Link>}
       <div className="nav-items">
         {items.map(item => {
           const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
-          return <Link key={item.href} href={item.href} className={active ? 'active' : ''} title={item.label} onClick={event=>offlineNavigate(event,item.href)}><i>{item.icon}</i><span>{item.label}</span></Link>;
+          const content = <><i>{item.icon}</i><span>{item.label}</span></>;
+          // Explicit local HTML documents avoid Capacitor's SPA index fallback
+          // and do not need a Next server or a service worker in airplane mode.
+          return nativeBuild ?
+            <a key={item.href} href={item.href==='/'?'/index.html':`${item.href}.html`} className={active?'active':''} title={item.label}>{content}</a> :
+            <Link key={item.href} href={item.href} className={active?'active':''} title={item.label} onClick={event=>offlineNavigate(event,item.href)}>{content}</Link>;
         })}
       </div>
     </nav>

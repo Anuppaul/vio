@@ -1,1 +1,34 @@
+# Dependencies and generated web builds
 node_modules/
+.next/
+.next-android/
+out/
+*.tsbuildinfo
+
+# Local settings, logs and secrets
+.env*
+!.env.example
+.vercel/
+*.log
+.DS_Store
+*.jks
+*.keystore
+
+# Android sources are tracked; build products and copied web assets are not.
+android/.gradle/
+android/.idea/
+android/local.properties
+android/**/build/
+android/capacitor-cordova-android-plugins/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+
+# Development recordings are not runtime audio.
+tanpura-captures/
+public/assets/tanpura/original_network_audio/
+
+# Only explicitly published APKs belong in release/.
+*.apk
+*.aab
+!/release/*.apk

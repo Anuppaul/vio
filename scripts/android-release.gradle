@@ -1,0 +1,21 @@
+// Applied to :app after Capacitor's generated build configuration.
+def packageJson = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
+def signingPath = System.getenv('VIO_KEYSTORE_PATH')
+def signedBuild = signingPath != null && !signingPath.isEmpty()
+android {
+    defaultConfig {
+        versionName packageJson.version
+        versionCode Integer.parseInt(System.getenv('VIO_VERSION_CODE') ?: '1')
+    }
+    if (signedBuild) {
+        signingConfigs {
+            vioRelease {
+                storeFile file(signingPath)
+                storePassword System.getenv('VIO_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('VIO_KEY_ALIAS')
+                keyPassword System.getenv('VIO_KEY_PASSWORD')
+            }
+        }
+        buildTypes.release.signingConfig signingConfigs.vioRelease
+    }
+}

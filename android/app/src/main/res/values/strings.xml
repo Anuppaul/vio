@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">VIO</string>
+    <string name="title_activity_main">VIO</string>
+    <string name="package_name">com.anuppaul.vio</string>
+    <string name="custom_url_scheme">com.anuppaul.vio</string>
+</resources>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FLAT_NAMES, NOTE_NAMES, midiFrequency } from '@/lib/music';
+import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 
 const ranges = [62,69,76,83].map(top => Array.from({length:15},(_,i)=>top-i));
 const presets: Record<string, number[]> = { standard:[55,62,69,76], aeae:[57,64,69,76], adae:[57,62,69,76], pasapasa:[55,60,67,72] };
@@ -45,10 +46,7 @@ export default function EarTuner(){
   useEffect(()=>()=>stop(false),[]);
 
   async function beep(midi:number,index:number){
-    const AC=window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;
-    if(!AC){setStatus('Web Audio unavailable');return}
-    const ctx=ctxRef.current||(ctxRef.current=new AC());
-    if(ctx.state==='suspended')await ctx.resume();
+    const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
     const osc=ctx.createOscillator(),gain=ctx.createGain();
     osc.type='sine';osc.frequency.value=midiFrequency(midi);gain.gain.value=volume*.5;osc.connect(gain).connect(ctx.destination);osc.start();oscRef.current=osc;gainRef.current=gain;setActive(index);setStatus(`${displayName(midi,flats)} · ${midiFrequency(midi).toFixed(2)} Hz`);
     if(!loop)setTimeout(()=>{if(oscRef.current===osc)stop(false)},1800);

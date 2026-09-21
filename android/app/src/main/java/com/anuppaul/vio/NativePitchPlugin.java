@@ -33,10 +33,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 )
 public class NativePitchPlugin extends Plugin {
     private static final int ANALYSIS_SIZE = 32768;
-    private static final int HOP_SIZE = 4096;
+    private static final int SHORT_ANALYSIS_SIZE = 8192;
+    private static final int HOP_SIZE = 2048;
     private static final int CHUNK_SIZE = 1024;
-    private static final double MIN_FREQUENCY = 30.0;
-    private static final double MAX_FREQUENCY = 3300.0;
+    private static final double MIN_FREQUENCY = 20.0;
+    private static final double MAX_FREQUENCY = 5000.0;
     private static final long BACKGROUND_LEARN_NS = 1_200_000_000L;
 
     private final Object captureLock = new Object();
@@ -219,7 +220,9 @@ public class NativePitchPlugin extends Plugin {
         short[] chunk = new short[CHUNK_SIZE];
         float[] ring = new float[ANALYSIS_SIZE];
         float[] frame = new float[ANALYSIS_SIZE];
-        NativeYinDetector detector = new NativeYinDetector(sampleRate, ANALYSIS_SIZE);
+        float[] shortFrame = new float[SHORT_ANALYSIS_SIZE];
+        NativeYinDetector sustainedDetector = new NativeYinDetector(sampleRate, ANALYSIS_SIZE);
+        NativeYinDetector transientDetector = new NativeYinDetector(sampleRate, SHORT_ANALYSIS_SIZE);
         ForegroundGate foregroundGate = new ForegroundGate(System.nanoTime());
 
         int write = 0;
@@ -253,27 +256,86 @@ public class NativePitchPlugin extends Plugin {
             if (write > 0) System.arraycopy(ring, 0, frame, tail, write);
 
             double rms = rms(frame);
-            PitchResult pitch = detector.detect(frame);
+            System.arraycopy(frame, ANALYSIS_SIZE - SHORT_ANALYSIS_SIZE, shortFrame, 0, SHORT_ANALYSIS_SIZE);
+
+            PitchResult sustainedPitch = sustainedDetector.detect(frame);
+            PitchResult transientPitch = transientDetector.detect(shortFrame);
+
+            double recentRms = rmsRange(frame, ANALYSIS_SIZE - 2048, ANALYSIS_SIZE);
+            double previousRms = rmsRange(frame, ANALYSIS_SIZE - 6144, ANALYSIS_SIZE - 2048);
+            boolean onset = recentRms > Math.max(previousRms * 1.18, previousRms + 0.00018);
+
+            PitchResult pitch = chooseHybridPitch(sustainedPitch, transientPitch, onset);
             PitchResult foregroundPitch = foregroundGate.accept(pitch, rms, System.nanoTime());
             emitPitch(foregroundPitch, rms);
         }
     }
 
     private double rms(float[] frame) {
+        return rmsRange(frame, 0, frame.length);
+    }
+
+    private double rmsRange(float[] frame, int start, int end) {
         double sum = 0.0;
-        for (float sample : frame) sum += sample * sample;
-        return Math.sqrt(sum / frame.length);
+        int count = 0;
+        int safeStart = Math.max(0, start);
+        int safeEnd = Math.min(frame.length, end);
+        for (int i = safeStart; i < safeEnd; i++) {
+            sum += frame[i] * frame[i];
+            count++;
+        }
+        return count == 0 ? 0.0 : Math.sqrt(sum / count);
+    }
+
+    private PitchResult chooseHybridPitch(PitchResult sustained, PitchResult transientPitch, boolean onset) {
+        boolean sustainedOk = sustained != null && sustained.confidence >= 0.30;
+        boolean transientOk = transientPitch != null && transientPitch.confidence >= 0.22;
+
+        if (!sustainedOk && !transientOk) return null;
+        if (sustainedOk && transientOk) {
+            double direct = pitchCentsApart(sustained.frequency, transientPitch.frequency);
+            if (direct <= 55.0) {
+                PitchResult selected = sustained.confidence >= transientPitch.confidence * 0.82 ? sustained : transientPitch;
+                return new PitchResult(selected.frequency, selected.confidence, onset ? "transient" : "sustained");
+            }
+
+            double lower = Math.min(sustained.frequency, transientPitch.frequency);
+            double higher = Math.max(sustained.frequency, transientPitch.frequency);
+            double octaveError = Math.abs(1200.0 * (Math.log(higher / lower) / Math.log(2.0)) - 1200.0);
+            if (octaveError <= 55.0) {
+                PitchResult lowerPitch = sustained.frequency <= transientPitch.frequency ? sustained : transientPitch;
+                PitchResult higherPitch = lowerPitch == sustained ? transientPitch : sustained;
+                if (lowerPitch.confidence >= higherPitch.confidence * 0.62) {
+                    return new PitchResult(lowerPitch.frequency, lowerPitch.confidence, onset ? "transient" : "sustained");
+                }
+            }
+
+            if (onset && transientPitch.confidence >= 0.26) {
+                return new PitchResult(transientPitch.frequency, transientPitch.confidence, "transient");
+            }
+            PitchResult selected = sustained.confidence >= transientPitch.confidence ? sustained : transientPitch;
+            return new PitchResult(selected.frequency, selected.confidence, selected == transientPitch ? "transient" : "sustained");
+        }
+        if (transientOk) return new PitchResult(transientPitch.frequency, transientPitch.confidence, "transient");
+        return new PitchResult(sustained.frequency, sustained.confidence, "sustained");
+    }
+
+    private static double pitchCentsApart(double a, double b) {
+        if (!(a > 0.0) || !(b > 0.0)) return Double.POSITIVE_INFINITY;
+        return Math.abs(1200.0 * (Math.log(a / b) / Math.log(2.0)));
     }
 
     private void emitPitch(PitchResult pitch, double rms) {
         final double frequency = pitch == null ? 0.0 : pitch.frequency;
         final double confidence = pitch == null ? 0.0 : pitch.confidence;
+        final String mode = pitch == null ? "sustained" : pitch.mode;
         mainHandler.post(() -> {
             if (!running.get()) return;
             JSObject event = new JSObject();
             event.put("frequency", frequency);
             event.put("rms", rms);
             event.put("confidence", confidence);
+            event.put("mode", mode);
             event.put("sampleRate", sampleRate);
             event.put("source", audioSourceName);
             notifyListeners("pitch", event);
@@ -307,10 +369,16 @@ public class NativePitchPlugin extends Plugin {
     private static final class PitchResult {
         final double frequency;
         final double confidence;
+        final String mode;
 
         PitchResult(double frequency, double confidence) {
+            this(frequency, confidence, "sustained");
+        }
+
+        PitchResult(double frequency, double confidence, String mode) {
             this.frequency = frequency;
             this.confidence = confidence;
+            this.mode = mode;
         }
     }
 
@@ -341,7 +409,8 @@ public class NativePitchPlugin extends Plugin {
 
             double frequency = pitch == null ? 0.0 : pitch.frequency;
             double confidence = pitch == null ? 0.0 : pitch.confidence;
-            boolean tonal = frequency > 0.0 && confidence >= MIN_TONAL_CONFIDENCE;
+            boolean transientMode = pitch != null && "transient".equals(pitch.mode);
+            boolean tonal = frequency > 0.0 && confidence >= (transientMode ? 0.23 : MIN_TONAL_CONFIDENCE);
 
             if (now - startedAt < BACKGROUND_LEARN_NS) {
                 noiseFloor = noiseFloor * 0.90 + rms * 0.10;
@@ -370,8 +439,9 @@ public class NativePitchPlugin extends Plugin {
                     candidateFrames = 1;
                 }
                 candidateFrequency = Math.sqrt(candidateFrequency * frequency);
-                if (candidateFrames >= CONFIRM_FRAMES) {
-                    foregroundUntil = now + FOREGROUND_HOLD_NS;
+                int neededFrames = transientMode && energyRise ? 1 : CONFIRM_FRAMES;
+                if (candidateFrames >= neededFrames) {
+                    foregroundUntil = now + (transientMode ? 360_000_000L : FOREGROUND_HOLD_NS);
                     rejectedFrequency = 0.0;
                     rejectedFrames = 0;
                     return pitch;

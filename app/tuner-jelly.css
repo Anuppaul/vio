@@ -7,11 +7,11 @@
   filter:drop-shadow(0 0 5px rgba(100,205,182,.24));
 }
 .jelly-gauge .needle{
-  transition:transform .24s cubic-bezier(.2,.82,.25,1),stroke .2s ease!important;
+  transition:transform .02s linear,stroke .04s linear!important;
   filter:drop-shadow(0 5px 5px rgba(56,61,100,.14));
 }
 .jelly-gauge .needle-cap{
-  transition:fill .2s ease,transform .24s cubic-bezier(.2,.82,.25,1)!important;
+  transition:fill .04s linear,transform .02s linear!important;
   filter:drop-shadow(0 4px 7px rgba(56,61,100,.14));
 }
 .jelly-gauge .tuner-readout{

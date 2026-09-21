@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
     }
 )
 public class NativePitchPlugin extends Plugin {
-    private static final int ANALYSIS_SIZE = 8192;
+    private static final int ANALYSIS_SIZE = 16384;
     private static final int HOP_SIZE = 2048;
     private static final int CHUNK_SIZE = 1024;
     private static final double MIN_FREQUENCY = 30.0;
@@ -310,8 +310,9 @@ public class NativePitchPlugin extends Plugin {
     }
 
     private static final class NativeYinDetector {
-        private static final int DOWNSAMPLE = 2;
+        private static final int DOWNSAMPLE = 4;
         private static final double YIN_THRESHOLD = 0.25;
+        private static final double WEAK_SIGNAL_THRESHOLD = 0.42;
 
         private final double downsampledRate;
         private final float[] samples;
@@ -342,11 +343,24 @@ public class NativePitchPlugin extends Plugin {
             }
             mean /= samples.length;
             double energy = 0.0;
+            double peak = 0.0;
             for (int i = 0; i < samples.length; i++) {
                 samples[i] -= (float) mean;
                 energy += samples[i] * samples[i];
+                peak = Math.max(peak, Math.abs(samples[i]));
             }
             if (energy <= 1e-10) return null;
+
+            // Normalize only the detector frame. The captured PCM and UI meter remain raw.
+            // This does not cancel noise or alter pitch; it improves numerical headroom for
+            // quiet signals while keeping enough peak headroom to avoid clipping.
+            double frameRms = Math.sqrt(energy / samples.length);
+            double rmsGain = frameRms > 0.0 ? 0.16 / frameRms : 1.0;
+            double peakGain = peak > 0.0 ? 0.92 / peak : 1.0;
+            double gain = Math.max(1.0, Math.min(12.0, Math.min(rmsGain, peakGain)));
+            if (gain > 1.0) {
+                for (int i = 0; i < samples.length; i++) samples[i] *= (float) gain;
+            }
 
             difference[0] = 1.0;
             for (int tau = 1; tau <= maxTau; tau++) {
@@ -370,6 +384,21 @@ public class NativePitchPlugin extends Plugin {
                     while (tau + 1 <= maxTau && difference[tau + 1] < difference[tau]) tau++;
                     tauEstimate = tau;
                     break;
+                }
+            }
+            if (tauEstimate < 0) {
+                // A distant sustained note can have a weaker periodic minimum even when the
+                // raw level is low. Accept the first genuine local minimum only when it still
+                // has useful periodicity; this avoids turning broadband room noise into pitch.
+                for (int tau = Math.max(minTau + 1, 2); tau < maxTau; tau++) {
+                    if (
+                        difference[tau] <= WEAK_SIGNAL_THRESHOLD &&
+                        difference[tau] <= difference[tau - 1] &&
+                        difference[tau] < difference[tau + 1]
+                    ) {
+                        tauEstimate = tau;
+                        break;
+                    }
                 }
             }
             if (tauEstimate < 0) return null;

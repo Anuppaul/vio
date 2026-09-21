@@ -6,7 +6,7 @@ import { PitchDetector } from 'pitchy';
 import { OPEN_STRINGS, midiFrequency, noteFromFrequencyRange, rms } from '@/lib/music';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
-const BUFFER_SIZE=8192;
+const BUFFER_SIZE=16384;
 const ANALYSIS_MS=35;
 
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
@@ -25,6 +25,17 @@ function audioContextCtor(){return window.AudioContext||(window as typeof window
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
 function arcPath(r:number,a0:number,a1:number){const [x0,y0]=arcPoint(360,330,r,a0),[x1,y1]=arcPoint(360,330,r,a1);return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`}
 function levelPercent(value:number){if(value<=0)return 0;const db=20*Math.log10(value);return Math.round(Math.max(0,Math.min(100,(db+60)/50*100)))}
+function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
+  let mean=0;for(let i=0;i<input.length;i++)mean+=input[i];mean/=input.length;
+  let sum=0,peak=0;
+  for(let i=0;i<input.length;i++){const v=input[i]-mean;sum+=v*v;peak=Math.max(peak,Math.abs(v))}
+  const frameRms=Math.sqrt(sum/input.length);
+  const targetRms=.16,maxGain=12,maxPeak=.92;
+  const rmsGain=frameRms>0?targetRms/frameRms:1;
+  const peakGain=peak>0?maxPeak/peak:1;
+  const gain=Math.max(1,Math.min(maxGain,rmsGain,peakGain));
+  for(let i=0;i<input.length;i++)output[i]=(input[i]-mean)*gain;
+}
 
 export default function SoundTuner(){
   const [a4,setA4]=useState(440);
@@ -42,6 +53,7 @@ export default function SoundTuner(){
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
+  const analysisBufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const rafRef=useRef(0),lastRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
@@ -50,6 +62,7 @@ export default function SoundTuner(){
   if(!detectorRef.current){
     const detector=PitchDetector.forFloat32Array(BUFFER_SIZE);
     detector.minVolumeAbsolute=0;
+    detector.clarityThreshold=.82;
     detectorRef.current=detector;
   }
   useEffect(()=>{a4Ref.current=a4},[a4]);
@@ -82,8 +95,9 @@ export default function SoundTuner(){
     if(ts-lastRef.current>=ANALYSIS_MS){
       lastRef.current=ts;
       const input=bufferRef.current;analyser.getFloatTimeDomainData(input);
-      const inputRms=rms(input);
-      const [rawFrequency]=detector.findPitch(input,ctx.sampleRate);
+      const inputRms=rms(input),analysis=analysisBufferRef.current;
+      prepareSensitiveFrame(input,analysis);
+      const [rawFrequency]=detector.findPitch(analysis,ctx.sampleRate);
       applyPitch(rawFrequency>0?rawFrequency:0,inputRms);
     }
     rafRef.current=requestAnimationFrame(analyse);
@@ -148,7 +162,7 @@ export default function SoundTuner(){
   const activeMidi=activeRange?activeRange.midi:null;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone audio is sent directly to the pitch detector, then mapped to the exact C1–G7 note range. No pitch filtering, confidence gate, HPS, smoothing or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone capture is preserved. For weak signals, the detector uses a longer analysis window plus DC removal and bounded analysis-only level normalization before mapping C1–G7. No noise suppression, AGC, HPS, smoothing or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">

@@ -7,17 +7,11 @@ import { OPEN_STRINGS, midiFrequency, noteFromFrequency, rms } from '@/lib/music
 import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
-const BUFFER_SIZE=32768;
-const SHORT_BUFFER_SIZE=8192;
-const ANALYSIS_MS=50;
+const BUFFER_SIZE=8192;
+const SHORT_BUFFER_SIZE=4096;
+const ANALYSIS_MS=16;
 const MIN_DETECT_HZ=20;
 const MAX_DETECT_HZ=5000;
-const BACKGROUND_TONE_CENTS=55;
-const FOREGROUND_CONFIRM_FRAMES=2;
-const FOREGROUND_HOLD_MS=420;
-const LOCK_TOLERANCE_CENTS=38;
-const LOCK_SWITCH_FRAMES=3;
-const LOCK_DROPOUT_HOLD_MS=320;
 
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
 type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string;mode?:'sustained'|'transient'};
@@ -119,7 +113,7 @@ export default function SoundTuner(){
     setMicLevel(levelPercent(rawRms));
     const mapped=rawFrequency>=MIN_DETECT_HZ&&rawFrequency<=MAX_DETECT_HZ?noteFromFrequency(rawFrequency,a4Ref.current):null;
     if(mapped){
-      setNote(mapped.label);setFrequency(rawFrequency);setCents(mapped.cents);
+      setNote(mapped.note);setFrequency(rawFrequency);setCents(mapped.cents);
       setStatus(mode==='transient'?'Raw transient · '+mapped.label:'Raw pitch · '+mapped.label);
     }else{
       clearPitch();setStatus('Listening · no pitch candidate');
@@ -201,7 +195,7 @@ export default function SoundTuner(){
   const inTune=cents!==null&&Math.abs(cents)<=3;
   const color=cents===null?'#94a3b8':inTune?'#0d9488':cents<0?'#d97706':'#dc2626';
   return <>
-    <div className="page-head"><div><p className="eyebrow">Universal live pitch</p><h1>Sound Tuner</h1><p>Raw amplified live pitch detection. No background rejection, noise-floor gate, note lock, smoothing or dropout hold is applied: whatever tonal frequency the microphone detects is mapped directly to a note.</p></div><div className="badge">Raw mic → amplify → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Universal live pitch</p><h1>Sound Tuner</h1><p>Raw amplified real-time pitch detection. The nearest chromatic note is shown immediately, while the needle displays the exact cents offset from that note.</p></div><div className="badge">Raw mic → amplify → note</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">
@@ -211,7 +205,7 @@ export default function SoundTuner(){
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
             <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?'Play a steady tone':inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
-          <div className="target-row"><span className="target-chip">20–5000 Hz</span><span className="target-chip">Sustained + transient</span></div>
+          <div className="target-row"><span className="target-chip">20–5000 Hz</span><span className="target-chip">~60 Hz UI analysis</span></div>
         </main>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>setA4(+e.target.value)}/><div className="seg three"><button onClick={()=>setA4(415)} className={a4===415?'active':''}>415</button><button onClick={()=>setA4(440)} className={a4===440?'active':''}>440</button><button onClick={()=>setA4(442)} className={a4===442?'active':''}>442</button></div></div>

@@ -15,7 +15,7 @@ export default function PWARegister(){
     // Native assets already ship inside the APK. Do not create a second,
     // potentially stale PWA cache or show an install button inside Android.
     if(process.env.NEXT_PUBLIC_VIO_NATIVE === '1')return;
-    if('serviceWorker' in navigator){
+    if('serviceWorker' in navigator&&window.isSecureContext){
       navigator.serviceWorker.register('/sw.js',{scope:'/'}).then(registration=>{
         registration.update().catch(()=>{});
       }).catch(()=>{});

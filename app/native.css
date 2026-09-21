@@ -6,4 +6,8 @@ html.vio-native {
   padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
 }
 .vio-native body {padding-top: var(--vio-top); padding-bottom: calc(28px + var(--vio-bottom));}
-.vio-native .suite-nav {top: calc(8px + var(--vio-top));}
+.vio-native .suite-nav {
+  /* body already applies the status-bar safe area; avoid adding a second visual gap */
+  top: var(--vio-top);
+  margin-top: 0;
+}

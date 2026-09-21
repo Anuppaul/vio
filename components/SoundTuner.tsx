@@ -30,7 +30,7 @@ function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
   let sum=0,peak=0;
   for(let i=0;i<input.length;i++){const v=input[i]-mean;sum+=v*v;peak=Math.max(peak,Math.abs(v))}
   const frameRms=Math.sqrt(sum/input.length);
-  const targetRms=.20,maxGain=24,maxPeak=.92;
+  const targetRms=.30,maxGain=64,maxPeak=.92;
   const rmsGain=frameRms>0?targetRms/frameRms:1;
   const peakGain=peak>0?maxPeak/peak:1;
   const gain=Math.max(1,Math.min(maxGain,rmsGain,peakGain));
@@ -62,7 +62,7 @@ export default function SoundTuner(){
   if(!detectorRef.current){
     const detector=PitchDetector.forFloat32Array(BUFFER_SIZE);
     detector.minVolumeAbsolute=0;
-    detector.clarityThreshold=.70;
+    detector.clarityThreshold=.55;
     detectorRef.current=detector;
   }
   useEffect(()=>{a4Ref.current=a4},[a4]);
@@ -162,7 +162,7 @@ export default function SoundTuner(){
   const activeMidi=activeRange?activeRange.midi:null;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone capture is preserved. Far-field tuning uses the maximum analysis window plus DC removal and bounded analysis-only level normalization to improve sustained-note pickup at roughly room-scale distance before mapping C1–G7. No noise suppression, AGC, HPS, smoothing or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone capture is preserved. Far-field tuning uses the maximum analysis window plus DC removal and aggressive bounded analysis-only level normalization to improve sustained-note pickup across a larger room before mapping C1–G7. No noise suppression, AGC, HPS, smoothing or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">

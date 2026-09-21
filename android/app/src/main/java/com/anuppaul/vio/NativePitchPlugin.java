@@ -312,7 +312,7 @@ public class NativePitchPlugin extends Plugin {
     private static final class NativeYinDetector {
         private static final int DOWNSAMPLE = 4;
         private static final double YIN_THRESHOLD = 0.25;
-        private static final double WEAK_SIGNAL_THRESHOLD = 0.50;
+        private static final double WEAK_SIGNAL_THRESHOLD = 0.65;
 
         private final double downsampledRate;
         private final float[] samples;
@@ -352,12 +352,12 @@ public class NativePitchPlugin extends Plugin {
             if (energy <= 1e-10) return null;
 
             // Normalize only the detector frame. The captured PCM and UI meter remain raw.
-            // This does not cancel noise or alter pitch; it improves numerical headroom for
-            // quiet signals while keeping enough peak headroom to avoid clipping.
+            // Far-field mode uses more analysis gain for quiet sustained notes; it still
+            // does not enable noise suppression, AGC, echo cancellation or pitch smoothing.
             double frameRms = Math.sqrt(energy / samples.length);
-            double rmsGain = frameRms > 0.0 ? 0.20 / frameRms : 1.0;
+            double rmsGain = frameRms > 0.0 ? 0.30 / frameRms : 1.0;
             double peakGain = peak > 0.0 ? 0.92 / peak : 1.0;
-            double gain = Math.max(1.0, Math.min(24.0, Math.min(rmsGain, peakGain)));
+            double gain = Math.max(1.0, Math.min(64.0, Math.min(rmsGain, peakGain)));
             if (gain > 1.0) {
                 for (int i = 0; i < samples.length; i++) samples[i] *= (float) gain;
             }

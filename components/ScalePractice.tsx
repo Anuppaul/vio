@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PitchDetector } from 'pitchy';
 import { rms } from '@/lib/music';
+import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
 
 const BUFFER_SIZE=8192;
 const ANALYSIS_MS=35;
@@ -21,7 +22,6 @@ const SAPTAK_OFFSETS={
 type Saptak='mandra'|'madhya'|'taar';
 type RelativePitch={offset:number;degree:number;saptak:Saptak;label:string;target:number;cents:number};
 
-function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function mod(n:number,m:number){return((n%m)+m)%m}
 function levelPercent(value:number){if(value<=0)return 0;const db=20*Math.log10(value);return Math.round(Math.max(0,Math.min(100,(db+60)/50*100)))}
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return[cx+r*Math.sin(a),cy-r*Math.cos(a)]}
@@ -55,10 +55,10 @@ export default function ScalePractice(){
   const[playingOffset,setPlayingOffset]=useState<number|null>(null);
 
   const ctxRef=useRef<AudioContext|null>(null),analyserRef=useRef<AnalyserNode|null>(null),sourceRef=useRef<MediaStreamAudioSourceNode|null>(null),streamRef=useRef<MediaStream|null>(null);
-  const processorRef=useRef<ScriptProcessorNode|null>(null),silentGainRef=useRef<GainNode|null>(null),playbackSourceRef=useRef<AudioBufferSourceNode|null>(null);
+  const processorRef=useRef<ScriptProcessorNode|null>(null),workletRef=useRef<AudioWorkletNode|null>(null),silentGainRef=useRef<GainNode|null>(null),playbackSourceRef=useRef<AudioBufferSourceNode|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE)),rafRef=useRef(0),lastRef=useRef(0),saFrequencyRef=useRef<number|null>(null),saSamplesRef=useRef<number[]>([]);
   const captureChunksRef=useRef<Float32Array[]>([]),captureSamplesRef=useRef(0),candidateVoiceRef=useRef<Float32Array|null>(null),saVoiceRef=useRef<Float32Array|null>(null),saVoiceRateRef=useRef(0);
-  const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
+  const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null),workletLoadedRef=useRef(false);
 
   if(!detectorRef.current){const detector=PitchDetector.forFloat32Array(BUFFER_SIZE);detector.minVolumeAbsolute=0;detectorRef.current=detector}
   useEffect(()=>{saFrequencyRef.current=saFrequency},[saFrequency]);
@@ -108,20 +108,34 @@ export default function ScalePractice(){
     rafRef.current=requestAnimationFrame(analyse);
   }
   async function start(){
-    if(running)return;const AC=audioContextCtor();if(!AC||!navigator.mediaDevices?.getUserMedia){setStatus('Microphone API unavailable');return}
+    if(running)return;
     try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
-      const ctx=ctxRef.current||(ctxRef.current=new AC({latencyHint:'interactive'}));if(ctx.state==='suspended')await ctx.resume();
-      const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser(),processor=ctx.createScriptProcessor(2048,1,1),silent=ctx.createGain();
+      const stream=await requestRawMicrophone();
+      const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){stream.getTracks().forEach(t=>t.stop());setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+      const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser(),silent=ctx.createGain();
+      let processor:ScriptProcessorNode|null=null,worklet:AudioWorkletNode|null=null;
       analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;silent.gain.value=0;clearCapture();
-      processor.onaudioprocess=e=>appendCapture(e.inputBuffer.getChannelData(0),ctx.sampleRate);
-      source.connect(analyser);source.connect(processor);processor.connect(silent);silent.connect(ctx.destination);
-      streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;processorRef.current=processor;silentGainRef.current=silent;setRunning(true);clearLive();setStatus(saFrequencyRef.current?'Practice live · sing any swara':'Sing and hold your Sa; natural variation up to ±12 cents is allowed.');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
+      source.connect(analyser);
+      if(ctx.audioWorklet&&typeof AudioWorkletNode!=='undefined'){
+        try{
+          if(!workletLoadedRef.current){await ctx.audioWorklet.addModule('/audio-worklets/vio-capture.js');workletLoadedRef.current=true}
+          worklet=new AudioWorkletNode(ctx,'vio-capture',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});
+          worklet.port.onmessage=e=>{if(e.data instanceof Float32Array)appendCapture(e.data,ctx.sampleRate)};
+          source.connect(worklet);worklet.connect(silent);
+        }catch{worklet=null}
+      }
+      if(!worklet){
+        processor=ctx.createScriptProcessor(2048,1,1);
+        processor.onaudioprocess=e=>appendCapture(e.inputBuffer.getChannelData(0),ctx.sampleRate);
+        source.connect(processor);processor.connect(silent);
+      }
+      silent.connect(ctx.destination);
+      streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;processorRef.current=processor;workletRef.current=worklet;silentGainRef.current=silent;setRunning(true);clearLive();setStatus(saFrequencyRef.current?'Practice live · sing any swara':'Sing and hold your Sa; natural variation up to ±12 cents is allowed.');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
     }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
   }
   function stop(){
-    cancelAnimationFrame(rafRef.current);rafRef.current=0;try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}
-    streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;analyserRef.current=null;processorRef.current=null;silentGainRef.current=null;streamRef.current=null;setRunning(false);clearLive();clearCapture();setStatus('Microphone stopped')
+    cancelAnimationFrame(rafRef.current);rafRef.current=0;try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();if(workletRef.current)workletRef.current.port.onmessage=null;workletRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}
+    streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;analyserRef.current=null;processorRef.current=null;workletRef.current=null;silentGainRef.current=null;streamRef.current=null;setRunning(false);clearLive();clearCapture();setStatus('Microphone stopped')
   }
   function setSa(){
     const chosen=saFrequency?frequency:saReadyFrequency;if(!chosen)return;const ctx=ctxRef.current;
@@ -131,7 +145,7 @@ export default function ScalePractice(){
   }
   function resetSa(){stopReference();saFrequencyRef.current=null;setSaFrequency(null);saVoiceRef.current=null;saVoiceRateRef.current=0;setHasSaVoice(false);clearSaReadiness();setStatus('Sa cleared · sing and hold Sa; natural variation up to ±12 cents is allowed')}
   async function playSwara(offset:number,kind:Saptak){
-    if(!saFrequency)return;const AC=audioContextCtor();if(!AC)return;const ctx=ctxRef.current||(ctxRef.current=new AC({latencyHint:'interactive'}));if(ctx.state==='suspended')await ctx.resume();stopReference();
+    if(!saFrequency)return;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx)return;ctxRef.current=ctx;await resumeBrowserAudio(ctx);stopReference();
     const target=saFrequency*Math.pow(2,offset/12),label=swaraLabel(mod(offset,12),kind),voice=saVoiceRef.current,voiceRate=saVoiceRateRef.current;
     setPlayingOffset(offset);setStatus(`Reference · ${label} · ${target.toFixed(2)} Hz${voice?' · your Sa voice':' · clean tone'}`);
     if(voice&&voiceRate>0){
@@ -140,7 +154,7 @@ export default function ScalePractice(){
     }
     const osc=ctx.createOscillator(),gain=ctx.createGain(),now=ctx.currentTime,duration=.65;osc.type='triangle';osc.frequency.value=target;gain.gain.setValueAtTime(.0001,now);gain.gain.linearRampToValueAtTime(.16,now+.025);gain.gain.setValueAtTime(.16,now+duration-.05);gain.gain.exponentialRampToValueAtTime(.0001,now+duration);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(now+duration);osc.onended=()=>setPlayingOffset(null)
   }
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);stopReference();try{if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);stopReference();try{if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();if(workletRef.current)workletRef.current.port.onmessage=null;workletRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
 
   function scaleRow(kind:Saptak,offsets:number[]){
     return <div className={`saptak-card ${kind}`}><div className="saptak-title"><b>{saptakName(kind)}</b><span>{saFrequency?'Tap any swara to hear reference':kind==='mandra'?'Underline = Mandra':kind==='taar'?'র্ prefix = Taar':'Your Sa starts here'}</span></div><div className="swara-grid">{offsets.map(offset=>{const degree=mod(offset,12),label=swaraLabel(degree,kind),target=saFrequency?saFrequency*Math.pow(2,offset/12):null,active=current?.offset===offset,playing=playingOffset===offset;return <button type="button" key={offset} className={`swara-cell ${active?'active':''} ${playing?'reference-playing':''}`} disabled={!saFrequency} onClick={()=>void playSwara(offset,kind)} aria-label={target?`Play ${label} reference at ${target.toFixed(1)} hertz`:`${label}, set Sa first`}><b className={kind==='mandra'?'mandra-mark':''}>{label}</b><small>{target?`${playing?'♪ ':''}${target.toFixed(1)} Hz`:'—'}</small></button>})}</div></div>;

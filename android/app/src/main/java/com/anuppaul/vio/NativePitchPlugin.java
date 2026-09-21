@@ -2,6 +2,7 @@ package com.anuppaul.vio;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
@@ -113,6 +114,12 @@ public class NativePitchPlugin extends Plugin {
     }
 
     private AudioRecord createRecorder() {
+        // Keep the framework-level permission check in the same method as AudioRecord
+        // construction so Android lint can prove that the revocable permission is guarded.
+        if (getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return null;
+        }
+
         int[] rates = { 48000, 44100, 32000 };
         boolean rawSupported = false;
         try {
@@ -153,6 +160,11 @@ public class NativePitchPlugin extends Plugin {
                         audioSourceName = sourceName(source);
                         return candidate;
                     }
+                } catch (SecurityException permissionLost) {
+                    // Permission can be revoked between the check above and AudioRecord
+                    // construction. Abort cleanly instead of risking a native crash.
+                    releaseRecorder(candidate);
+                    return null;
                 } catch (Exception ignored) {
                 }
                 releaseRecorder(candidate);

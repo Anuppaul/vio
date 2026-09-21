@@ -8,6 +8,10 @@ import { OPEN_STRINGS, midiFrequency, noteFromFrequencyRange, rms } from '@/lib/
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=32768;
 const ANALYSIS_MS=60;
+const BACKGROUND_LEARN_MS=1200;
+const BACKGROUND_TONE_CENTS=55;
+const FOREGROUND_CONFIRM_FRAMES=2;
+const FOREGROUND_HOLD_MS=520;
 
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
 type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string};
@@ -36,6 +40,73 @@ function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
   const gain=Math.max(1,Math.min(maxGain,rmsGain,peakGain));
   for(let i=0;i<input.length;i++)output[i]=(input[i]-mean)*gain;
 }
+function centsApart(a:number,b:number){return a>0&&b>0?Math.abs(1200*Math.log2(a/b)):Infinity}
+type BackgroundGate={
+  startedAt:number;
+  noiseFloor:number;
+  backgroundTones:number[];
+  candidate:number;
+  candidateFrames:number;
+  rejected:number;
+  rejectedFrames:number;
+  foregroundUntil:number;
+};
+function createBackgroundGate(now=0):BackgroundGate{return{startedAt:now,noiseFloor:0,backgroundTones:[],candidate:0,candidateFrames:0,rejected:0,rejectedFrames:0,foregroundUntil:0}}
+function learnBackgroundTone(gate:BackgroundGate,frequency:number){
+  if(!(frequency>0))return;
+  const index=gate.backgroundTones.findIndex(value=>centsApart(value,frequency)<=BACKGROUND_TONE_CENTS);
+  if(index>=0){gate.backgroundTones[index]=Math.sqrt(gate.backgroundTones[index]*frequency);return}
+  if(gate.backgroundTones.length<6)gate.backgroundTones.push(frequency);
+}
+function backgroundHasPitch(gate:BackgroundGate,frequency:number){return gate.backgroundTones.some(value=>centsApart(value,frequency)<=BACKGROUND_TONE_CENTS)}
+function foregroundFrequency(gate:BackgroundGate,frequency:number,clarity:number,inputRms:number,now:number){
+  if(gate.noiseFloor<=0)gate.noiseFloor=Math.max(inputRms,1e-7);
+  if(now-gate.startedAt<BACKGROUND_LEARN_MS){
+    gate.noiseFloor=gate.noiseFloor*.90+inputRms*.10;
+    if(frequency>0&&clarity>=.35)learnBackgroundTone(gate,frequency);
+    gate.candidate=0;gate.candidateFrames=0;
+    return 0;
+  }
+
+  const floor=Math.max(gate.noiseFloor,1e-7);
+  const energyRise=inputRms>=floor*1.08;
+  const novelPitch=frequency>0&&!backgroundHasPitch(gate,frequency);
+  const tonal=frequency>0&&clarity>=.36;
+  const possibleForeground=tonal&&(energyRise||novelPitch);
+
+  if(now<gate.foregroundUntil&&tonal){
+    gate.candidate=frequency;gate.candidateFrames=FOREGROUND_CONFIRM_FRAMES;
+    return frequency;
+  }
+
+  if(possibleForeground){
+    if(gate.candidate>0&&centsApart(gate.candidate,frequency)<=45)gate.candidateFrames++;
+    else{gate.candidate=frequency;gate.candidateFrames=1}
+    gate.candidate=Math.sqrt(gate.candidate*frequency);
+    if(gate.candidateFrames>=FOREGROUND_CONFIRM_FRAMES){
+      gate.foregroundUntil=now+FOREGROUND_HOLD_MS;
+      gate.rejected=0;gate.rejectedFrames=0;
+      return frequency;
+    }
+  }else{
+    gate.candidate=0;gate.candidateFrames=0;
+  }
+
+  if(tonal){
+    if(gate.rejected>0&&centsApart(gate.rejected,frequency)<=BACKGROUND_TONE_CENTS)gate.rejectedFrames++;
+    else{gate.rejected=frequency;gate.rejectedFrames=1}
+    gate.rejected=Math.sqrt(gate.rejected*frequency);
+    if(gate.rejectedFrames>=10){
+      learnBackgroundTone(gate,gate.rejected);
+      gate.rejected=0;gate.rejectedFrames=0;
+    }
+  }else{
+    gate.rejected=0;gate.rejectedFrames=0;
+  }
+
+  if(inputRms<=floor*1.35)gate.noiseFloor=gate.noiseFloor*.985+inputRms*.015;
+  return 0;
+}
 
 export default function SoundTuner(){
   const [a4,setA4]=useState(440);
@@ -57,6 +128,7 @@ export default function SoundTuner(){
   const rafRef=useRef(0),lastRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
+  const backgroundGateRef=useRef<BackgroundGate>(createBackgroundGate());
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
   if(!detectorRef.current){
@@ -97,8 +169,9 @@ export default function SoundTuner(){
       const input=bufferRef.current;analyser.getFloatTimeDomainData(input);
       const inputRms=rms(input),analysis=analysisBufferRef.current;
       prepareSensitiveFrame(input,analysis);
-      const [rawFrequency]=detector.findPitch(analysis,ctx.sampleRate);
-      applyPitch(rawFrequency>0?rawFrequency:0,inputRms);
+      const [rawFrequency,clarity]=detector.findPitch(analysis,ctx.sampleRate);
+      const accepted=foregroundFrequency(backgroundGateRef.current,rawFrequency>0?rawFrequency:0,clarity,inputRms,ts);
+      applyPitch(accepted,inputRms);
     }
     rafRef.current=requestAnimationFrame(analyse);
   }
@@ -135,7 +208,8 @@ export default function SoundTuner(){
       analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;
       source.connect(analyser);
       streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;
-      setRunning(true);clearPitch();setMicLevel(0);setStatus('Listening · raw microphone pitch');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
+      backgroundGateRef.current=createBackgroundGate(performance.now());
+      setRunning(true);clearPitch();setMicLevel(0);setStatus('Listening · learning room background');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
     }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
   }
 
@@ -162,7 +236,7 @@ export default function SoundTuner(){
   const activeMidi=activeRange?activeRange.midi:null;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone capture is preserved. Far-field tuning uses the maximum analysis window plus DC removal and aggressive bounded analysis-only level normalization to improve sustained-note pickup across a larger room before mapping C1–G7. No noise suppression, AGC, HPS, smoothing or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone capture is preserved. Far-field tuning preserves raw capture, learns the persistent room background, and accepts a new sustained foreground pitch above that learned profile. The detector still uses the maximum analysis window plus bounded analysis-only normalization. No Android noise suppression, AGC, HPS or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">

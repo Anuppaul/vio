@@ -21,6 +21,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @CapacitorPlugin(
@@ -35,6 +37,7 @@ public class NativePitchPlugin extends Plugin {
     private static final int CHUNK_SIZE = 1024;
     private static final double MIN_FREQUENCY = 30.0;
     private static final double MAX_FREQUENCY = 3300.0;
+    private static final long BACKGROUND_LEARN_NS = 1_200_000_000L;
 
     private final Object captureLock = new Object();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -217,6 +220,7 @@ public class NativePitchPlugin extends Plugin {
         float[] ring = new float[ANALYSIS_SIZE];
         float[] frame = new float[ANALYSIS_SIZE];
         NativeYinDetector detector = new NativeYinDetector(sampleRate, ANALYSIS_SIZE);
+        ForegroundGate foregroundGate = new ForegroundGate(System.nanoTime());
 
         int write = 0;
         int filled = 0;
@@ -250,7 +254,8 @@ public class NativePitchPlugin extends Plugin {
 
             double rms = rms(frame);
             PitchResult pitch = detector.detect(frame);
-            emitPitch(pitch, rms);
+            PitchResult foregroundPitch = foregroundGate.accept(pitch, rms, System.nanoTime());
+            emitPitch(foregroundPitch, rms);
         }
     }
 
@@ -306,6 +311,123 @@ public class NativePitchPlugin extends Plugin {
         PitchResult(double frequency, double confidence) {
             this.frequency = frequency;
             this.confidence = confidence;
+        }
+    }
+
+    private static final class ForegroundGate {
+        private static final double BACKGROUND_TONE_CENTS = 55.0;
+        private static final double CANDIDATE_CENTS = 45.0;
+        private static final double MIN_TONAL_CONFIDENCE = 0.32;
+        private static final int CONFIRM_FRAMES = 2;
+        private static final int REJECTED_BACKGROUND_FRAMES = 10;
+        private static final long FOREGROUND_HOLD_NS = 520_000_000L;
+
+        private final long startedAt;
+        private final List<Double> backgroundTones = new ArrayList<>();
+
+        private double noiseFloor;
+        private double candidateFrequency;
+        private int candidateFrames;
+        private double rejectedFrequency;
+        private int rejectedFrames;
+        private long foregroundUntil;
+
+        ForegroundGate(long startedAt) {
+            this.startedAt = startedAt;
+        }
+
+        PitchResult accept(PitchResult pitch, double rms, long now) {
+            if (noiseFloor <= 0.0) noiseFloor = Math.max(rms, 1e-7);
+
+            double frequency = pitch == null ? 0.0 : pitch.frequency;
+            double confidence = pitch == null ? 0.0 : pitch.confidence;
+            boolean tonal = frequency > 0.0 && confidence >= MIN_TONAL_CONFIDENCE;
+
+            if (now - startedAt < BACKGROUND_LEARN_NS) {
+                noiseFloor = noiseFloor * 0.90 + rms * 0.10;
+                if (tonal) learnBackgroundTone(frequency);
+                candidateFrequency = 0.0;
+                candidateFrames = 0;
+                return null;
+            }
+
+            double floor = Math.max(noiseFloor, 1e-7);
+            boolean energyRise = rms >= floor * 1.08;
+            boolean novelPitch = tonal && !backgroundHasPitch(frequency);
+            boolean possibleForeground = tonal && (energyRise || novelPitch);
+
+            if (now < foregroundUntil && tonal) {
+                candidateFrequency = frequency;
+                candidateFrames = CONFIRM_FRAMES;
+                return pitch;
+            }
+
+            if (possibleForeground) {
+                if (candidateFrequency > 0.0 && centsApart(candidateFrequency, frequency) <= CANDIDATE_CENTS) {
+                    candidateFrames++;
+                } else {
+                    candidateFrequency = frequency;
+                    candidateFrames = 1;
+                }
+                candidateFrequency = Math.sqrt(candidateFrequency * frequency);
+                if (candidateFrames >= CONFIRM_FRAMES) {
+                    foregroundUntil = now + FOREGROUND_HOLD_NS;
+                    rejectedFrequency = 0.0;
+                    rejectedFrames = 0;
+                    return pitch;
+                }
+            } else {
+                candidateFrequency = 0.0;
+                candidateFrames = 0;
+            }
+
+            if (tonal) {
+                if (
+                    rejectedFrequency > 0.0 &&
+                    centsApart(rejectedFrequency, frequency) <= BACKGROUND_TONE_CENTS
+                ) {
+                    rejectedFrames++;
+                } else {
+                    rejectedFrequency = frequency;
+                    rejectedFrames = 1;
+                }
+                rejectedFrequency = Math.sqrt(rejectedFrequency * frequency);
+                if (rejectedFrames >= REJECTED_BACKGROUND_FRAMES) {
+                    learnBackgroundTone(rejectedFrequency);
+                    rejectedFrequency = 0.0;
+                    rejectedFrames = 0;
+                }
+            } else {
+                rejectedFrequency = 0.0;
+                rejectedFrames = 0;
+            }
+
+            if (rms <= floor * 1.35) noiseFloor = noiseFloor * 0.985 + rms * 0.015;
+            return null;
+        }
+
+        private void learnBackgroundTone(double frequency) {
+            if (!(frequency > 0.0)) return;
+            for (int i = 0; i < backgroundTones.size(); i++) {
+                double current = backgroundTones.get(i);
+                if (centsApart(current, frequency) <= BACKGROUND_TONE_CENTS) {
+                    backgroundTones.set(i, Math.sqrt(current * frequency));
+                    return;
+                }
+            }
+            if (backgroundTones.size() < 6) backgroundTones.add(frequency);
+        }
+
+        private boolean backgroundHasPitch(double frequency) {
+            for (double background : backgroundTones) {
+                if (centsApart(background, frequency) <= BACKGROUND_TONE_CENTS) return true;
+            }
+            return false;
+        }
+
+        private static double centsApart(double a, double b) {
+            if (!(a > 0.0) || !(b > 0.0)) return Double.POSITIVE_INFINITY;
+            return Math.abs(1200.0 * (Math.log(a / b) / Math.log(2.0)));
         }
     }
 

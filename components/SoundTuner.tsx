@@ -34,7 +34,7 @@ function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
   let sum=0,peak=0;
   for(let i=0;i<input.length;i++){const v=input[i]-mean;sum+=v*v;peak=Math.max(peak,Math.abs(v))}
   const frameRms=Math.sqrt(sum/input.length);
-  const targetRms=.30,maxGain=64,maxPeak=.92;
+  const targetRms=.55,maxGain=256,maxPeak=.985;
   const rmsGain=frameRms>0?targetRms/frameRms:1;
   const peakGain=peak>0?maxPeak/peak:1;
   const gain=Math.max(1,Math.min(maxGain,rmsGain,peakGain));
@@ -236,7 +236,7 @@ export default function SoundTuner(){
   const activeMidi=activeRange?activeRange.midi:null;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone capture is preserved. Far-field tuning preserves raw capture, learns the persistent room background, and accepts a new sustained foreground pitch above that learned profile. The detector still uses the maximum analysis window plus bounded analysis-only normalization. No Android noise suppression, AGC, HPS or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone capture is preserved. Far-field tuning preserves raw capture, learns the persistent room background, and accepts a new sustained foreground pitch above that learned profile. The detector still uses the maximum analysis window plus near-full-scale analysis-only normalization. No Android noise suppression, AGC, HPS or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">

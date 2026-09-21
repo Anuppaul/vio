@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import ExerciseClefPreview, { EXTRA_CLEF_CONFIG, type ExerciseClefKey } from '@/components/ExerciseClefPreview';
+import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 
 const LETTERS=['C','D','E','F','G','A','B'];
 const SEMITONES:Record<string,number>={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
@@ -111,7 +112,6 @@ const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 const RANGE_NOTES=[...Array.from({length:5},(_,i)=>i+2).flatMap(o=>LETTERS.map((letter,li)=>({letter,octave:o,midi:midiFor(letter,o,''),index:o*7+li}))),{letter:'C',octave:7,midi:96,index:49}];
 const nearestNaturalMidi=(midi:number)=>RANGE_NOTES.reduce((best,n)=>Math.abs(n.midi-midi)<Math.abs(best-midi)?n.midi:best,RANGE_NOTES[0].midi);
 const rangeNote=(midi:number)=>RANGE_NOTES.reduce((best,n)=>Math.abs(n.midi-midi)<Math.abs(best.midi-midi)?n:best,RANGE_NOTES[0]);
-function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function tokenParts(token:string){const last=token.slice(-1);return{letter:token[0]||'C',acc:last==='#'||last==='b'?last:''}}
 function signatureLabel(key:string){const k=KEYS[key]||KEYS.C;if(!k.count)return'None';return`${k.count}${k.type==='b'?'♭':'♯'} · ${k.label}`}
 function noteValuesLabel(values:NoteValue[]){return values.map(v=>NOTE_VALUES.find(n=>n.value===v)?.label||v).join(', ')}
@@ -174,7 +174,7 @@ export default function Exercise(){
    if(waitForEnd){await new Promise<void>((resolve,reject)=>{let done=false;const finish=()=>{if(done)return;done=true;resolve()};audio.onended=finish;audio.onerror=()=>{if(done)return;done=true;reject(new Error('audio failed'))};audio.play().catch(reject)})}
    else await audio.play();
   }catch{
-   const AC=audioContextCtor();if(!AC)return;const ctx=ctxRef.current||(ctxRef.current=new AC());if(ctx.state==='suspended')await ctx.resume();const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='triangle';osc.frequency.value=440*Math.pow(2,(q.midi-69)/12);gain.gain.setValueAtTime(.15,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+1.15);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+1.2);if(waitForEnd)await new Promise(r=>setTimeout(r,1200));
+   const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx)return;ctxRef.current=ctx;await resumeBrowserAudio(ctx);const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='triangle';osc.frequency.value=440*Math.pow(2,(q.midi-69)/12);gain.gain.setValueAtTime(.15,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+1.15);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+1.2);if(waitForEnd)await new Promise(r=>setTimeout(r,1200));
   }
  }
  async function continueAfterAnswer(q:Question,nextQuestions:number){

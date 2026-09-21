@@ -1,12 +1,25 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { PitchDetector } from 'pitchy';
 import { OPEN_STRINGS, midiFrequency, noteFromFrequencyRange, rms } from '@/lib/music';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=8192;
 const ANALYSIS_MS=35;
+
+type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
+type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string};
+type NativePitchPlugin={
+  checkPermissions():Promise<{microphone?:NativePermissionState}>;
+  requestPermissions(options:{permissions:string[]}):Promise<{microphone?:NativePermissionState}>;
+  start():Promise<{sampleRate:number;source:string}>;
+  stop():Promise<void>;
+  addListener(eventName:'pitch',listener:(sample:NativePitchSample)=>void):Promise<PluginListenerHandle>;
+};
+const NativePitch=registerPlugin<NativePitchPlugin>('NativePitch');
+function hasNativePitch(){return Capacitor.isNativePlatform()&&Capacitor.isPluginAvailable('NativePitch')}
 
 function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
@@ -31,6 +44,7 @@ export default function SoundTuner(){
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const rafRef=useRef(0),lastRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
+  const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
   if(!detectorRef.current){
@@ -38,6 +52,7 @@ export default function SoundTuner(){
     detector.minVolumeAbsolute=0;
     detectorRef.current=detector;
   }
+  useEffect(()=>{a4Ref.current=a4},[a4]);
 
   function clearPitch(){setNote('—');setFrequency(null);setCents(null)}
   function stopReference(){if(audioRef.current){audioRef.current.pause();audioRef.current.src='';audioRef.current=null}try{oscRef.current?.stop()}catch{}oscRef.current=null;gainRef.current=null;setActiveRef(null)}
@@ -52,25 +67,53 @@ export default function SoundTuner(){
     }
   }
 
+  function applyPitch(rawFrequency:number,rawRms:number){
+    setMicLevel(levelPercent(rawRms));
+    const mapped=rawFrequency>0?noteFromFrequencyRange(rawFrequency,a4Ref.current):null;
+    if(mapped){
+      setNote(mapped.label);setFrequency(rawFrequency);setCents(mapped.cents);setStatus(`Raw pitch · ${mapped.label}`);
+    }else{
+      clearPitch();setStatus('Listening · no pitch detected');
+    }
+  }
+
   function analyse(ts:number){
     const analyser=analyserRef.current,ctx=ctxRef.current,detector=detectorRef.current;if(!analyser||!ctx||!detector)return;
     if(ts-lastRef.current>=ANALYSIS_MS){
       lastRef.current=ts;
       const input=bufferRef.current;analyser.getFloatTimeDomainData(input);
-      setMicLevel(levelPercent(rms(input)));
+      const inputRms=rms(input);
       const [rawFrequency]=detector.findPitch(input,ctx.sampleRate);
-      const mapped=rawFrequency>0?noteFromFrequencyRange(rawFrequency,a4):null;
-      if(mapped){
-        setNote(mapped.label);setFrequency(rawFrequency);setCents(mapped.cents);setStatus(`Raw pitch · ${mapped.label}`);
-      }else{
-        clearPitch();setStatus('Listening · no pitch detected');
-      }
+      applyPitch(rawFrequency>0?rawFrequency:0,inputRms);
     }
     rafRef.current=requestAnimationFrame(analyse);
   }
 
+  async function startNativePitch(){
+    const current=await NativePitch.checkPermissions();
+    let microphone=current.microphone;
+    if(microphone!=='granted'){
+      const requested=await NativePitch.requestPermissions({permissions:['microphone']});
+      microphone=requested.microphone;
+    }
+    if(microphone!=='granted')throw new Error('microphone permission denied');
+    const listener=await NativePitch.addListener('pitch',sample=>applyPitch(sample.frequency>0?sample.frequency:0,sample.rms));
+    nativeListenerRef.current=listener;
+    try{
+      await NativePitch.start();
+      nativeActiveRef.current=true;setRunning(true);clearPitch();setMicLevel(0);setStatus('Listening · raw microphone pitch');
+    }catch(err){
+      nativeListenerRef.current=null;await listener.remove();throw err;
+    }
+  }
+
   async function start(){
-    if(running)return;stopReference();const AC=audioContextCtor();if(!AC||!navigator.mediaDevices?.getUserMedia){setStatus('Microphone API unavailable');return}
+    if(running)return;stopReference();
+    if(hasNativePitch()){
+      try{await startNativePitch()}catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
+      return;
+    }
+    const AC=audioContextCtor();if(!AC||!navigator.mediaDevices?.getUserMedia){setStatus('Microphone API unavailable');return}
     try{
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
       const ctx=ctxRef.current||(ctxRef.current=new AC({latencyHint:'interactive'}));if(ctx.state==='suspended')await ctx.resume();
@@ -83,13 +126,20 @@ export default function SoundTuner(){
   }
 
   function stop(){
+    if(nativeActiveRef.current||nativeListenerRef.current){
+      nativeActiveRef.current=false;
+      const listener=nativeListenerRef.current;nativeListenerRef.current=null;
+      if(listener)void listener.remove();
+      void NativePitch.stop().catch(()=>{});
+      setRunning(false);setMicLevel(0);clearPitch();setStatus('Microphone stopped');return;
+    }
     cancelAnimationFrame(rafRef.current);rafRef.current=0;
     try{sourceRef.current?.disconnect();analyserRef.current?.disconnect()}catch{}
     streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;analyserRef.current=null;streamRef.current=null;
     setRunning(false);setMicLevel(0);clearPitch();setStatus('Microphone stopped');
   }
 
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop());stopReference()},[]);
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,cents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;

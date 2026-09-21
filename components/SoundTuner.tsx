@@ -10,6 +10,9 @@ const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=8192;
 const SHORT_BUFFER_SIZE=4096;
 const ANALYSIS_MS=16;
+const NOTE_SWITCH_DELAY_MS=90;
+const NOTE_BOUNDARY_BUFFER_CENTS=5;
+const NEEDLE_SMOOTHING=.18;
 const MIN_DETECT_HZ=20;
 const MAX_DETECT_HZ=5000;
 
@@ -65,6 +68,7 @@ export default function SoundTuner(){
   const [note,setNote]=useState('—');
   const [frequency,setFrequency]=useState<number|null>(null);
   const [cents,setCents]=useState<number|null>(null);
+  const [needleCents,setNeedleCents]=useState<number|null>(null);
   const [micLevel,setMicLevel]=useState(0);
   const [status,setStatus]=useState('Ready');
   const [activeRef,setActiveRef]=useState<number|null>(null);
@@ -81,6 +85,7 @@ export default function SoundTuner(){
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const shortDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
+  const displayedMidiRef=useRef<number|null>(null),pendingMidiRef=useRef<number|null>(null),pendingSinceRef=useRef(0),needleCentsRef=useRef<number|null>(null);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
   if(!detectorRef.current){
@@ -97,7 +102,8 @@ export default function SoundTuner(){
   }
   useEffect(()=>{a4Ref.current=a4},[a4]);
 
-  function clearPitch(){setNote('—');setFrequency(null);setCents(null)}
+  function clearPitch(){displayedMidiRef.current=null;pendingMidiRef.current=null;pendingSinceRef.current=0;needleCentsRef.current=null;setNote('—');setFrequency(null);setCents(null);setNeedleCents(null)}
+  function updateNeedle(target:number){const previous=needleCentsRef.current,next=previous===null?target:previous+(target-previous)*NEEDLE_SMOOTHING;needleCentsRef.current=next;setNeedleCents(next)}
   function stopReference(){if(audioRef.current){audioRef.current.pause();audioRef.current.src='';audioRef.current=null}try{oscRef.current?.stop()}catch{}oscRef.current=null;gainRef.current=null;setActiveRef(null)}
 
   async function playReference(midi:number){
@@ -112,12 +118,34 @@ export default function SoundTuner(){
   function applyPitch(rawFrequency:number,rawRms:number,mode:'sustained'|'transient'='sustained'){
     setMicLevel(levelPercent(rawRms));
     const mapped=rawFrequency>=MIN_DETECT_HZ&&rawFrequency<=MAX_DETECT_HZ?noteFromFrequency(rawFrequency,a4Ref.current):null;
-    if(mapped){
-      setNote(mapped.note);setFrequency(rawFrequency);setCents(mapped.cents);
-      setStatus(mode==='transient'?'Raw transient · '+mapped.label:'Raw pitch · '+mapped.label);
-    }else{
-      clearPitch();setStatus('Listening · no pitch candidate');
+    if(!mapped){clearPitch();setStatus('Listening · no pitch candidate');return}
+
+    const now=performance.now(),currentMidi=displayedMidiRef.current;
+    if(currentMidi===null){
+      if(pendingMidiRef.current!==mapped.midi){pendingMidiRef.current=mapped.midi;pendingSinceRef.current=now;setStatus('Listening · stabilizing '+mapped.label);return}
+      if(now-pendingSinceRef.current<NOTE_SWITCH_DELAY_MS){setStatus('Listening · stabilizing '+mapped.label);return}
+      displayedMidiRef.current=mapped.midi;pendingMidiRef.current=null;pendingSinceRef.current=0;
+      setNote(mapped.note);setFrequency(rawFrequency);setCents(mapped.cents);updateNeedle(mapped.cents);
+      setStatus(mode==='transient'?'Raw transient · '+mapped.label:'Raw pitch · '+mapped.label);return;
     }
+
+    const currentTarget=midiFrequency(currentMidi,a4Ref.current);
+    const currentCents=1200*Math.log2(rawFrequency/currentTarget);
+    if(mapped.midi!==currentMidi){
+      const crossedBoundary=Math.abs(currentCents)>=50+NOTE_BOUNDARY_BUFFER_CENTS;
+      if(crossedBoundary){
+        if(pendingMidiRef.current!==mapped.midi){pendingMidiRef.current=mapped.midi;pendingSinceRef.current=now}
+        else if(now-pendingSinceRef.current>=NOTE_SWITCH_DELAY_MS){
+          displayedMidiRef.current=mapped.midi;pendingMidiRef.current=null;pendingSinceRef.current=0;
+          setNote(mapped.note);setFrequency(rawFrequency);setCents(mapped.cents);updateNeedle(mapped.cents);
+          setStatus(mode==='transient'?'Raw transient · '+mapped.label:'Raw pitch · '+mapped.label);return;
+        }
+      }else{pendingMidiRef.current=null;pendingSinceRef.current=0}
+    }else{pendingMidiRef.current=null;pendingSinceRef.current=0}
+
+    const held=noteFromFrequency(currentTarget,a4Ref.current);
+    setNote(held.note);setFrequency(rawFrequency);setCents(currentCents);updateNeedle(currentCents);
+    setStatus(mode==='transient'?'Raw transient · '+held.label:'Raw pitch · '+held.label);
   }
 
   function analyse(ts:number){
@@ -191,7 +219,7 @@ export default function SoundTuner(){
 
   useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
-  const angle=Math.max(-50,Math.min(50,cents??0))/50*74;
+  const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;
   const color=cents===null?'#94a3b8':inTune?'#0d9488':cents<0?'#d97706':'#dc2626';
   return <>

@@ -30,8 +30,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
     }
 )
 public class NativePitchPlugin extends Plugin {
-    private static final int ANALYSIS_SIZE = 16384;
-    private static final int HOP_SIZE = 2048;
+    private static final int ANALYSIS_SIZE = 32768;
+    private static final int HOP_SIZE = 4096;
     private static final int CHUNK_SIZE = 1024;
     private static final double MIN_FREQUENCY = 30.0;
     private static final double MAX_FREQUENCY = 3300.0;
@@ -312,7 +312,7 @@ public class NativePitchPlugin extends Plugin {
     private static final class NativeYinDetector {
         private static final int DOWNSAMPLE = 4;
         private static final double YIN_THRESHOLD = 0.25;
-        private static final double WEAK_SIGNAL_THRESHOLD = 0.42;
+        private static final double WEAK_SIGNAL_THRESHOLD = 0.50;
 
         private final double downsampledRate;
         private final float[] samples;
@@ -355,9 +355,9 @@ public class NativePitchPlugin extends Plugin {
             // This does not cancel noise or alter pitch; it improves numerical headroom for
             // quiet signals while keeping enough peak headroom to avoid clipping.
             double frameRms = Math.sqrt(energy / samples.length);
-            double rmsGain = frameRms > 0.0 ? 0.16 / frameRms : 1.0;
+            double rmsGain = frameRms > 0.0 ? 0.20 / frameRms : 1.0;
             double peakGain = peak > 0.0 ? 0.92 / peak : 1.0;
-            double gain = Math.max(1.0, Math.min(12.0, Math.min(rmsGain, peakGain)));
+            double gain = Math.max(1.0, Math.min(24.0, Math.min(rmsGain, peakGain)));
             if (gain > 1.0) {
                 for (int i = 0; i < samples.length; i++) samples[i] *= (float) gain;
             }
@@ -387,19 +387,22 @@ public class NativePitchPlugin extends Plugin {
                 }
             }
             if (tauEstimate < 0) {
-                // A distant sustained note can have a weaker periodic minimum even when the
-                // raw level is low. Accept the first genuine local minimum only when it still
-                // has useful periodicity; this avoids turning broadband room noise into pitch.
+                // Far-field recovery: search all genuine local minima and choose the
+                // strongest periodic candidate. Broadband room noise normally has no
+                // sufficiently deep, stable local minimum in the playable range.
+                double bestValue = WEAK_SIGNAL_THRESHOLD;
+                int bestTau = -1;
                 for (int tau = Math.max(minTau + 1, 2); tau < maxTau; tau++) {
                     if (
-                        difference[tau] <= WEAK_SIGNAL_THRESHOLD &&
                         difference[tau] <= difference[tau - 1] &&
-                        difference[tau] < difference[tau + 1]
+                        difference[tau] < difference[tau + 1] &&
+                        difference[tau] <= bestValue
                     ) {
-                        tauEstimate = tau;
-                        break;
+                        bestValue = difference[tau];
+                        bestTau = tau;
                     }
                 }
+                tauEstimate = bestTau;
             }
             if (tauEstimate < 0) return null;
 

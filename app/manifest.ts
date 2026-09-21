@@ -4,9 +4,9 @@ export const dynamic = 'force-static';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'VIO · Violin Practice Tools',
+    name: 'VIO · Music Practice Tools',
     short_name: 'VIO',
-    description: 'Offline-ready violin tuner, tanpura, note exercise and metronome.',
+    description: 'Offline-ready universal pitch detector, scale practice, tanpura, note exercise and metronome.',
     start_url: '/',
     scope: '/',
     display: 'standalone',

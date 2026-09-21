@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 
 const KEYS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-function audioContextCtor(){return window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext}
 function keyFreq(key:string){return 130.81278265*Math.pow(2,KEYS.indexOf(key)/12)}
 
 function loopBounds(buffer:AudioBuffer){
@@ -100,11 +100,10 @@ export default function Tanpura(){
     const osc=ctx.createOscillator(),gain=ctx.createGain(),filter=ctx.createBiquadFilter();osc.type='sawtooth';osc.frequency.value=freq;filter.type='lowpass';filter.frequency.value=Math.min(4200,freq*10);gain.gain.setValueAtTime(.0001,when);gain.gain.exponentialRampToValueAtTime(amp,when+.015);gain.gain.exponentialRampToValueAtTime(.0001,when+2.7);osc.connect(filter).connect(gain).connect(dest);osc.start(when);osc.stop(when+2.8);nodesRef.current.push(osc)
   }
   async function synth(){
-    const AC=audioContextCtor();if(!AC){setStatus('Web Audio unavailable');return}const ctx=ctxRef.current||(ctxRef.current=new AC({latencyHint:'interactive'}));if(ctx.state==='suspended')await ctx.resume();const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback · Hall');setPlaying(true)
+    const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback · Hall');setPlaying(true)
   }
   async function start(){
-    stop(false);const token=tokenRef.current;const AC=audioContextCtor();if(!AC){await synth();return}
-    const ctx=ctxRef.current||(ctxRef.current=new AC({latencyHint:'interactive'}));if(ctx.state==='suspended')await ctx.resume();
+    stop(false);const token=tokenRef.current;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){await synth();return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
     const stem=key.replace('#','s'),url=`/assets/tanpura/${pattern}_${stem}.mp3`;
     setStatus('Loading drone…');
     try{

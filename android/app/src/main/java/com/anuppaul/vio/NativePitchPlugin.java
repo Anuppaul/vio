@@ -21,8 +21,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @CapacitorPlugin(
@@ -222,8 +220,7 @@ public class NativePitchPlugin extends Plugin {
         float[] shortFrame = new float[SHORT_ANALYSIS_SIZE];
         NativeYinDetector sustainedDetector = new NativeYinDetector(sampleRate, ANALYSIS_SIZE);
         NativeYinDetector transientDetector = new NativeYinDetector(sampleRate, SHORT_ANALYSIS_SIZE);
-        ForegroundGate foregroundGate = new ForegroundGate();
-        StablePitchTracker stablePitchTracker = new StablePitchTracker();
+
 
         int write = 0;
         int filled = 0;
@@ -266,10 +263,7 @@ public class NativePitchPlugin extends Plugin {
             boolean onset = recentRms > Math.max(previousRms * 1.18, previousRms + 0.00018);
 
             PitchResult pitch = chooseHybridPitch(sustainedPitch, transientPitch, onset);
-            long now = System.nanoTime();
-            PitchResult foregroundPitch = foregroundGate.accept(pitch, rms);
-            PitchResult stablePitch = stablePitchTracker.accept(foregroundPitch, now);
-            emitPitch(stablePitch, rms);
+            emitPitch(pitch, rms);
         }
     }
 
@@ -290,8 +284,8 @@ public class NativePitchPlugin extends Plugin {
     }
 
     private PitchResult chooseHybridPitch(PitchResult sustained, PitchResult transientPitch, boolean onset) {
-        boolean sustainedOk = sustained != null && sustained.confidence >= 0.80;
-        boolean transientOk = transientPitch != null && transientPitch.confidence >= 0.72;
+        boolean sustainedOk = sustained != null;
+        boolean transientOk = transientPitch != null;
 
         if (!sustainedOk && !transientOk) return null;
         if (sustainedOk && transientOk) {
@@ -312,7 +306,7 @@ public class NativePitchPlugin extends Plugin {
                 }
             }
 
-            if (onset && transientPitch.confidence >= 0.76) {
+            if (onset) {
                 return new PitchResult(transientPitch.frequency, transientPitch.confidence, "transient");
             }
             PitchResult selected = sustained.confidence >= transientPitch.confidence ? sustained : transientPitch;
@@ -384,191 +378,11 @@ public class NativePitchPlugin extends Plugin {
         }
     }
 
-    private static final class ForegroundGate {
-        private static final double BACKGROUND_TONE_CENTS = 55.0;
-        private static final double MIN_SUSTAINED_CONFIDENCE = 0.78;
-        private static final double MIN_TRANSIENT_CONFIDENCE = 0.70;
-        private static final int REJECTED_BACKGROUND_FRAMES = 18;
-
-        private final List<Double> backgroundTones = new ArrayList<>();
-        private double noiseFloor;
-        private double rejectedFrequency;
-        private int rejectedFrames;
-
-        PitchResult accept(PitchResult pitch, double rms) {
-            if (noiseFloor <= 0.0) noiseFloor = Math.max(rms, 1e-7);
-
-            double floor = Math.max(noiseFloor, 1e-7);
-            if (pitch == null) {
-                if (rms <= floor * 1.35) noiseFloor = noiseFloor * 0.985 + rms * 0.015;
-                return null;
-            }
-
-            boolean transientMode = "transient".equals(pitch.mode);
-            double neededConfidence = transientMode ? MIN_TRANSIENT_CONFIDENCE : MIN_SUSTAINED_CONFIDENCE;
-            if (pitch.confidence < neededConfidence) {
-                if (rms <= floor * 1.35) noiseFloor = noiseFloor * 0.985 + rms * 0.015;
-                return null;
-            }
-
-            boolean energyRise = rms >= floor * 1.10;
-            boolean knownBackground = backgroundHasPitch(pitch.frequency);
-            if (knownBackground && !energyRise) {
-                if (rms <= floor * 1.35) noiseFloor = noiseFloor * 0.985 + rms * 0.015;
-                return null;
-            }
-
-            if (!energyRise) {
-                if (
-                    rejectedFrequency > 0.0 &&
-                    pitchCentsApart(rejectedFrequency, pitch.frequency) <= BACKGROUND_TONE_CENTS
-                ) {
-                    rejectedFrames++;
-                } else {
-                    rejectedFrequency = pitch.frequency;
-                    rejectedFrames = 1;
-                }
-                rejectedFrequency = Math.sqrt(rejectedFrequency * pitch.frequency);
-                if (rejectedFrames >= REJECTED_BACKGROUND_FRAMES) {
-                    learnBackgroundTone(rejectedFrequency);
-                    rejectedFrequency = 0.0;
-                    rejectedFrames = 0;
-                }
-            } else {
-                rejectedFrequency = 0.0;
-                rejectedFrames = 0;
-            }
-
-            if (rms <= floor * 1.35) noiseFloor = noiseFloor * 0.992 + rms * 0.008;
-            return pitch;
-        }
-
-        private void learnBackgroundTone(double frequency) {
-            if (!(frequency > 0.0)) return;
-            for (int i = 0; i < backgroundTones.size(); i++) {
-                double current = backgroundTones.get(i);
-                if (pitchCentsApart(current, frequency) <= BACKGROUND_TONE_CENTS) {
-                    backgroundTones.set(i, Math.sqrt(current * frequency));
-                    return;
-                }
-            }
-            if (backgroundTones.size() < 6) backgroundTones.add(frequency);
-        }
-
-        private boolean backgroundHasPitch(double frequency) {
-            for (double background : backgroundTones) {
-                if (pitchCentsApart(background, frequency) <= BACKGROUND_TONE_CENTS) return true;
-            }
-            return false;
-        }
-    }
-
-    private static final class StablePitchTracker {
-        private static final double LOCK_TOLERANCE_CENTS = 38.0;
-        private static final int SWITCH_FRAMES = 3;
-        private static final long DROPOUT_HOLD_NS = 320_000_000L;
-
-        private final List<Double> history = new ArrayList<>();
-        private final List<Double> switchHistory = new ArrayList<>();
-        private double lockedFrequency;
-        private long lastGood;
-
-        PitchResult accept(PitchResult pitch, long now) {
-            if (pitch == null || !(pitch.frequency > 0.0)) {
-                return lockedFrequency > 0.0 && now - lastGood <= DROPOUT_HOLD_NS
-                    ? new PitchResult(lockedFrequency, 1.0, "sustained")
-                    : null;
-            }
-
-            double neededConfidence = "transient".equals(pitch.mode) ? 0.72 : 0.80;
-            if (pitch.confidence < neededConfidence) {
-                return lockedFrequency > 0.0 && now - lastGood <= DROPOUT_HOLD_NS
-                    ? new PitchResult(lockedFrequency, pitch.confidence, pitch.mode)
-                    : null;
-            }
-
-            if (lockedFrequency > 0.0) {
-                double normalized = octaveNear(lockedFrequency, pitch.frequency);
-                double distance = pitchCentsApart(lockedFrequency, normalized);
-                if (distance <= 85.0) {
-                    pushCluster(history, normalized, 70.0, 7);
-                    double center = medianLog(history);
-                    double alpha = "transient".equals(pitch.mode) ? 0.45 : 0.30;
-                    lockedFrequency = Math.pow(
-                        2.0,
-                        Math.log(lockedFrequency) / Math.log(2.0) * (1.0 - alpha) +
-                        Math.log(center) / Math.log(2.0) * alpha
-                    );
-                    lastGood = now;
-                    switchHistory.clear();
-                    return new PitchResult(lockedFrequency, pitch.confidence, pitch.mode);
-                }
-
-                pushCluster(switchHistory, pitch.frequency, 45.0, SWITCH_FRAMES);
-                if (switchHistory.size() >= SWITCH_FRAMES) {
-                    lockedFrequency = medianLog(switchHistory);
-                    lastGood = now;
-                    history.clear();
-                    history.add(lockedFrequency);
-                    switchHistory.clear();
-                    return new PitchResult(lockedFrequency, pitch.confidence, pitch.mode);
-                }
-
-                return now - lastGood <= DROPOUT_HOLD_NS
-                    ? new PitchResult(lockedFrequency, pitch.confidence, pitch.mode)
-                    : null;
-            }
-
-            pushCluster(history, pitch.frequency, 45.0, 5);
-            int neededFrames = "transient".equals(pitch.mode) ? 2 : 3;
-            if (history.size() >= neededFrames) {
-                lockedFrequency = medianLog(history);
-                lastGood = now;
-                switchHistory.clear();
-                return new PitchResult(lockedFrequency, pitch.confidence, pitch.mode);
-            }
-            return null;
-        }
-
-        private static double octaveNear(double reference, double frequency) {
-            double best = frequency;
-            double bestCents = pitchCentsApart(reference, frequency);
-            double[] factors = { 0.25, 0.5, 2.0, 4.0 };
-            for (double factor : factors) {
-                double candidate = frequency * factor;
-                double distance = pitchCentsApart(reference, candidate);
-                if (distance < bestCents) {
-                    best = candidate;
-                    bestCents = distance;
-                }
-            }
-            return best;
-        }
-
-        private static void pushCluster(List<Double> values, double frequency, double tolerance, int max) {
-            double reference = values.isEmpty() ? frequency : medianLog(values);
-            if (!values.isEmpty() && pitchCentsApart(reference, frequency) > tolerance) values.clear();
-            values.add(frequency);
-            while (values.size() > max) values.remove(0);
-        }
-
-        private static double medianLog(List<Double> values) {
-            if (values.isEmpty()) return 0.0;
-            List<Double> logs = new ArrayList<>(values.size());
-            for (double value : values) logs.add(Math.log(value) / Math.log(2.0));
-            logs.sort(Double::compareTo);
-            int middle = logs.size() / 2;
-            double median = logs.size() % 2 == 1
-                ? logs.get(middle)
-                : (logs.get(middle - 1) + logs.get(middle)) / 2.0;
-            return Math.pow(2.0, median);
-        }
-    }
 
     private static final class NativeYinDetector {
         private static final int DOWNSAMPLE = 4;
-        private static final double YIN_THRESHOLD = 0.15;
-        private static final double WEAK_SIGNAL_THRESHOLD = 0.34;
+        private static final double YIN_THRESHOLD = 0.85;
+        private static final double WEAK_SIGNAL_THRESHOLD = 1.00;
 
         private final double downsampledRate;
         private final float[] samples;
@@ -608,12 +422,12 @@ public class NativePitchPlugin extends Plugin {
             if (energy <= 1e-10) return null;
 
             // Normalize only the detector frame. The captured PCM and UI meter remain raw.
-            // Moderate detector-only normalization preserves headroom without promoting room noise.
+            // Full detector-only amplification. No app-level background/noise filter or pitch lock is applied.
             // Android noise suppression, AGC and echo cancellation remain disabled.
             double frameRms = Math.sqrt(energy / samples.length);
-            double rmsGain = frameRms > 0.0 ? 0.26 / frameRms : 1.0;
-            double peakGain = peak > 0.0 ? 0.95 / peak : 1.0;
-            double gain = Math.max(1.0, Math.min(48.0, Math.min(rmsGain, peakGain)));
+            double rmsGain = frameRms > 0.0 ? 0.55 / frameRms : 1.0;
+            double peakGain = peak > 0.0 ? 0.985 / peak : 1.0;
+            double gain = Math.max(1.0, Math.min(256.0, Math.min(rmsGain, peakGain)));
             if (gain > 1.0) {
                 for (int i = 0; i < samples.length; i++) samples[i] *= (float) gain;
             }
@@ -643,17 +457,12 @@ public class NativePitchPlugin extends Plugin {
                 }
             }
             if (tauEstimate < 0) {
-                // Far-field recovery: search all genuine local minima and choose the
-                // strongest periodic candidate. Broadband room noise normally has no
-                // sufficiently deep, stable local minimum in the playable range.
+                // Raw mode: choose the strongest available periodic lag instead of rejecting
+                // low-confidence room sounds. This intentionally exposes fan/insect/ambient tones.
                 double bestValue = WEAK_SIGNAL_THRESHOLD;
                 int bestTau = -1;
-                for (int tau = Math.max(minTau + 1, 2); tau < maxTau; tau++) {
-                    if (
-                        difference[tau] <= difference[tau - 1] &&
-                        difference[tau] < difference[tau + 1] &&
-                        difference[tau] <= bestValue
-                    ) {
+                for (int tau = minTau; tau <= maxTau; tau++) {
+                    if (difference[tau] < bestValue) {
                         bestValue = difference[tau];
                         bestTau = tau;
                     }

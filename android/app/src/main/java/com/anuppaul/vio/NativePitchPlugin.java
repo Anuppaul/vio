@@ -30,10 +30,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
     }
 )
 public class NativePitchPlugin extends Plugin {
-    private static final int ANALYSIS_SIZE = 32768;
-    private static final int SHORT_ANALYSIS_SIZE = 8192;
-    private static final int HOP_SIZE = 2048;
-    private static final int CHUNK_SIZE = 1024;
+    private static final int ANALYSIS_SIZE = 8192;
+    private static final int SHORT_ANALYSIS_SIZE = 4096;
+    private static final int HOP_SIZE = 1024;
+    private static final int CHUNK_SIZE = 512;
     private static final double MIN_FREQUENCY = 20.0;
     private static final double MAX_FREQUENCY = 5000.0;
     
@@ -258,8 +258,8 @@ public class NativePitchPlugin extends Plugin {
             PitchResult sustainedPitch = sustainedDetector.detect(frame);
             PitchResult transientPitch = transientDetector.detect(shortFrame);
 
-            double recentRms = rmsRange(frame, ANALYSIS_SIZE - 2048, ANALYSIS_SIZE);
-            double previousRms = rmsRange(frame, ANALYSIS_SIZE - 6144, ANALYSIS_SIZE - 2048);
+            double recentRms = rmsRange(frame, ANALYSIS_SIZE - 1024, ANALYSIS_SIZE);
+            double previousRms = rmsRange(frame, ANALYSIS_SIZE - 3072, ANALYSIS_SIZE - 1024);
             boolean onset = recentRms > Math.max(previousRms * 1.18, previousRms + 0.00018);
 
             PitchResult pitch = chooseHybridPitch(sustainedPitch, transientPitch, onset);

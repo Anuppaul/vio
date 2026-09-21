@@ -284,11 +284,8 @@ export default function SoundTuner(){
   const angle=Math.max(-50,Math.min(50,cents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;
   const color=cents===null?'#94a3b8':inTune?'#0d9488':cents<0?'#d97706':'#dc2626';
-  const activeRange=frequency?noteFromFrequency(frequency,a4):null;
-  const activeMidi=activeRange?activeRange.midi:null;
-
   return <>
-    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Universal live pitch detection for sustained and transient sounds. Raw capture is preserved, persistent room background is learned, and a hybrid long/short-window engine selects the foreground fundamental or dominant resonance. No Android noise suppression or AGC is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Universal live pitch</p><h1>Sound Tuner</h1><p>Universal live pitch detection for sustained and transient sounds. Raw capture is preserved, persistent room background is learned, and a hybrid long/short-window engine selects the foreground fundamental or dominant resonance. No Android noise suppression or AGC is applied.</p></div><div className="badge">Background → foreground → pitch</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">
@@ -298,11 +295,11 @@ export default function SoundTuner(){
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
             <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?'Play a steady tone':inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
-          <div className="target-row">{OPEN_STRINGS.map((midi,i)=><span className={`target-chip ${activeMidi===midi?'active':''}`} key={midi}>{OPEN_LABELS[i]} · {midiFrequency(midi,a4).toFixed(1)} Hz</span>)}</div>
+          <div className="target-row"><span className="target-chip">20–5000 Hz</span><span className="target-chip">Sustained + transient</span></div>
         </main>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>setA4(+e.target.value)}/><div className="seg three"><button onClick={()=>setA4(415)} className={a4===415?'active':''}>415</button><button onClick={()=>setA4(440)} className={a4===440?'active':''}>440</button><button onClick={()=>setA4(442)} className={a4===442?'active':''}>442</button></div></div>
-          <div className="control"><div className="control-label"><span>Quick reference tones</span></div><div className="seg four">{OPEN_STRINGS.map((midi,i)=><button key={midi} className={activeRef===midi?'active':''} onClick={()=>activeRef===midi?stopReference():playReference(midi)}>{OPEN_LABELS[i]}</button>)}</div><label className="toggle" style={{marginTop:9}}><span>Loop reference</span><input type="checkbox" checked={loop} onChange={e=>{setLoop(e.target.checked);if(audioRef.current)audioRef.current.loop=e.target.checked}}/></label></div>
+          <div className="control"><div className="control-label"><span>Optional reference tones</span></div><div className="seg four">{OPEN_STRINGS.map((midi,i)=><button key={midi} className={activeRef===midi?'active':''} onClick={()=>activeRef===midi?stopReference():playReference(midi)}>{OPEN_LABELS[i]}</button>)}</div><label className="toggle" style={{marginTop:9}}><span>Loop reference</span><input type="checkbox" checked={loop} onChange={e=>{setLoop(e.target.checked);if(audioRef.current)audioRef.current.loop=e.target.checked}}/></label></div>
           <div className="control"><div className="status">{status}</div></div>
           <button className={`primary ${running?'danger':''}`} onClick={running?stop:start}>{running?'Stop microphone':'Start tuning'}</button>
         </aside>

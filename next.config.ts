@@ -24,6 +24,13 @@ const nextConfig: NextConfig = androidBuild ? {
           { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
           { key: 'Service-Worker-Allowed', value: '/' }
         ]
+      },
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'Permissions-Policy', value: 'microphone=(self)' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' }
+        ]
       }
     ];
   }

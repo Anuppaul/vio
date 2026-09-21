@@ -3,18 +3,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { PitchDetector } from 'pitchy';
-import { OPEN_STRINGS, midiFrequency, noteFromFrequencyRange, rms } from '@/lib/music';
+import { OPEN_STRINGS, midiFrequency, noteFromFrequency, rms } from '@/lib/music';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=32768;
-const ANALYSIS_MS=60;
+const SHORT_BUFFER_SIZE=8192;
+const ANALYSIS_MS=55;
+const MIN_DETECT_HZ=20;
+const MAX_DETECT_HZ=5000;
 const BACKGROUND_LEARN_MS=1200;
 const BACKGROUND_TONE_CENTS=55;
 const FOREGROUND_CONFIRM_FRAMES=2;
 const FOREGROUND_HOLD_MS=520;
 
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
-type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string};
+type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string;mode?:'sustained'|'transient'};
 type NativePitchPlugin={
   checkPermissions():Promise<{microphone?:NativePermissionState}>;
   requestPermissions(options:{permissions:string[]}):Promise<{microphone?:NativePermissionState}>;
@@ -29,6 +32,10 @@ function audioContextCtor(){return window.AudioContext||(window as typeof window
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
 function arcPath(r:number,a0:number,a1:number){const [x0,y0]=arcPoint(360,330,r,a0),[x1,y1]=arcPoint(360,330,r,a1);return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`}
 function levelPercent(value:number){if(value<=0)return 0;const db=20*Math.log10(value);return Math.round(Math.max(0,Math.min(100,(db+60)/50*100)))}
+function segmentRms(buffer:Float32Array,start:number,end:number){
+  let sum=0,count=0;for(let i=Math.max(0,start);i<Math.min(buffer.length,end);i++){sum+=buffer[i]*buffer[i];count++}
+  return count?Math.sqrt(sum/count):0;
+}
 function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
   let mean=0;for(let i=0;i<input.length;i++)mean+=input[i];mean/=input.length;
   let sum=0,peak=0;
@@ -41,6 +48,34 @@ function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
   for(let i=0;i<input.length;i++)output[i]=(input[i]-mean)*gain;
 }
 function centsApart(a:number,b:number){return a>0&&b>0?Math.abs(1200*Math.log2(a/b)):Infinity}
+type PitchCandidate={frequency:number;clarity:number;mode:'sustained'|'transient'};
+function chooseHybridPitch(longFrequency:number,longClarity:number,shortFrequency:number,shortClarity:number,onset:boolean):PitchCandidate{
+  const longOk=longFrequency>=MIN_DETECT_HZ&&longFrequency<=MAX_DETECT_HZ&&longClarity>=.30;
+  const shortOk=shortFrequency>=MIN_DETECT_HZ&&shortFrequency<=MAX_DETECT_HZ&&shortClarity>=.22;
+  if(!longOk&&!shortOk)return{frequency:0,clarity:0,mode:onset?'transient':'sustained'};
+  if(longOk&&shortOk){
+    const direct=centsApart(longFrequency,shortFrequency);
+    if(direct<=55){
+      return longClarity>=shortClarity*.82
+        ?{frequency:longFrequency,clarity:longClarity,mode:onset?'transient':'sustained'}
+        :{frequency:shortFrequency,clarity:shortClarity,mode:onset?'transient':'sustained'};
+    }
+    const ratio=Math.max(longFrequency,shortFrequency)/Math.min(longFrequency,shortFrequency);
+    const octaveCents=Math.abs(1200*Math.log2(ratio)-1200);
+    if(octaveCents<=55){
+      const lower=Math.min(longFrequency,shortFrequency);
+      const lowerClarity=lower===longFrequency?longClarity:shortClarity;
+      const higherClarity=lower===longFrequency?shortClarity:longClarity;
+      if(lowerClarity>=higherClarity*.62)return{frequency:lower,clarity:lowerClarity,mode:onset?'transient':'sustained'};
+    }
+    if(onset&&shortClarity>=.26)return{frequency:shortFrequency,clarity:shortClarity,mode:'transient'};
+    return longClarity>=shortClarity
+      ?{frequency:longFrequency,clarity:longClarity,mode:'sustained'}
+      :{frequency:shortFrequency,clarity:shortClarity,mode:'transient'};
+  }
+  if(shortOk)return{frequency:shortFrequency,clarity:shortClarity,mode:'transient'};
+  return{frequency:longFrequency,clarity:longClarity,mode:'sustained'};
+}
 type BackgroundGate={
   startedAt:number;
   noiseFloor:number;
@@ -59,7 +94,7 @@ function learnBackgroundTone(gate:BackgroundGate,frequency:number){
   if(gate.backgroundTones.length<6)gate.backgroundTones.push(frequency);
 }
 function backgroundHasPitch(gate:BackgroundGate,frequency:number){return gate.backgroundTones.some(value=>centsApart(value,frequency)<=BACKGROUND_TONE_CENTS)}
-function foregroundFrequency(gate:BackgroundGate,frequency:number,clarity:number,inputRms:number,now:number){
+function foregroundFrequency(gate:BackgroundGate,frequency:number,clarity:number,inputRms:number,now:number,mode:'sustained'|'transient'){
   if(gate.noiseFloor<=0)gate.noiseFloor=Math.max(inputRms,1e-7);
   if(now-gate.startedAt<BACKGROUND_LEARN_MS){
     gate.noiseFloor=gate.noiseFloor*.90+inputRms*.10;
@@ -71,7 +106,7 @@ function foregroundFrequency(gate:BackgroundGate,frequency:number,clarity:number
   const floor=Math.max(gate.noiseFloor,1e-7);
   const energyRise=inputRms>=floor*1.08;
   const novelPitch=frequency>0&&!backgroundHasPitch(gate,frequency);
-  const tonal=frequency>0&&clarity>=.36;
+  const tonal=frequency>0&&clarity>=(mode==='transient'?.23:.34);
   const possibleForeground=tonal&&(energyRise||novelPitch);
 
   if(now<gate.foregroundUntil&&tonal){
@@ -83,8 +118,9 @@ function foregroundFrequency(gate:BackgroundGate,frequency:number,clarity:number
     if(gate.candidate>0&&centsApart(gate.candidate,frequency)<=45)gate.candidateFrames++;
     else{gate.candidate=frequency;gate.candidateFrames=1}
     gate.candidate=Math.sqrt(gate.candidate*frequency);
-    if(gate.candidateFrames>=FOREGROUND_CONFIRM_FRAMES){
-      gate.foregroundUntil=now+FOREGROUND_HOLD_MS;
+    const neededFrames=mode==='transient'&&energyRise?1:FOREGROUND_CONFIRM_FRAMES;
+    if(gate.candidateFrames>=neededFrames){
+      gate.foregroundUntil=now+(mode==='transient'?360:FOREGROUND_HOLD_MS);
       gate.rejected=0;gate.rejectedFrames=0;
       return frequency;
     }
@@ -125,8 +161,10 @@ export default function SoundTuner(){
   const streamRef=useRef<MediaStream|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const analysisBufferRef=useRef(new Float32Array(BUFFER_SIZE));
+  const shortBufferRef=useRef(new Float32Array(SHORT_BUFFER_SIZE));
   const rafRef=useRef(0),lastRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
+  const shortDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
   const backgroundGateRef=useRef<BackgroundGate>(createBackgroundGate());
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
@@ -134,8 +172,14 @@ export default function SoundTuner(){
   if(!detectorRef.current){
     const detector=PitchDetector.forFloat32Array(BUFFER_SIZE);
     detector.minVolumeAbsolute=0;
-    detector.clarityThreshold=.55;
+    detector.clarityThreshold=.52;
     detectorRef.current=detector;
+  }
+  if(!shortDetectorRef.current){
+    const detector=PitchDetector.forFloat32Array(SHORT_BUFFER_SIZE);
+    detector.minVolumeAbsolute=0;
+    detector.clarityThreshold=.38;
+    shortDetectorRef.current=detector;
   }
   useEffect(()=>{a4Ref.current=a4},[a4]);
 
@@ -152,26 +196,34 @@ export default function SoundTuner(){
     }
   }
 
-  function applyPitch(rawFrequency:number,rawRms:number){
+  function applyPitch(rawFrequency:number,rawRms:number,mode:'sustained'|'transient'='sustained'){
     setMicLevel(levelPercent(rawRms));
-    const mapped=rawFrequency>0?noteFromFrequencyRange(rawFrequency,a4Ref.current):null;
+    const mapped=rawFrequency>=MIN_DETECT_HZ&&rawFrequency<=MAX_DETECT_HZ?noteFromFrequency(rawFrequency,a4Ref.current):null;
     if(mapped){
-      setNote(mapped.label);setFrequency(rawFrequency);setCents(mapped.cents);setStatus(`Raw pitch · ${mapped.label}`);
+      setNote(mapped.label);setFrequency(rawFrequency);setCents(mapped.cents);
+      setStatus(mode==='transient'?'Transient resonance · '+mapped.label:'Detected pitch · '+mapped.label);
     }else{
-      clearPitch();setStatus('Listening · no pitch detected');
+      clearPitch();setStatus('Listening · no stable pitch');
     }
   }
 
   function analyse(ts:number){
-    const analyser=analyserRef.current,ctx=ctxRef.current,detector=detectorRef.current;if(!analyser||!ctx||!detector)return;
+    const analyser=analyserRef.current,ctx=ctxRef.current,longDetector=detectorRef.current,shortDetector=shortDetectorRef.current;
+    if(!analyser||!ctx||!longDetector||!shortDetector)return;
     if(ts-lastRef.current>=ANALYSIS_MS){
       lastRef.current=ts;
       const input=bufferRef.current;analyser.getFloatTimeDomainData(input);
-      const inputRms=rms(input),analysis=analysisBufferRef.current;
+      const inputRms=rms(input),analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current;
       prepareSensitiveFrame(input,analysis);
-      const [rawFrequency,clarity]=detector.findPitch(analysis,ctx.sampleRate);
-      const accepted=foregroundFrequency(backgroundGateRef.current,rawFrequency>0?rawFrequency:0,clarity,inputRms,ts);
-      applyPitch(accepted,inputRms);
+      shortAnalysis.set(analysis.subarray(BUFFER_SIZE-SHORT_BUFFER_SIZE));
+      const [longFrequency,longClarity]=longDetector.findPitch(analysis,ctx.sampleRate);
+      const [shortFrequency,shortClarity]=shortDetector.findPitch(shortAnalysis,ctx.sampleRate);
+      const recentRms=segmentRms(input,BUFFER_SIZE-2048,BUFFER_SIZE);
+      const previousRms=segmentRms(input,BUFFER_SIZE-6144,BUFFER_SIZE-2048);
+      const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
+      const picked=chooseHybridPitch(longFrequency>0?longFrequency:0,longClarity,shortFrequency>0?shortFrequency:0,shortClarity,onset);
+      const accepted=foregroundFrequency(backgroundGateRef.current,picked.frequency,picked.clarity,inputRms,ts,picked.mode);
+      applyPitch(accepted,inputRms,picked.mode);
     }
     rafRef.current=requestAnimationFrame(analyse);
   }
@@ -184,7 +236,7 @@ export default function SoundTuner(){
       microphone=requested.microphone;
     }
     if(microphone!=='granted')throw new Error('microphone permission denied');
-    const listener=await NativePitch.addListener('pitch',sample=>applyPitch(sample.frequency>0?sample.frequency:0,sample.rms));
+    const listener=await NativePitch.addListener('pitch',sample=>applyPitch(sample.frequency>0?sample.frequency:0,sample.rms,sample.mode??'sustained'));
     nativeListenerRef.current=listener;
     try{
       await NativePitch.start();
@@ -232,11 +284,11 @@ export default function SoundTuner(){
   const angle=Math.max(-50,Math.min(50,cents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;
   const color=cents===null?'#94a3b8':inTune?'#0d9488':cents<0?'#d97706':'#dc2626';
-  const activeRange=frequency?noteFromFrequencyRange(frequency,a4):null;
+  const activeRange=frequency?noteFromFrequency(frequency,a4):null;
   const activeMidi=activeRange?activeRange.midi:null;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Raw microphone capture is preserved. Far-field tuning preserves raw capture, learns the persistent room background, and accepts a new sustained foreground pitch above that learned profile. The detector still uses the maximum analysis window plus near-full-scale analysis-only normalization. No Android noise suppression, AGC, HPS or octave correction is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Raw live tuner</p><h1>Sound Tuner</h1><p>Universal live pitch detection for sustained and transient sounds. Raw capture is preserved, persistent room background is learned, and a hybrid long/short-window engine selects the foreground fundamental or dominant resonance. No Android noise suppression or AGC is applied.</p></div><div className="badge">Raw mic → pitch → note</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">

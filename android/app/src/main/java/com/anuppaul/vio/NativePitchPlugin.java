@@ -140,17 +140,19 @@ public class NativePitchPlugin extends Plugin {
     }
 
     private JSObject captureInfo() {
-        JSObject result = new JSObject();
-        result.put("sampleRate", sampleRate);
-        result.put("source", audioSourceName);
-        result.put("backend", usingOboe ? "oboe" : "audiorecord");
-        result.put("framesPerBurst", nativeFramesPerBurst);
-        result.put("bufferCapacityFrames", nativeBufferCapacityFrames);
-        result.put("droppedFrames", usingOboe ? NativeOboeCapture.getDroppedFrames() : 0L);
-        result.put("ringCapacityFrames", usingOboe ? NativeOboeCapture.getRingCapacityFrames() : 0);
-        result.put("oboeAvailable", NativeOboeCapture.isAvailable());
-        result.put("oboeFallbackErrorCode", usingOboe ? 0 : lastOboeStartError);
-        return result;
+        synchronized (captureLock) {
+            JSObject result = new JSObject();
+            result.put("sampleRate", sampleRate);
+            result.put("source", audioSourceName);
+            result.put("backend", usingOboe ? "oboe" : "audiorecord");
+            result.put("framesPerBurst", nativeFramesPerBurst);
+            result.put("bufferCapacityFrames", nativeBufferCapacityFrames);
+            result.put("droppedFrames", usingOboe ? NativeOboeCapture.getDroppedFrames() : 0L);
+            result.put("ringCapacityFrames", usingOboe ? NativeOboeCapture.getRingCapacityFrames() : 0);
+            result.put("oboeAvailable", NativeOboeCapture.isAvailable());
+            result.put("oboeFallbackErrorCode", usingOboe ? 0 : lastOboeStartError);
+            return result;
+        }
     }
 
     @PluginMethod
@@ -843,6 +845,7 @@ public class NativePitchPlugin extends Plugin {
         AudioRecord local;
         boolean stopOboe;
         synchronized (captureLock) {
+            running.set(false);
             local = recorder;
             recorder = null;
             stopOboe = usingOboe;

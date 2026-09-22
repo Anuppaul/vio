@@ -36,6 +36,8 @@ public class NativePitchPlugin extends Plugin {
     private static final int HOP_SIZE = 1024;
     private static final int CHUNK_SIZE = 512;
     private static final int MPM_UPDATE_HOPS = 4;
+    private static final int LONG_LOW_UPDATE_HOPS = 2;
+    private static final int LONG_HIGH_UPDATE_HOPS = 3;
     private static final double[] FAST_HANN = createHann(FAST_ANALYSIS_SIZE);
     private static final double[] SHORT_HANN = createHann(SHORT_ANALYSIS_SIZE);
     private static final double MIN_FREQUENCY = 20.0;
@@ -230,7 +232,9 @@ public class NativePitchPlugin extends Plugin {
         NativeYinDetector fastDetector = new NativeYinDetector(sampleRate, FAST_ANALYSIS_SIZE);
         NativeMpmDetector mpmDetector = new NativeMpmDetector(sampleRate, SHORT_ANALYSIS_SIZE, 70.0, MAX_FREQUENCY);
         PitchResult mpmPitch = null;
+        PitchResult sustainedPitch = null;
         int mpmHops = 0;
+        int sustainedHops = 0;
 
         int write = 0;
         int filled = 0;
@@ -269,7 +273,20 @@ public class NativePitchPlugin extends Plugin {
 
             PitchResult fastPitch = haveFast ? fastDetector.detect(fastFrame) : null;
             PitchResult transientPitch = haveShort ? transientDetector.detect(shortFrame) : null;
-            PitchResult sustainedPitch = haveLong ? sustainedDetector.detect(frame) : null;
+
+            if (haveLong) {
+                double hintFrequency = fastPitch != null
+                    ? fastPitch.frequency
+                    : transientPitch != null ? transientPitch.frequency : 0.0;
+                int requiredHops = hintFrequency > 350.0
+                    ? LONG_HIGH_UPDATE_HOPS
+                    : LONG_LOW_UPDATE_HOPS;
+                sustainedHops++;
+                if (sustainedPitch == null || sustainedHops >= requiredHops) {
+                    sustainedHops = 0;
+                    sustainedPitch = sustainedDetector.detect(frame);
+                }
+            }
 
             if (haveShort) {
                 mpmHops++;

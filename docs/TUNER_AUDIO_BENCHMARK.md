@@ -34,11 +34,11 @@ Put local recordings under:
 benchmarks/tuner/fixtures/
 ```
 
-The fixture and result directories are gitignored so large/private recordings are not accidentally committed.
+The fixture directory, result directory, and local `benchmarks/tuner/manifest.json` are gitignored so large/private recordings and local annotations are not accidentally committed. The tracked `manifest.example.json` remains the template.
 
 ## Manifest
 
-A recording has an ID, WAV path, optional tags/metadata, and sorted non-overlapping annotation regions.
+`benchmarks/tuner/manifest.schema.json` provides editor/schema validation. A recording has an ID, WAV path, optional tags/metadata, and sorted non-overlapping annotation regions.
 
 A voiced region must specify exactly one of:
 
@@ -138,7 +138,7 @@ node scripts/run-tuner-audio-benchmark.mjs \
   --json
 ```
 
-Every report records the current Git commit, manifest SHA256, and each WAV SHA256 so benchmark runs can be compared against the exact engine/data revision.
+Every report records the current Git commit, whether the Git working tree was dirty, manifest SHA256, and each WAV SHA256 so benchmark runs can be compared against the exact engine/data revision.
 
 Write reports:
 

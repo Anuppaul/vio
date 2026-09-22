@@ -36,3 +36,4 @@ public/assets/tanpura/original_network_audio/
 # Local real-audio tuner benchmarks can be large and should not be committed accidentally.
 benchmarks/tuner/fixtures/
 benchmarks/tuner/results/
+benchmarks/tuner/manifest.json

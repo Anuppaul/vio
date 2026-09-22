@@ -225,7 +225,7 @@ function normalizeDefaults(input:unknown):TunerBenchmarkDefaults{
     if(source[key]!==undefined)result[key]=assertFiniteNumber(source[key],`defaults.${key}`);
   }
   if(result.a4!==undefined&&(result.a4<400||result.a4>480))throw new Error('defaults.a4 must be between 400 and 480 Hz');
-  if(result.hopSize!==undefined&&result.hopSize<128)throw new Error('defaults.hopSize must be at least 128 samples');
+  if(result.hopSize!==undefined&&(!Number.isInteger(result.hopSize)||result.hopSize<128))throw new Error('defaults.hopSize must be an integer of at least 128 samples');
   if(result.toleranceCents!==undefined&&(result.toleranceCents<=0||result.toleranceCents>50))throw new Error('defaults.toleranceCents must be in (0, 50]');
   if(result.ignoreAttackMs!==undefined&&result.ignoreAttackMs<0)throw new Error('defaults.ignoreAttackMs must be non-negative');
   return result;

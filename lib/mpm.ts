@@ -6,6 +6,7 @@ export type MpmPitchResult = {
 type Workspace = {
   size: number;
   maxTau: number;
+  centered: Float32Array;
   prefixEnergy: Float64Array;
   nsdf: Float64Array;
 };
@@ -22,6 +23,7 @@ function getWorkspace(size: number, maxTau: number) {
     workspace = {
       size,
       maxTau,
+      centered: new Float32Array(size),
       prefixEnergy: new Float64Array(size + 1),
       nsdf: new Float64Array(maxTau + 2)
     };
@@ -73,7 +75,7 @@ export function detectMpm(
   if (maxTau <= minTau) return null;
 
   const workspace = getWorkspace(size, maxTau);
-  const { prefixEnergy, nsdf } = workspace;
+  const { centered, prefixEnergy, nsdf } = workspace;
 
   let mean = 0;
   for (let i = 0; i < size; i++) mean += samples[i];
@@ -82,6 +84,7 @@ export function detectMpm(
   prefixEnergy[0] = 0;
   for (let i = 0; i < size; i++) {
     const value = samples[i] - mean;
+    centered[i] = value;
     prefixEnergy[i + 1] = prefixEnergy[i] + value * value;
   }
 
@@ -93,7 +96,7 @@ export function detectMpm(
     const limit = size - tau;
     let correlation = 0;
     for (let i = 0; i < limit; i++) {
-      correlation += (samples[i] - mean) * (samples[i + tau] - mean);
+      correlation += centered[i] * centered[i + tau];
     }
 
     const leftEnergy = prefixEnergy[limit];

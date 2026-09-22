@@ -280,7 +280,17 @@ export default function SoundTuner(){
         MIN_DETECT_HZ,
         MAX_DETECT_HZ
       );
-      applyTrackedPitch(picked.frequency,inputRms,picked.clarity,picked.mode,ts);
+      const lowNeedsLongSupport=
+        picked.frequency>0&&picked.frequency<80&&
+        centsApart(longFrequency,picked.frequency)>45&&
+        !consensusCandidates.some(candidate=>centsApart(candidate.frequency,picked.frequency)<=45);
+      applyTrackedPitch(
+        lowNeedsLongSupport?0:picked.frequency,
+        inputRms,
+        lowNeedsLongSupport?0:picked.clarity,
+        picked.mode,
+        ts
+      );
     }
     rafRef.current=requestAnimationFrame(analyse);
   }

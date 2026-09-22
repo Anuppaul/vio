@@ -69,28 +69,95 @@ function spectrumAmplitude(
   return best;
 }
 
+function localSpectrumFloor(
+  spectrum: Float32Array,
+  frequency: number,
+  sampleRate: number
+) {
+  if (!(frequency > 0) || !spectrum.length || !(sampleRate > 0)) return 0;
+  const fftSize = spectrum.length * 2;
+  const center = Math.round(frequency * fftSize / sampleRate);
+  let sum = 0;
+  let count = 0;
+  for (const offset of [-5,-4,-3,3,4,5]) {
+    const index = center + offset;
+    if (index < 0 || index >= spectrum.length) continue;
+    sum += dbToAmplitude(spectrum[index]);
+    count++;
+  }
+  return count ? sum / count : 0;
+}
+
+export type HarmonicProfile = {
+  support: number;
+  coverage: number;
+  oddCoverage: number;
+  lowOrderCoverage: number;
+};
+
+export function harmonicProfile(
+  frequency: number,
+  spectrum: Float32Array,
+  sampleRate: number,
+  harmonics = 8
+): HarmonicProfile {
+  if (!(frequency > 0)) return {support:0,coverage:0,oddCoverage:0,lowOrderCoverage:0};
+  const nyquist = sampleRate / 2;
+  let support = 0;
+  let supportWeight = 0;
+  let coverage = 0;
+  let coverageWeight = 0;
+  let oddCoverage = 0;
+  let oddWeight = 0;
+  let lowOrderCoverage = 0;
+  let lowOrderWeight = 0;
+
+  for (let harmonic = 1; harmonic <= harmonics; harmonic++) {
+    const target = frequency * harmonic;
+    if (target >= nyquist) break;
+    const amplitude = spectrumAmplitude(spectrum, target, sampleRate);
+    const floor = localSpectrumFloor(spectrum, target, sampleRate);
+    const contrast = amplitude / Math.max(floor,1e-8);
+    const presence = Math.max(0,Math.min(1,(contrast-1.08)/2.25));
+    const weight = 1 / Math.sqrt(harmonic);
+
+    support += amplitude * weight;
+    supportWeight += weight;
+    coverage += presence * weight;
+    coverageWeight += weight;
+
+    if(harmonic<=4){
+      lowOrderCoverage += presence*weight;
+      lowOrderWeight += weight;
+    }
+    if(harmonic%2===1){
+      oddCoverage += presence*weight;
+      oddWeight += weight;
+    }
+  }
+
+  return {
+    support:supportWeight?support/supportWeight:0,
+    coverage:coverageWeight?coverage/coverageWeight:0,
+    oddCoverage:oddWeight?oddCoverage/oddWeight:0,
+    lowOrderCoverage:lowOrderWeight?lowOrderCoverage/lowOrderWeight:0
+  };
+}
+
 export function harmonicSupport(
   frequency: number,
   spectrum: Float32Array,
   sampleRate: number,
   harmonics = 8
 ) {
-  if (!(frequency > 0)) return 0;
-  const nyquist = sampleRate / 2;
-  let weighted = 0;
-  let totalWeight = 0;
-  for (let harmonic = 1; harmonic <= harmonics; harmonic++) {
-    const target = frequency * harmonic;
-    if (target >= nyquist) break;
-    const weight = 1 / Math.sqrt(harmonic);
-    weighted += spectrumAmplitude(spectrum, target, sampleRate) * weight;
-    totalWeight += weight;
-  }
-  return totalWeight > 0 ? weighted / totalWeight : 0;
+  return harmonicProfile(frequency,spectrum,sampleRate,harmonics).support;
 }
 
 type ScoredCandidate = PitchCandidate & {
   support: number;
+  coverage: number;
+  oddCoverage: number;
+  lowOrderCoverage: number;
   transformPenalty: number;
   evidence: number;
 };
@@ -109,18 +176,28 @@ function addCandidate(
 ) {
   if (!(frequency >= minFrequency && frequency <= maxFrequency)) return;
   const existing = output.find(candidate => centsApart(candidate.frequency, frequency) <= 10);
-  const support = harmonicSupport(frequency, spectrum, sampleRate);
+  const profile = harmonicProfile(frequency,spectrum,sampleRate);
+  const support = profile.support;
   if (existing) {
     if (clarity > existing.clarity) {
       existing.clarity = clarity;
       existing.mode = mode;
       existing.transformPenalty = Math.min(existing.transformPenalty, transformPenalty);
     }
-    existing.support = Math.max(existing.support, support);
+    existing.support = Math.max(existing.support,support);
+    existing.coverage = Math.max(existing.coverage,profile.coverage);
+    existing.oddCoverage = Math.max(existing.oddCoverage,profile.oddCoverage);
+    existing.lowOrderCoverage = Math.max(existing.lowOrderCoverage,profile.lowOrderCoverage);
     existing.evidence = Math.min(3, existing.evidence + evidence);
     return;
   }
-  output.push({ frequency, clarity, mode, support, transformPenalty, evidence });
+  output.push({
+    frequency,clarity,mode,support,
+    coverage:profile.coverage,
+    oddCoverage:profile.oddCoverage,
+    lowOrderCoverage:profile.lowOrderCoverage,
+    transformPenalty,evidence
+  });
 }
 
 /**
@@ -160,19 +237,20 @@ export function chooseHarmonicCandidate(
   if (!candidates.length) return { frequency: 0, clarity: 0, mode: long.mode };
   const maxSupport = Math.max(...candidates.map(candidate => candidate.support), 1e-12);
   const maxEvidence = Math.max(...candidates.map(candidate => candidate.evidence), 1e-12);
-  candidates.sort((a, b) => {
-    const scoreA =
-      a.clarity * .52 +
-      (a.support / maxSupport) * .30 +
-      (a.evidence / maxEvidence) * .18 -
-      a.transformPenalty;
-    const scoreB =
-      b.clarity * .52 +
-      (b.support / maxSupport) * .30 +
-      (b.evidence / maxEvidence) * .18 -
-      b.transformPenalty;
-    return scoreB - scoreA;
-  });
+  const score=(candidate:ScoredCandidate)=>{
+    const spectralCoherence =
+      candidate.coverage*.48 +
+      candidate.lowOrderCoverage*.34 +
+      candidate.oddCoverage*.18;
+    return (
+      candidate.clarity*.43 +
+      (candidate.support/maxSupport)*.17 +
+      spectralCoherence*.24 +
+      (candidate.evidence/maxEvidence)*.16 -
+      candidate.transformPenalty
+    );
+  };
+  candidates.sort((a,b)=>score(b)-score(a));
   const best = candidates[0];
   const agreementBoost = Math.min(.12, Math.max(0,best.evidence-1)*.08);
   return {

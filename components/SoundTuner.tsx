@@ -289,15 +289,15 @@ export default function SoundTuner(){
     if(worker&&ts-consensusWorkerAtRef.current>=CONSENSUS_WORKER_MS){
       consensusWorkerAtRef.current=ts;
       const sequence=++consensusSequenceRef.current;
-      const hint=shortFrequency>0?shortFrequency:longFrequency;
+      const hint=shortFrequency>0?shortFrequency:fastFrequency>0?fastFrequency:longFrequency;
       worker.submit({
         sequence,
         sampleRate:ctx.sampleRate,
         minFrequency:detectRangeRef.current.min,
         maxFrequency:detectRangeRef.current.max,
         hintFrequency:hint,
-        long:input,
-        short:shortFrame,
+        long:input?analysis:null,
+        short:shortFrame?shortAnalysis:null,
         fast:fastAnalysis
       });
     }
@@ -318,7 +318,7 @@ export default function SoundTuner(){
     }
 
     if(!worker&&ts-mpmConsensusAtRef.current>=MPM_CONSENSUS_MS){
-      const hint=shortFrequency>0?shortFrequency:longFrequency;
+      const hint=shortFrequency>0?shortFrequency:fastFrequency>0?fastFrequency:longFrequency;
       const lowMpm=hint>0&&hint<220;
       const mpmInput=lowMpm?shortFrame:fastFrame;
       if(hint>=70&&mpmInput){

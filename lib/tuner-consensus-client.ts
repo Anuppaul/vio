@@ -34,7 +34,7 @@ export function createTunerConsensusClient(
 
   let worker:Worker;
   try{
-    worker=new Worker('/tuner-consensus-worker.js?v=1',{
+    worker=new Worker('/tuner-consensus-worker.js?v=2',{
       name:'vio-tuner-consensus'
     });
   }catch{

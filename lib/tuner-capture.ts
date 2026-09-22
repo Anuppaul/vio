@@ -52,7 +52,7 @@ export async function createTunerWorkletCapture(
 
   try{
     if(!loadedContexts.has(ctx)){
-      await ctx.audioWorklet.addModule('/tuner-capture-worklet.js?v=2');
+      await ctx.audioWorklet.addModule('/tuner-capture-worklet.js?v=3');
       loadedContexts.add(ctx);
     }
 

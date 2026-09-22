@@ -1,11 +1,13 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
-const root=resolve(new URL('..',import.meta.url).pathname);
+const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const temp=await mkdtemp(join(tmpdir(),'vio-tuner-regression-'));
+let exitCode=1;
 
 try{
   const tsc=join(root,'node_modules','typescript','bin','tsc');
@@ -26,15 +28,19 @@ try{
     stdio:'inherit'
   });
 
-  if(compile.status!==0)process.exit(compile.status??1);
-
-  const compiled=join(temp,'scripts','tuner-regression-entry.js');
-  const run=spawnSync(process.execPath,[compiled],{
-    cwd:root,
-    stdio:'inherit',
-    env:{...process.env,NODE_PATH:join(root,'node_modules')}
-  });
-  process.exit(run.status??1);
+  if(compile.status!==0){
+    exitCode=compile.status??1;
+  }else{
+    const compiled=join(temp,'scripts','tuner-regression-entry.js');
+    const run=spawnSync(process.execPath,[compiled],{
+      cwd:root,
+      stdio:'inherit',
+      env:{...process.env,NODE_PATH:join(root,'node_modules')}
+    });
+    exitCode=run.status??1;
+  }
 }finally{
   await rm(temp,{recursive:true,force:true}).catch(()=>{});
 }
+
+process.exitCode=exitCode;

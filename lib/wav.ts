@@ -30,14 +30,16 @@ export function decodeWav(input:ArrayBuffer|Uint8Array):DecodedWav{
 
   if(view.byteLength<44)throw new Error('WAV file is too small');
   const riff=readAscii(view,0,4);
-  if(riff!=='RIFF'&&riff!=='RF64')throw new Error('Only RIFF/RF64 WAV files are supported');
+  if(riff==='RF64')throw new Error('RF64 WAV is not supported by the tuner benchmark yet');
+  if(riff!=='RIFF')throw new Error('Only RIFF WAV files are supported');
   if(readAscii(view,8,4)!=='WAVE')throw new Error('Invalid WAV container');
 
   let formatCode=0;
   let channels=0;
   let sampleRate=0;
   let blockAlign=0;
-  let bitsPerSample=0;
+  let containerBitsPerSample=0;
+  let validBitsPerSample=0;
   let dataOffset=-1;
   let dataLength=0;
 
@@ -54,11 +56,12 @@ export function decodeWav(input:ArrayBuffer|Uint8Array):DecodedWav{
       channels=view.getUint16(start+2,true);
       sampleRate=view.getUint32(start+4,true);
       blockAlign=view.getUint16(start+12,true);
-      bitsPerSample=view.getUint16(start+14,true);
+      containerBitsPerSample=view.getUint16(start+14,true);
+      validBitsPerSample=containerBitsPerSample;
 
       if(formatCode===0xfffe&&size>=40){
         const validBits=view.getUint16(start+18,true);
-        if(validBits>0)bitsPerSample=validBits;
+        if(validBits>0)validBitsPerSample=validBits;
         const subFormat=view.getUint16(start+24,true);
         if(subFormat===1||subFormat===3)formatCode=subFormat;
       }
@@ -70,11 +73,11 @@ export function decodeWav(input:ArrayBuffer|Uint8Array):DecodedWav{
     offset=start+size+(size&1);
   }
 
-  if(!channels||!sampleRate||!blockAlign||!bitsPerSample)throw new Error('WAV format metadata is missing');
+  if(!channels||!sampleRate||!blockAlign||!containerBitsPerSample)throw new Error('WAV format metadata is missing');
   if(dataOffset<0||dataLength<=0)throw new Error('WAV data chunk is missing');
   if(formatCode!==1&&formatCode!==3)throw new Error(`Unsupported WAV encoding: ${formatCode}`);
 
-  const bytesPerSample=Math.ceil(bitsPerSample/8);
+  const bytesPerSample=Math.ceil(containerBitsPerSample/8);
   if(blockAlign<channels*bytesPerSample)throw new Error('Invalid WAV block alignment');
   const frameCount=Math.floor(dataLength/blockAlign);
   const mono=new Float32Array(frameCount);
@@ -87,15 +90,15 @@ export function decodeWav(input:ArrayBuffer|Uint8Array):DecodedWav{
       let value=0;
 
       if(formatCode===3){
-        if(bitsPerSample===32)value=view.getFloat32(sampleOffset,true);
-        else if(bitsPerSample===64)value=view.getFloat64(sampleOffset,true);
-        else throw new Error(`Unsupported float WAV bit depth: ${bitsPerSample}`);
+        if(containerBitsPerSample===32)value=view.getFloat32(sampleOffset,true);
+        else if(containerBitsPerSample===64)value=view.getFloat64(sampleOffset,true);
+        else throw new Error(`Unsupported float WAV container depth: ${containerBitsPerSample}`);
       }else{
-        if(bitsPerSample===8)value=(view.getUint8(sampleOffset)-128)/128;
-        else if(bitsPerSample===16)value=view.getInt16(sampleOffset,true)/32768;
-        else if(bitsPerSample===24)value=signed24(view,sampleOffset)/8388608;
-        else if(bitsPerSample===32)value=view.getInt32(sampleOffset,true)/2147483648;
-        else throw new Error(`Unsupported PCM WAV bit depth: ${bitsPerSample}`);
+        if(containerBitsPerSample===8)value=(view.getUint8(sampleOffset)-128)/128;
+        else if(containerBitsPerSample===16)value=view.getInt16(sampleOffset,true)/32768;
+        else if(containerBitsPerSample===24)value=signed24(view,sampleOffset)/8388608;
+        else if(containerBitsPerSample===32)value=view.getInt32(sampleOffset,true)/2147483648;
+        else throw new Error(`Unsupported PCM WAV container depth: ${containerBitsPerSample}`);
       }
 
       sum+=Math.max(-1,Math.min(1,value));
@@ -106,7 +109,7 @@ export function decodeWav(input:ArrayBuffer|Uint8Array):DecodedWav{
   return{
     sampleRate,
     channels,
-    bitsPerSample,
+    bitsPerSample:validBitsPerSample||containerBitsPerSample,
     format:formatCode===3?'float':'pcm',
     samples:mono,
     durationSeconds:frameCount/sampleRate

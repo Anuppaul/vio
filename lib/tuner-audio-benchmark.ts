@@ -482,6 +482,22 @@ export function benchmarkTunerRecording(
     accumulator.lastFrame=result;
     report.totalFrames++;
 
+    const expected=report.expectedHz;
+    if(
+      region.voiced &&
+      expected!==null &&
+      result.tracked.frequency &&
+      report.firstCorrectMs===null
+    ){
+      const earlyError=pitchCentsError(result.tracked.frequency,expected);
+      if(
+        earlyError!==null &&
+        Math.abs(earlyError)<=(report.toleranceCents as number)
+      ){
+        report.firstCorrectMs=now;
+      }
+    }
+
     const ignoreAttackMs=region.ignoreAttackMs??manifest.defaults?.ignoreAttackMs??DEFAULT_IGNORE_ATTACK_MS;
     if(now<region.startMs+ignoreAttackMs)continue;
     report.scoredFrames++;
@@ -492,8 +508,8 @@ export function benchmarkTunerRecording(
         continue;
       }
       report.detectedFrames++;
-      const expected=report.expectedHz as number;
-      const error=pitchCentsError(result.tracked.frequency,expected);
+      const voicedExpected=expected as number;
+      const error=pitchCentsError(result.tracked.frequency,voicedExpected);
       if(error===null)continue;
       const absolute=Math.abs(error);
       accumulator.absCents.push(absolute);
@@ -501,8 +517,7 @@ export function benchmarkTunerRecording(
       const tolerance=report.toleranceCents as number;
       if(absolute<=tolerance){
         report.correctFrames++;
-        if(report.firstCorrectMs===null)report.firstCorrectMs=now;
-      }else if(isPitchOctaveError(result.tracked.frequency,expected)){
+      }else if(isPitchOctaveError(result.tracked.frequency,voicedExpected)){
         report.octaveErrorFrames++;
       }else if(absolute>100){
         report.grossErrorFrames++;

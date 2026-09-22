@@ -13,7 +13,7 @@
       "additionalProperties": false,
       "properties": {
         "a4": { "type": "number", "minimum": 400, "maximum": 480 },
-        "hopSize": { "type": "number", "minimum": 128 },
+        "hopSize": { "type": "integer", "minimum": 128 },
         "toleranceCents": { "type": "number", "exclusiveMinimum": 0, "maximum": 50 },
         "ignoreAttackMs": { "type": "number", "minimum": 0 }
       }
@@ -79,7 +79,7 @@
         "endMs": { "type": "number", "exclusiveMinimum": 0 },
         "voiced": { "type": "boolean" },
         "expectedHz": { "type": "number", "exclusiveMinimum": 0 },
-        "expectedMidi": { "type": "number", "minimum": 0, "maximum": 127 },
+        "expectedMidi": { "type": "integer", "minimum": 0, "maximum": 127 },
         "toleranceCents": { "type": "number", "exclusiveMinimum": 0, "maximum": 50 },
         "ignoreAttackMs": { "type": "number", "minimum": 0 }
       },
@@ -100,6 +100,14 @@
                 "not": { "required": ["expectedHz"] }
               }
             ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["expectedHz"] },
+                { "required": ["expectedMidi"] }
+              ]
+            }
           }
         }
       ]

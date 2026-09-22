@@ -150,6 +150,7 @@ export type TunerBenchmarkReport={
   byTag:Record<string,TunerBenchmarkAggregate>;
   provenance?:{
     engineCommit?:string|null;
+    engineDirty?:boolean|null;
     manifestSha256?:string|null;
     manifestPath?:string|null;
   };
@@ -256,10 +257,10 @@ export function normalizeTunerBenchmarkManifest(input:unknown):TunerBenchmarkMan
 
     const tags=recording.tags===undefined?[]:
       Array.isArray(recording.tags)
-        ?recording.tags.map((tag,tagIndex)=>{
+        ?[...new Set(recording.tags.map((tag,tagIndex)=>{
           if(typeof tag!=='string'||!tag.trim())throw new Error(`recordings[${index}].tags[${tagIndex}] must be a non-empty string`);
           return tag.trim();
-        })
+        }))]
         :(()=>{throw new Error(`recordings[${index}].tags must be an array`)})();
 
     const metadata:Record<string,string|number|boolean>={};
@@ -304,10 +305,12 @@ export function normalizeTunerBenchmarkManifest(input:unknown):TunerBenchmarkMan
         const specified=Number(normalized.expectedHz!==undefined)+Number(normalized.expectedMidi!==undefined);
         if(specified!==1)throw new Error(`Voiced region recordings[${index}].regions[${regionIndex}] must specify exactly one of expectedHz or expectedMidi`);
         if(normalized.expectedHz!==undefined&&normalized.expectedHz<=0)throw new Error('expectedHz must be positive');
-        if(normalized.expectedMidi!==undefined&&(normalized.expectedMidi<0||normalized.expectedMidi>127))throw new Error('expectedMidi must be in [0, 127]');
+        if(normalized.expectedMidi!==undefined&&(!Number.isInteger(normalized.expectedMidi)||normalized.expectedMidi<0||normalized.expectedMidi>127))throw new Error('expectedMidi must be an integer in [0, 127]');
         const tolerance=normalized.toleranceCents??defaults.toleranceCents??DEFAULT_TOLERANCE_CENTS;
         if(tolerance<=0||tolerance>50)throw new Error('toleranceCents must be in (0, 50]');
         normalized.toleranceCents=tolerance;
+      }else if(normalized.expectedHz!==undefined||normalized.expectedMidi!==undefined){
+        throw new Error(`Unvoiced region recordings[${index}].regions[${regionIndex}] must not specify expectedHz or expectedMidi`);
       }
       const ignore=normalized.ignoreAttackMs??defaults.ignoreAttackMs??DEFAULT_IGNORE_ATTACK_MS;
       if(ignore<0)throw new Error('ignoreAttackMs must be non-negative');

@@ -69,6 +69,14 @@ function currentCommit(){
   return result.status===0?result.stdout.trim()||null:null;
 }
 
+function workingTreeDirty(){
+  const result=spawnSync('git',['status','--porcelain'],{
+    cwd:process.cwd(),
+    encoding:'utf8'
+  });
+  return result.status===0?Boolean(result.stdout.trim()):null;
+}
+
 function percent(value:number){
   return `${(value*100).toFixed(2)}%`;
 }
@@ -211,6 +219,7 @@ if(!options.manifest){
     reports,
     {
       engineCommit:currentCommit(),
+      engineDirty:workingTreeDirty(),
       manifestSha256:sha256(manifestText),
       manifestPath:options.manifest
     }
@@ -237,6 +246,7 @@ if(!options.manifest){
     console.log(`Manifest: ${manifestPath}`);
     console.log(`Profile: ${report.profile}`);
     console.log(`Engine commit: ${report.provenance?.engineCommit??'unknown'}`);
+    console.log(`Working tree dirty: ${report.provenance?.engineDirty===null||report.provenance?.engineDirty===undefined?'unknown':report.provenance.engineDirty?'yes':'no'}`);
     console.log(`Manifest SHA256: ${report.provenance?.manifestSha256??'unknown'}`);
     console.log(`Criteria: ${report.criteria?'enabled':'report-only'}`);
     printAggregate('Overall:',report.aggregate);

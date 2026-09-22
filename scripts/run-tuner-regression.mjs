@@ -32,7 +32,7 @@ try{
     exitCode=compile.status??1;
   }else{
     const compiled=join(temp,'scripts','tuner-regression-entry.js');
-    const run=spawnSync(process.execPath,[compiled],{
+    const run=spawnSync(process.execPath,[compiled,...process.argv.slice(2)],{
       cwd:root,
       stdio:'inherit',
       env:{...process.env,NODE_PATH:join(root,'node_modules')}

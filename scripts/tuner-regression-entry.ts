@@ -2,6 +2,11 @@ import { runFullTunerRegression } from '../lib/tuner-full-regression';
 
 const report=runFullTunerRegression();
 
+if(process.argv.includes('--json')){
+  console.log(JSON.stringify(report,null,2));
+  if(!report.summary.pass)process.exitCode=1;
+}else{
+
 console.log('');
 console.log('VIO Sound Tuner Full Regression');
 console.log('================================');
@@ -35,3 +40,4 @@ console.log(
 console.log(`Overall: ${report.summary.pass?'PASS':'FAIL'}`);
 
 if(!report.summary.pass)process.exitCode=1;
+}

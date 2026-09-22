@@ -2,6 +2,8 @@ export type TunerCaptureFrame={
   sequence:number;
   sampleRate:number;
   audioTime:number;
+  rms:number;
+  onset:boolean;
   fast:Float32Array;
   short:Float32Array|null;
   long:Float32Array|null;

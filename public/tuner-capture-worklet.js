@@ -2,6 +2,9 @@ const LONG_SIZE=8192;
 const SHORT_SIZE=4096;
 const FAST_SIZE=2048;
 const HOP_SIZE=1024;
+const TARGET_RMS=.32;
+const MAX_GAIN=64;
+const MAX_PEAK=.97;
 
 class VioTunerCaptureProcessor extends AudioWorkletProcessor{
   constructor(){
@@ -30,6 +33,43 @@ class VioTunerCaptureProcessor extends AudioWorkletProcessor{
     return output;
   }
 
+  segmentRms(frame,start,end){
+    let sum=0;
+    let count=0;
+    const safeStart=Math.max(0,start);
+    const safeEnd=Math.min(frame.length,end);
+    for(let i=safeStart;i<safeEnd;i++){
+      const value=frame[i];
+      sum+=value*value;
+      count++;
+    }
+    return count?Math.sqrt(sum/count):0;
+  }
+
+  prepare(frame){
+    let mean=0;
+    for(let i=0;i<frame.length;i++)mean+=frame[i];
+    mean/=frame.length;
+
+    let sum=0;
+    let peak=0;
+    for(let i=0;i<frame.length;i++){
+      const value=frame[i]-mean;
+      frame[i]=value;
+      sum+=value*value;
+      peak=Math.max(peak,Math.abs(value));
+    }
+
+    const frameRms=Math.sqrt(sum/frame.length);
+    const rmsGain=frameRms>0?TARGET_RMS/frameRms:1;
+    const peakGain=peak>0?MAX_PEAK/peak:1;
+    const gain=Math.max(1,Math.min(MAX_GAIN,rmsGain,peakGain));
+    if(gain>1){
+      for(let i=0;i<frame.length;i++)frame[i]*=gain;
+    }
+    return frame;
+  }
+
   process(inputs,outputs){
     const output=outputs[0]?.[0];
     if(output)output.fill(0);
@@ -49,22 +89,33 @@ class VioTunerCaptureProcessor extends AudioWorkletProcessor{
     this.sincePost%=HOP_SIZE;
     this.sequence++;
 
-    const fast=this.latest(FAST_SIZE);
-    const short=this.filled>=SHORT_SIZE?this.latest(SHORT_SIZE):null;
+    const fastRaw=this.latest(FAST_SIZE);
+    const shortRaw=this.filled>=SHORT_SIZE?this.latest(SHORT_SIZE):null;
     const includeLong=this.filled>=LONG_SIZE&&(this.sequence%2===0);
-    const long=includeLong?this.latest(LONG_SIZE):null;
+    const longRaw=includeLong?this.latest(LONG_SIZE):null;
+    if(!fastRaw)return true;
+
+    const rms=this.segmentRms(fastRaw,0,FAST_SIZE);
+    const recentRms=this.segmentRms(fastRaw,FAST_SIZE-512,FAST_SIZE);
+    const previousRms=this.segmentRms(fastRaw,0,FAST_SIZE-512);
+    const onset=recentRms>Math.max(previousRms*1.18,previousRms+.00018);
+
+    const fast=this.prepare(fastRaw);
+    const short=shortRaw?this.prepare(shortRaw):null;
+    const long=longRaw?this.prepare(longRaw):null;
 
     const payload={
       type:'frame',
       sequence:this.sequence,
       sampleRate,
       audioTime:currentTime,
+      rms,
+      onset,
       fast,
       short,
       long
     };
-    const transfers=[];
-    if(fast)transfers.push(fast.buffer);
+    const transfers=[fast.buffer];
     if(short)transfers.push(short.buffer);
     if(long)transfers.push(long.buffer);
     this.port.postMessage(payload,transfers);

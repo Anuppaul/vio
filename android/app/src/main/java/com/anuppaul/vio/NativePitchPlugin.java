@@ -318,6 +318,20 @@ public class NativePitchPlugin extends Plugin {
             }
             pitch = mergeMpmConsensus(pitch, mpmForFrame);
             pitch = validateHarmonicFundamental(pitch, haveShort ? shortFrame : fastFrame);
+            if (
+                pitch != null &&
+                pitch.frequency < 80.0 &&
+                (
+                    sustainedPitch == null ||
+                    pitchCentsApart(sustainedPitch.frequency, pitch.frequency) > 45.0
+                ) &&
+                (
+                    mpmForFrame == null ||
+                    pitchCentsApart(mpmForFrame.frequency, pitch.frequency) > 45.0
+                )
+            ) {
+                pitch = null;
+            }
             emitPitch(acceptPitch(pitch), rms);
         }
 

@@ -171,9 +171,10 @@ export default function SoundTuner(){
       needleFilterRef.current.reset();
     }
     const filteredCents=needleFilterRef.current.filter(mapped.cents,now);
+    const displayFrequency=mapped.target*Math.pow(2,filteredCents/1200);
     setNote(mapped.label);
-    setFrequency(tracked.frequency);
-    setCents(mapped.cents);
+    setFrequency(displayFrequency);
+    setCents(filteredCents);
     setNeedleCents(filteredCents);
 
     if(tracked.state==='transition')setStatus(`Tracking ${mapped.label} · checking note change`);

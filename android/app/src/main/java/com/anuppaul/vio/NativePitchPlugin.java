@@ -33,7 +33,7 @@ public class NativePitchPlugin extends Plugin {
     private static final int ANALYSIS_SIZE = 8192;
     private static final int SHORT_ANALYSIS_SIZE = 4096;
     private static final int FAST_ANALYSIS_SIZE = 2048;
-    private static final int HOP_SIZE = 1024;
+    private static final double TARGET_HOP_SECONDS = 0.0213333333;
     private static final int CHUNK_SIZE = 512;
     private static final int MPM_UPDATE_HOPS = 4;
     private static final int LONG_LOW_UPDATE_HOPS = 2;
@@ -56,6 +56,9 @@ public class NativePitchPlugin extends Plugin {
     private AutomaticGainControl automaticGainControl;
     private int sampleRate;
     private String audioSourceName = "microphone";
+    private boolean usingOboe = false;
+    private int nativeFramesPerBurst = 0;
+    private int nativeBufferCapacityFrames = 0;
 
     @PluginMethod
     public void start(PluginCall call) {
@@ -65,12 +68,30 @@ public class NativePitchPlugin extends Plugin {
         }
 
         synchronized (captureLock) {
-            if (running.get() && recorder != null) {
-                JSObject current = new JSObject();
-                current.put("sampleRate", sampleRate);
-                current.put("source", audioSourceName);
-                call.resolve(current);
+            if (running.get()) {
+                call.resolve(captureInfo());
                 return;
+            }
+
+            if (NativeOboeCapture.isAvailable()) {
+                int oboeResult = NativeOboeCapture.start();
+                int oboeRate = NativeOboeCapture.getSampleRate();
+                if (oboeResult == 0 && oboeRate > 0 && NativeOboeCapture.isRunning()) {
+                    usingOboe = true;
+                    recorder = null;
+                    sampleRate = oboeRate;
+                    audioSourceName = NativeOboeCapture.getBackendName();
+                    nativeFramesPerBurst = NativeOboeCapture.getFramesPerBurst();
+                    nativeBufferCapacityFrames = NativeOboeCapture.getBufferCapacityFrames();
+
+                    running.set(true);
+                    worker = new Thread(this::captureLoop, "vio-native-pitch-oboe");
+                    worker.setDaemon(true);
+                    worker.start();
+                    call.resolve(captureInfo());
+                    return;
+                }
+                NativeOboeCapture.stop();
             }
 
             AudioRecord created = createRecorder();
@@ -79,6 +100,9 @@ public class NativePitchPlugin extends Plugin {
                 return;
             }
 
+            usingOboe = false;
+            nativeFramesPerBurst = 0;
+            nativeBufferCapacityFrames = 0;
             recorder = created;
             disablePlatformAudioEffects(created.getAudioSessionId());
             try {
@@ -100,15 +124,22 @@ public class NativePitchPlugin extends Plugin {
             }
 
             running.set(true);
-            worker = new Thread(this::captureLoop, "vio-native-pitch");
+            worker = new Thread(this::captureLoop, "vio-native-pitch-audiorecord");
             worker.setDaemon(true);
             worker.start();
-
-            JSObject result = new JSObject();
-            result.put("sampleRate", sampleRate);
-            result.put("source", audioSourceName);
-            call.resolve(result);
+            call.resolve(captureInfo());
         }
+    }
+
+    private JSObject captureInfo() {
+        JSObject result = new JSObject();
+        result.put("sampleRate", sampleRate);
+        result.put("source", audioSourceName);
+        result.put("backend", usingOboe ? "oboe" : "audiorecord");
+        result.put("framesPerBurst", nativeFramesPerBurst);
+        result.put("bufferCapacityFrames", nativeBufferCapacityFrames);
+        result.put("droppedFrames", usingOboe ? NativeOboeCapture.getDroppedFrames() : 0L);
+        return result;
     }
 
     @PluginMethod
@@ -219,10 +250,12 @@ public class NativePitchPlugin extends Plugin {
     }
 
     private void captureLoop() {
+        final boolean oboeBackend = usingOboe;
         AudioRecord local = recorder;
-        if (local == null) return;
+        if (!oboeBackend && local == null) return;
 
-        short[] chunk = new short[CHUNK_SIZE];
+        short[] chunk = oboeBackend ? null : new short[CHUNK_SIZE];
+        float[] oboeChunk = oboeBackend ? new float[CHUNK_SIZE] : null;
         float[] ring = new float[ANALYSIS_SIZE];
         float[] frame = new float[ANALYSIS_SIZE];
         float[] shortFrame = new float[SHORT_ANALYSIS_SIZE];
@@ -239,33 +272,49 @@ public class NativePitchPlugin extends Plugin {
         int write = 0;
         int filled = 0;
         int sinceAnalysis = 0;
+        int analysisHop = Math.max(
+            512,
+            Math.round((float) (sampleRate * TARGET_HOP_SECONDS) / 128.0f) * 128
+        );
 
         String failureMessage = null;
         while (running.get()) {
             int count;
-            try {
-                count = local.read(chunk, 0, chunk.length, AudioRecord.READ_BLOCKING);
-            } catch (Exception error) {
-                if (running.get()) failureMessage = "Native microphone read failed.";
-                break;
-            }
-            if (count <= 0) {
-                if (count == AudioRecord.ERROR_DEAD_OBJECT || count == AudioRecord.ERROR_INVALID_OPERATION) {
-                    if (running.get()) failureMessage = "Native microphone capture became unavailable.";
+            if (oboeBackend) {
+                count = NativeOboeCapture.read(oboeChunk, oboeChunk.length, 120);
+                if (count < 0) {
+                    if (running.get()) {
+                        failureMessage = "Oboe microphone capture became unavailable ("
+                            + NativeOboeCapture.getLastErrorCode() + ").";
+                    }
                     break;
                 }
-                continue;
+                if (count == 0) continue;
+            } else {
+                try {
+                    count = local.read(chunk, 0, chunk.length, AudioRecord.READ_BLOCKING);
+                } catch (Exception error) {
+                    if (running.get()) failureMessage = "Native microphone read failed.";
+                    break;
+                }
+                if (count <= 0) {
+                    if (count == AudioRecord.ERROR_DEAD_OBJECT || count == AudioRecord.ERROR_INVALID_OPERATION) {
+                        if (running.get()) failureMessage = "Native microphone capture became unavailable.";
+                        break;
+                    }
+                    continue;
+                }
             }
 
             for (int i = 0; i < count; i++) {
-                ring[write] = chunk[i] / 32768.0f;
+                ring[write] = oboeBackend ? oboeChunk[i] : chunk[i] / 32768.0f;
                 write++;
                 if (write == ANALYSIS_SIZE) write = 0;
             }
             filled = Math.min(ANALYSIS_SIZE, filled + count);
             sinceAnalysis += count;
-            if (filled < FAST_ANALYSIS_SIZE || sinceAnalysis < HOP_SIZE) continue;
-            sinceAnalysis = 0;
+            if (filled < FAST_ANALYSIS_SIZE || sinceAnalysis < analysisHop) continue;
+            sinceAnalysis %= analysisHop;
 
             boolean haveFast = copyLatest(ring, write, filled, fastFrame);
             boolean haveShort = copyLatest(ring, write, filled, shortFrame);
@@ -364,11 +413,18 @@ public class NativePitchPlugin extends Plugin {
 
         if (failureMessage != null && running.compareAndSet(true, false)) {
             synchronized (captureLock) {
-                if (recorder == local) recorder = null;
+                if (oboeBackend) {
+                    usingOboe = false;
+                    NativeOboeCapture.stop();
+                } else if (recorder == local) {
+                    recorder = null;
+                }
             }
-            try { local.stop(); } catch (Exception ignored) {}
-            releaseRecorder(local);
-            releasePlatformAudioEffects();
+            if (!oboeBackend) {
+                try { if (local != null) local.stop(); } catch (Exception ignored) {}
+                releaseRecorder(local);
+                releasePlatformAudioEffects();
+            }
             emitCaptureError(failureMessage);
         }
     }
@@ -654,19 +710,30 @@ public class NativePitchPlugin extends Plugin {
     private void stopCapture() {
         running.set(false);
         AudioRecord local;
+        boolean stopOboe;
         synchronized (captureLock) {
             local = recorder;
             recorder = null;
+            stopOboe = usingOboe;
+            usingOboe = false;
+        }
+
+        if (stopOboe) {
+            NativeOboeCapture.stop();
         }
         if (local != null) {
             try { local.stop(); } catch (Exception ignored) {}
             releaseRecorder(local);
         }
+
         Thread localWorker = worker;
         worker = null;
         if (localWorker != null && localWorker != Thread.currentThread()) {
             try { localWorker.join(350); } catch (InterruptedException error) { Thread.currentThread().interrupt(); }
         }
+
+        nativeFramesPerBurst = 0;
+        nativeBufferCapacityFrames = 0;
         releasePlatformAudioEffects();
     }
 

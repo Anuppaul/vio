@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class NativePitchPlugin extends Plugin {
     private static final int ANALYSIS_SIZE = 8192;
     private static final int SHORT_ANALYSIS_SIZE = 4096;
+    private static final int FAST_ANALYSIS_SIZE = 2048;
     private static final int HOP_SIZE = 1024;
     private static final int CHUNK_SIZE = 512;
     private static final double MIN_FREQUENCY = 20.0;
@@ -223,8 +224,10 @@ public class NativePitchPlugin extends Plugin {
         float[] ring = new float[ANALYSIS_SIZE];
         float[] frame = new float[ANALYSIS_SIZE];
         float[] shortFrame = new float[SHORT_ANALYSIS_SIZE];
+        float[] fastFrame = new float[FAST_ANALYSIS_SIZE];
         NativeYinDetector sustainedDetector = new NativeYinDetector(sampleRate, ANALYSIS_SIZE);
         NativeYinDetector transientDetector = new NativeYinDetector(sampleRate, SHORT_ANALYSIS_SIZE);
+        NativeYinDetector fastDetector = new NativeYinDetector(sampleRate, FAST_ANALYSIS_SIZE);
 
 
         int write = 0;
@@ -264,15 +267,26 @@ public class NativePitchPlugin extends Plugin {
 
             double rms = rms(frame);
             System.arraycopy(frame, ANALYSIS_SIZE - SHORT_ANALYSIS_SIZE, shortFrame, 0, SHORT_ANALYSIS_SIZE);
+            System.arraycopy(frame, ANALYSIS_SIZE - FAST_ANALYSIS_SIZE, fastFrame, 0, FAST_ANALYSIS_SIZE);
 
             PitchResult sustainedPitch = sustainedDetector.detect(frame);
             PitchResult transientPitch = transientDetector.detect(shortFrame);
+            PitchResult fastPitch = fastDetector.detect(fastFrame);
 
             double recentRms = rmsRange(frame, ANALYSIS_SIZE - 1024, ANALYSIS_SIZE);
             double previousRms = rmsRange(frame, ANALYSIS_SIZE - 3072, ANALYSIS_SIZE - 1024);
             boolean onset = recentRms > Math.max(previousRms * 1.18, previousRms + 0.00018);
 
-            PitchResult pitch = chooseHybridPitch(sustainedPitch, transientPitch, onset);
+            PitchResult responsivePitch = transientPitch;
+            if (fastPitch != null && fastPitch.confidence >= MIN_TRANSIENT_CONFIDENCE) {
+                boolean highPitch = fastPitch.frequency >= 500.0;
+                boolean strongerEnough = transientPitch == null || fastPitch.confidence >= transientPitch.confidence * 0.86;
+                if ((onset || highPitch) && strongerEnough) {
+                    responsivePitch = new PitchResult(fastPitch.frequency, fastPitch.confidence, "transient");
+                }
+            }
+
+            PitchResult pitch = chooseHybridPitch(sustainedPitch, responsivePitch, onset);
             emitPitch(acceptPitch(pitch, System.nanoTime()), rms);
         }
 

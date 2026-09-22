@@ -5,6 +5,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 import { PitchDetector } from 'pitchy';
 import { OPEN_STRINGS, midiFrequency, noteFromFrequency, rms } from '@/lib/music';
 import { detectPitch } from '@/lib/yin';
+import { detectMpm } from '@/lib/mpm';
 import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
 import {
   OneEuroFilter,
@@ -19,7 +20,8 @@ const BUFFER_SIZE=8192;
 const SHORT_BUFFER_SIZE=4096;
 const FAST_BUFFER_SIZE=2048;
 const ANALYSIS_MS=16;
-const CONSENSUS_MS=96;
+const YIN_CONSENSUS_MS=112;
+const MPM_CONSENSUS_MS=128;
 const MIN_DETECT_HZ=20;
 const MAX_DETECT_HZ=5000;
 
@@ -84,8 +86,10 @@ export default function SoundTuner(){
   const trackerRef=useRef(new PitchTracker());
   const needleFilterRef=useRef(new OneEuroFilter());
   const displayedMidiRef=useRef<number|null>(null);
-  const consensusRef=useRef<PitchCandidate|null>(null);
-  const consensusAtRef=useRef(0);
+  const yinConsensusRef=useRef<PitchCandidate|null>(null);
+  const mpmConsensusRef=useRef<PitchCandidate|null>(null);
+  const yinConsensusAtRef=useRef(0);
+  const mpmConsensusAtRef=useRef(48);
   const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeErrorListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
@@ -120,7 +124,8 @@ export default function SoundTuner(){
     displayedMidiRef.current=null;
     if(resetEngine){
       trackerRef.current.reset();needleFilterRef.current.reset();
-      consensusRef.current=null;consensusAtRef.current=0;
+      yinConsensusRef.current=null;mpmConsensusRef.current=null;
+      yinConsensusAtRef.current=0;mpmConsensusAtRef.current=48;
     }
     setNote('—');setFrequency(null);setCents(null);setNeedleCents(null);
   }
@@ -197,17 +202,36 @@ export default function SoundTuner(){
       const [longFrequency,longClarity]=longDetector.findPitch(analysis,ctx.sampleRate);
       const [shortFrequency,shortClarity]=shortDetector.findPitch(shortAnalysis,ctx.sampleRate);
       const [fastFrequency,fastClarity]=fastDetector.findPitch(fastAnalysis,ctx.sampleRate);
-      if(ts-consensusAtRef.current>=CONSENSUS_MS){
-        consensusAtRef.current=ts;
+
+      if(ts-yinConsensusAtRef.current>=YIN_CONSENSUS_MS){
+        yinConsensusAtRef.current=ts;
         const lowCandidate=longFrequency>0&&longFrequency<90;
         const consensusInput=lowCandidate?analysis:shortAnalysis;
         const consensusMin=lowCandidate?MIN_DETECT_HZ:55;
         const consensusMax=Math.min(MAX_DETECT_HZ,ctx.sampleRate*.45);
         const independent=detectPitch(consensusInput,ctx.sampleRate,consensusMin,consensusMax);
-        consensusRef.current=independent
+        yinConsensusRef.current=independent
           ?{frequency:independent.frequency,clarity:independent.clarity,mode:'sustained'}
           :null;
       }
+
+      if(ts-mpmConsensusAtRef.current>=MPM_CONSENSUS_MS){
+        mpmConsensusAtRef.current=ts;
+        const hint=shortFrequency>0?shortFrequency:longFrequency;
+        if(hint>=70){
+          const lowMpm=hint<220;
+          const mpmInput=lowMpm?shortAnalysis:fastAnalysis;
+          const mpmMin=lowMpm?70:180;
+          const mpmMax=Math.min(MAX_DETECT_HZ,ctx.sampleRate*.45);
+          const independent=detectMpm(mpmInput,ctx.sampleRate,mpmMin,mpmMax);
+          mpmConsensusRef.current=independent
+            ?{frequency:independent.frequency,clarity:independent.clarity,mode:'sustained'}
+            :null;
+        }else{
+          mpmConsensusRef.current=null;
+        }
+      }
+
       const recentRms=segmentRms(input,BUFFER_SIZE-2048,BUFFER_SIZE);
       const previousRms=segmentRms(input,BUFFER_SIZE-6144,BUFFER_SIZE-2048);
       const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
@@ -217,7 +241,7 @@ export default function SoundTuner(){
       const picked=chooseHarmonicCandidate(
         {frequency:longFrequency>0?longFrequency:0,clarity:longClarity,mode:'sustained'},
         {frequency:responsiveFrequency>0?responsiveFrequency:0,clarity:responsiveClarity,mode:onset?'transient':'sustained'},
-        consensusRef.current,
+        [yinConsensusRef.current,mpmConsensusRef.current].filter((candidate):candidate is PitchCandidate=>candidate!==null),
         spectrum,
         ctx.sampleRate,
         MIN_DETECT_HZ,

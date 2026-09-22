@@ -35,37 +35,54 @@ export async function createTunerWorkletCapture(
 ):Promise<TunerWorkletCapture|null>{
   if(!supportsTunerAudioWorklet(ctx))return null;
 
+  let node:AudioWorkletNode|null=null;
+  let sink:GainNode|null=null;
+  let handleMessage:((event:MessageEvent)=>void)|null=null;
+  let handleProcessorError:(()=>void)|null=null;
+
+  const cleanup=()=>{
+    if(node&&handleMessage)node.port.removeEventListener('message',handleMessage);
+    if(node&&handleProcessorError)node.removeEventListener('processorerror',handleProcessorError);
+    try{if(node)source.disconnect(node)}catch{}
+    try{node?.disconnect()}catch{}
+    try{sink?.disconnect()}catch{}
+  };
+
   try{
     if(!loadedContexts.has(ctx)){
       await ctx.audioWorklet.addModule('/tuner-capture-worklet.js?v=1');
       loadedContexts.add(ctx);
     }
 
-    const node=new AudioWorkletNode(ctx,'vio-tuner-capture',{
+    node=new AudioWorkletNode(ctx,'vio-tuner-capture',{
       numberOfInputs:1,
       numberOfOutputs:1,
       outputChannelCount:[1],
       channelCount:1,
       channelCountMode:'explicit'
     });
-    const sink=ctx.createGain();
+    sink=ctx.createGain();
     sink.gain.value=0;
 
-    const handleMessage=(event:MessageEvent)=>{
+    handleMessage=(event:MessageEvent)=>{
       const data=event.data;
       if(data?.type!=='frame')return;
       const fast=toFloat32(data.fast);
       if(!fast)return;
-      onFrame({
-        sequence:Number(data.sequence)||0,
-        sampleRate:Number(data.sampleRate)||ctx.sampleRate,
-        audioTime:Number(data.audioTime)||0,
-        fast,
-        short:toFloat32(data.short),
-        long:toFloat32(data.long)
-      });
+      try{
+        onFrame({
+          sequence:Number(data.sequence)||0,
+          sampleRate:Number(data.sampleRate)||ctx.sampleRate,
+          audioTime:Number(data.audioTime)||0,
+          fast,
+          short:toFloat32(data.short),
+          long:toFloat32(data.long)
+        });
+      }catch{
+        onError('AudioWorklet frame processing failed.');
+      }
     };
-    const handleProcessorError=()=>onError('AudioWorklet capture processor stopped unexpectedly.');
+    handleProcessorError=()=>onError('AudioWorklet capture processor stopped unexpectedly.');
 
     node.port.addEventListener('message',handleMessage);
     node.port.start();
@@ -73,22 +90,21 @@ export async function createTunerWorkletCapture(
     source.connect(node);
     node.connect(sink).connect(ctx.destination);
 
+    const activeNode=node;
+    const activeSink=sink;
     let stopped=false;
     return{
-      node,
-      sink,
+      node:activeNode,
+      sink:activeSink,
       stop(){
         if(stopped)return;
         stopped=true;
-        try{node.port.postMessage({type:'stop'})}catch{}
-        node.port.removeEventListener('message',handleMessage);
-        node.removeEventListener('processorerror',handleProcessorError);
-        try{source.disconnect(node)}catch{}
-        try{node.disconnect()}catch{}
-        try{sink.disconnect()}catch{}
+        try{activeNode.port.postMessage({type:'stop'})}catch{}
+        cleanup();
       }
     };
   }catch{
+    cleanup();
     return null;
   }
 }

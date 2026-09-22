@@ -129,7 +129,7 @@ function addCandidate(
 export function chooseHarmonicCandidate(
   long: PitchCandidate,
   short: PitchCandidate,
-  consensus: PitchCandidate | null,
+  consensus: PitchCandidate | PitchCandidate[] | null,
   spectrum: Float32Array,
   sampleRate: number,
   minFrequency: number,
@@ -140,7 +140,12 @@ export function chooseHarmonicCandidate(
     {candidate:long,weight:1},
     {candidate:short,weight:.86}
   ];
-  if(consensus)sources.push({candidate:consensus,weight:1.25});
+  if(consensus){
+    const independent = Array.isArray(consensus) ? consensus : [consensus];
+    independent.forEach((candidate,index)=>{
+      sources.push({candidate,weight:index===0?1.25:1.18});
+    });
+  }
 
   for (const {candidate:source,weight} of sources) {
     if (!(source.frequency >= minFrequency && source.frequency <= maxFrequency)) continue;

@@ -1,4 +1,5 @@
 import { midiFrequency, noteFromFrequency } from './music';
+import { detectorRangeForSampleRate } from './pitch-engine';
 import {
   FullTunerHarness,
   tunerFrameStepMs,
@@ -132,6 +133,7 @@ export type TunerBenchmarkRecordingReport={
   durationMs:number;
   channels?:number;
   bitsPerSample?:number;
+  sha256?:string;
   tags:string[];
   metadata:Record<string,string|number|boolean>;
   regions:TunerBenchmarkRegionReport[];
@@ -145,6 +147,11 @@ export type TunerBenchmarkReport={
   recordings:TunerBenchmarkRecordingReport[];
   aggregate:TunerBenchmarkAggregate;
   byTag:Record<string,TunerBenchmarkAggregate>;
+  provenance?:{
+    engineCommit?:string|null;
+    manifestSha256?:string|null;
+    manifestPath?:string|null;
+  };
   pass:boolean|null;
 };
 
@@ -153,6 +160,7 @@ export type TunerBenchmarkAudio={
   samples:Float32Array;
   channels?:number;
   bitsPerSample?:number;
+  sha256?:string;
 };
 
 type RegionAccumulator={
@@ -303,6 +311,7 @@ export function normalizeTunerBenchmarkManifest(input:unknown):TunerBenchmarkMan
       }
       const ignore=normalized.ignoreAttackMs??defaults.ignoreAttackMs??DEFAULT_IGNORE_ATTACK_MS;
       if(ignore<0)throw new Error('ignoreAttackMs must be non-negative');
+      if(ignore>=endMs-startMs)throw new Error(`ignoreAttackMs must be shorter than its region in recordings[${index}].regions[${regionIndex}]`);
       normalized.ignoreAttackMs=ignore;
       return normalized;
     });
@@ -487,6 +496,15 @@ export function benchmarkTunerRecording(
 
   const a4=recording.a4??manifest.defaults?.a4??DEFAULT_A4;
   const hopSize=Math.round(manifest.defaults?.hopSize??DEFAULT_HOP_SIZE);
+  const range=detectorRangeForSampleRate(audio.sampleRate);
+  for(const region of recording.regions){
+    const expected=expectedFrequency(region,a4);
+    if(expected!==null&&(expected<range.min||expected>range.max)){
+      throw new Error(
+        `Recording ${recording.id} region ${region.id??region.label??''} expects ${expected.toFixed(2)} Hz outside supported ${range.min.toFixed(2)}–${range.max.toFixed(2)} Hz range at ${audio.sampleRate} Hz sample rate`
+      );
+    }
+  }
   const engine=new FullTunerHarness(audio.sampleRate,a4);
   const accumulators=recording.regions.map((region,index)=>createRegionAccumulator(recording.id,region,index,a4));
   const durationMs=audio.samples.length/audio.sampleRate*1000;
@@ -574,6 +592,7 @@ export function benchmarkTunerRecording(
     durationMs,
     channels:audio.channels,
     bitsPerSample:audio.bitsPerSample,
+    sha256:audio.sha256,
     tags:recording.tags??[],
     metadata:recording.metadata??{},
     regions,
@@ -588,7 +607,8 @@ export function benchmarkTunerRecording(
 
 export function buildTunerBenchmarkReport(
   manifest:TunerBenchmarkManifest,
-  recordings:TunerBenchmarkRecordingReport[]
+  recordings:TunerBenchmarkRecordingReport[],
+  provenance?:TunerBenchmarkReport['provenance']
 ):TunerBenchmarkReport{
   const aggregate=aggregateReports(recordings);
   const tags=new Set(recordings.flatMap(recording=>recording.tags));
@@ -602,6 +622,7 @@ export function buildTunerBenchmarkReport(
     recordings,
     aggregate,
     byTag,
+    provenance,
     pass:criteriaPass(aggregate,manifest.criteria)
   };
 }

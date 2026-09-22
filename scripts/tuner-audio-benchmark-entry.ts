@@ -1,4 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import process from 'node:process';
 import {
@@ -53,6 +55,18 @@ function parseArgs(argv:string[]):CliOptions{
 
   if(!manifest)throw new Error('--manifest is required');
   return{manifest,json,out,csv,only};
+}
+
+function sha256(value:Uint8Array|string){
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function currentCommit(){
+  const result=spawnSync('git',['rev-parse','HEAD'],{
+    cwd:process.cwd(),
+    encoding:'utf8'
+  });
+  return result.status===0?result.stdout.trim()||null:null;
 }
 
 function percent(value:number){
@@ -132,6 +146,7 @@ function printRecording(recording:TunerBenchmarkRecordingReport){
   console.log('');
   console.log(`${recording.pass===null?'INFO':recording.pass?'PASS':'FAIL'} Recording ${recording.id}`);
   console.log(`  file: ${recording.file}`);
+  if(recording.sha256)console.log(`  WAV SHA256: ${recording.sha256}`);
   console.log(`  audio: ${recording.sampleRate} Hz, ${(recording.durationMs/1000).toFixed(2)} s${recording.channels?`, ${recording.channels} ch`:''}${recording.bitsPerSample?`, ${recording.bitsPerSample}-bit`:''}`);
   if(recording.tags.length)console.log(`  tags: ${recording.tags.join(', ')}`);
   printAggregate('  aggregate:',recording.aggregate);
@@ -156,14 +171,20 @@ if(!options.manifest){
 }else{
   const manifestPath=resolve(options.manifest);
   const manifestDir=dirname(manifestPath);
+  const manifestText=await readFile(manifestPath,'utf8');
   const manifest=normalizeTunerBenchmarkManifest(
-    JSON.parse(await readFile(manifestPath,'utf8'))
+    JSON.parse(manifestText)
   );
 
   const selected=options.only
     ?manifest.recordings.filter(recording=>options.only?.has(recording.id))
     :manifest.recordings;
 
+  if(options.only){
+    const known=new Set(manifest.recordings.map(recording=>recording.id));
+    const unknown=[...options.only].filter(id=>!known.has(id));
+    if(unknown.length)throw new Error(`Unknown --only recording id(s): ${unknown.join(', ')}`);
+  }
   if(!selected.length)throw new Error('No recordings selected by --only');
 
   const reports:TunerBenchmarkRecordingReport[]=[];
@@ -178,14 +199,20 @@ if(!options.manifest){
         sampleRate:decoded.sampleRate,
         samples:decoded.samples,
         channels:decoded.channels,
-        bitsPerSample:decoded.bitsPerSample
+        bitsPerSample:decoded.bitsPerSample,
+        sha256:sha256(bytes)
       })
     );
   }
 
   const report=buildTunerBenchmarkReport(
     {...manifest,recordings:selected},
-    reports
+    reports,
+    {
+      engineCommit:currentCommit(),
+      manifestSha256:sha256(manifestText),
+      manifestPath
+    }
   );
 
   if(options.out){
@@ -207,6 +234,8 @@ if(!options.manifest){
     console.log('VIO Real-Audio Sound Tuner Benchmark');
     console.log('====================================');
     console.log(`Manifest: ${manifestPath}`);
+    console.log(`Engine commit: ${report.provenance?.engineCommit??'unknown'}`);
+    console.log(`Manifest SHA256: ${report.provenance?.manifestSha256??'unknown'}`);
     console.log(`Criteria: ${report.criteria?'enabled':'report-only'}`);
     printAggregate('Overall:',report.aggregate);
     for(const recording of report.recordings)printRecording(recording);

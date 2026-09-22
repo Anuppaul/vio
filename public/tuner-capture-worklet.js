@@ -1,7 +1,7 @@
 const LONG_SIZE=8192;
 const SHORT_SIZE=4096;
 const FAST_SIZE=2048;
-const HOP_SIZE=1024;
+const TARGET_HOP_SECONDS=.0213333333;
 const TARGET_RMS=.32;
 const MAX_GAIN=64;
 const MAX_PEAK=.97;
@@ -13,6 +13,7 @@ class VioTunerCaptureProcessor extends AudioWorkletProcessor{
     this.write=0;
     this.filled=0;
     this.sincePost=0;
+    this.hopSize=Math.max(512,Math.round(sampleRate*TARGET_HOP_SECONDS/128)*128);
     this.sequence=0;
     this.active=true;
     this.awaitingAck=false;
@@ -105,8 +106,8 @@ class VioTunerCaptureProcessor extends AudioWorkletProcessor{
     this.filled=Math.min(LONG_SIZE,this.filled+input.length);
     this.sincePost+=input.length;
 
-    if(this.filled<FAST_SIZE||this.sincePost<HOP_SIZE)return true;
-    this.sincePost%=HOP_SIZE;
+    if(this.filled<FAST_SIZE||this.sincePost<this.hopSize)return true;
+    this.sincePost%=this.hopSize;
     if(this.awaitingAck)return true;
     this.awaitingAck=true;
     this.sequence++;

@@ -17,6 +17,7 @@ import {
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=8192;
 const SHORT_BUFFER_SIZE=4096;
+const FAST_BUFFER_SIZE=2048;
 const ANALYSIS_MS=16;
 const CONSENSUS_MS=96;
 const MIN_DETECT_HZ=20;
@@ -74,10 +75,12 @@ export default function SoundTuner(){
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const analysisBufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const shortBufferRef=useRef(new Float32Array(SHORT_BUFFER_SIZE));
+  const fastBufferRef=useRef(new Float32Array(FAST_BUFFER_SIZE));
   const spectrumRef=useRef(new Float32Array(BUFFER_SIZE/2));
   const rafRef=useRef(0),lastRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const shortDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
+  const fastDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const trackerRef=useRef(new PitchTracker());
   const needleFilterRef=useRef(new OneEuroFilter());
   const consensusRef=useRef<PitchCandidate|null>(null);
@@ -96,6 +99,12 @@ export default function SoundTuner(){
     detector.minVolumeAbsolute=0;
     detector.clarityThreshold=.18;
     shortDetectorRef.current=detector;
+  }
+  if(!fastDetectorRef.current){
+    const detector=PitchDetector.forFloat32Array(FAST_BUFFER_SIZE);
+    detector.minVolumeAbsolute=0;
+    detector.clarityThreshold=.16;
+    fastDetectorRef.current=detector;
   }
 
   useEffect(()=>{
@@ -167,18 +176,20 @@ export default function SoundTuner(){
   }
 
   function analyse(ts:number){
-    const analyser=analyserRef.current,ctx=ctxRef.current,longDetector=detectorRef.current,shortDetector=shortDetectorRef.current;
-    if(!analyser||!ctx||!longDetector||!shortDetector)return;
+    const analyser=analyserRef.current,ctx=ctxRef.current,longDetector=detectorRef.current,shortDetector=shortDetectorRef.current,fastDetector=fastDetectorRef.current;
+    if(!analyser||!ctx||!longDetector||!shortDetector||!fastDetector)return;
     if(ts-lastRef.current>=ANALYSIS_MS){
       lastRef.current=ts;
       const input=bufferRef.current;analyser.getFloatTimeDomainData(input);
-      const inputRms=rms(input),analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current,spectrum=spectrumRef.current;
+      const inputRms=rms(input),analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current,fastAnalysis=fastBufferRef.current,spectrum=spectrumRef.current;
       prepareSensitiveFrame(input,analysis);
       shortAnalysis.set(analysis.subarray(BUFFER_SIZE-SHORT_BUFFER_SIZE));
+      fastAnalysis.set(analysis.subarray(BUFFER_SIZE-FAST_BUFFER_SIZE));
       analyser.getFloatFrequencyData(spectrum);
 
       const [longFrequency,longClarity]=longDetector.findPitch(analysis,ctx.sampleRate);
       const [shortFrequency,shortClarity]=shortDetector.findPitch(shortAnalysis,ctx.sampleRate);
+      const [fastFrequency,fastClarity]=fastDetector.findPitch(fastAnalysis,ctx.sampleRate);
       if(ts-consensusAtRef.current>=CONSENSUS_MS){
         consensusAtRef.current=ts;
         const lowCandidate=longFrequency>0&&longFrequency<90;
@@ -193,9 +204,12 @@ export default function SoundTuner(){
       const recentRms=segmentRms(input,BUFFER_SIZE-2048,BUFFER_SIZE);
       const previousRms=segmentRms(input,BUFFER_SIZE-6144,BUFFER_SIZE-2048);
       const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
+      const useFast=fastFrequency>0&&(onset||fastFrequency>=500)&&fastClarity>=shortClarity*.86;
+      const responsiveFrequency=useFast?fastFrequency:shortFrequency;
+      const responsiveClarity=useFast?fastClarity:shortClarity;
       const picked=chooseHarmonicCandidate(
         {frequency:longFrequency>0?longFrequency:0,clarity:longClarity,mode:'sustained'},
-        {frequency:shortFrequency>0?shortFrequency:0,clarity:shortClarity,mode:onset?'transient':'sustained'},
+        {frequency:responsiveFrequency>0?responsiveFrequency:0,clarity:responsiveClarity,mode:onset?'transient':'sustained'},
         consensusRef.current,
         spectrum,
         ctx.sampleRate,

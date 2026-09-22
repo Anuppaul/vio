@@ -16,6 +16,8 @@ out/
 
 # Android sources are tracked; build products and copied web assets are not.
 android/.gradle/
+android/.cxx/
+android/app/.cxx/
 android/.idea/
 android/local.properties
 android/**/build/

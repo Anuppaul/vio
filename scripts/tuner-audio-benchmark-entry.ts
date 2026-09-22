@@ -62,8 +62,10 @@ function numberOrDash(value:number|null,digits=2){
 function printAggregate(label:string,aggregate:TunerBenchmarkAggregate){
   console.log(label);
   console.log(`  recordings: ${aggregate.recordings}, regions: ${aggregate.regions} (${aggregate.voicedRegions} voiced / ${aggregate.unvoicedRegions} unvoiced)`);
-  console.log(`  voiced frame accuracy: ${percent(aggregate.voicedFrameAccuracy)}`);
+  console.log(`  voiced fine accuracy: ${percent(aggregate.voicedFrameAccuracy)}`);
+  console.log(`  voiced note accuracy: ${percent(aggregate.voicedNoteAccuracy)}`);
   console.log(`  voiced detection rate: ${percent(aggregate.voicedDetectionRate)}`);
+  console.log(`  dropout rate: ${percent(aggregate.dropoutRate)}`);
   console.log(`  false-positive rate: ${percent(aggregate.unvoicedFalsePositiveRate)}`);
   console.log(`  octave-error rate: ${percent(aggregate.octaveErrorRate)}`);
   console.log(`  gross-error rate: ${percent(aggregate.grossErrorRate)}`);
@@ -84,7 +86,7 @@ function printRecording(recording:TunerBenchmarkRecordingReport){
     const mark=region.pass===null?'INFO':region.pass?'PASS':'FAIL';
     if(region.voiced){
       console.log(
-        `  ${mark} region ${region.id} [${region.startMs.toFixed(0)}–${region.endMs.toFixed(0)} ms] expected=${region.expectedNote} ${region.expectedHz?.toFixed(2)} Hz | accuracy=${percent(region.frameAccuracy)} detect=${percent(region.detectionRate)} centsMAE=${numberOrDash(region.centsMae)} p95=${numberOrDash(region.centsP95)} lock=${region.lockLatencyMs===null?'—':region.lockLatencyMs.toFixed(1)+' ms'} octave=${region.octaveErrorFrames} gross=${region.grossErrorFrames} (${percent(region.grossErrorRate)})`
+        `  ${mark} region ${region.id} [${region.startMs.toFixed(0)}–${region.endMs.toFixed(0)} ms] expected=${region.expectedNote} ${region.expectedHz?.toFixed(2)} Hz | fine=${percent(region.frameAccuracy)} note=${percent(region.noteAccuracy)} detect=${percent(region.detectionRate)} dropout=${percent(region.dropoutRate)} centsMAE=${numberOrDash(region.centsMae)} p95=${numberOrDash(region.centsP95)} lock=${region.lockLatencyMs===null?'—':region.lockLatencyMs.toFixed(1)+' ms'} octave=${region.octaveErrorFrames} gross=${region.grossErrorFrames} (${percent(region.grossErrorRate)})`
       );
     }else{
       console.log(

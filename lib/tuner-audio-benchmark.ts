@@ -15,7 +15,9 @@ import {
 
 export type TunerBenchmarkCriteria={
   minVoicedFrameAccuracy?:number;
+  minVoicedNoteAccuracy?:number;
   minVoicedDetectionRate?:number;
+  maxDropoutRate?:number;
   maxVoicedCentsMae?:number;
   maxVoicedCentsP95?:number;
   maxOctaveErrorRate?:number;
@@ -73,12 +75,15 @@ export type TunerBenchmarkRegionReport={
   scoredFrames:number;
   detectedFrames:number;
   correctFrames:number;
+  noteCorrectFrames:number;
   falsePositiveFrames:number;
   dropoutFrames:number;
   octaveErrorFrames:number;
   grossErrorFrames:number;
   detectionRate:number;
   frameAccuracy:number;
+  noteAccuracy:number;
+  dropoutRate:number;
   falsePositiveRate:number;
   octaveErrorRate:number;
   grossErrorRate:number;
@@ -101,12 +106,15 @@ export type TunerBenchmarkAggregate={
   unvoicedFrames:number;
   detectedVoicedFrames:number;
   correctVoicedFrames:number;
+  noteCorrectVoicedFrames:number;
   falsePositiveFrames:number;
   dropoutFrames:number;
   octaveErrorFrames:number;
   grossErrorFrames:number;
   voicedDetectionRate:number;
   voicedFrameAccuracy:number;
+  voicedNoteAccuracy:number;
+  dropoutRate:number;
   unvoicedFalsePositiveRate:number;
   octaveErrorRate:number;
   grossErrorRate:number;
@@ -178,7 +186,9 @@ function normalizeCriteria(input:unknown):TunerBenchmarkCriteria|undefined{
 
   const unitKeys=[
     'minVoicedFrameAccuracy',
+    'minVoicedNoteAccuracy',
     'minVoicedDetectionRate',
+    'maxDropoutRate',
     'maxOctaveErrorRate',
     'maxGrossErrorRate',
     'maxUnvoicedFalsePositiveRate',
@@ -326,12 +336,15 @@ function createRegionAccumulator(
       scoredFrames:0,
       detectedFrames:0,
       correctFrames:0,
+      noteCorrectFrames:0,
       falsePositiveFrames:0,
       dropoutFrames:0,
       octaveErrorFrames:0,
       grossErrorFrames:0,
       detectionRate:0,
       frameAccuracy:0,
+      noteAccuracy:0,
+      dropoutRate:0,
       falsePositiveRate:0,
       octaveErrorRate:0,
       grossErrorRate:0,
@@ -356,6 +369,8 @@ function finalizeRegion(
   const report=accumulator.report;
   report.detectionRate=ratio(report.detectedFrames,report.scoredFrames);
   report.frameAccuracy=report.voiced?ratio(report.correctFrames,report.scoredFrames):0;
+  report.noteAccuracy=report.voiced?ratio(report.noteCorrectFrames,report.scoredFrames):0;
+  report.dropoutRate=report.voiced?ratio(report.dropoutFrames,report.scoredFrames):0;
   report.falsePositiveRate=report.voiced?0:ratio(report.falsePositiveFrames,report.scoredFrames);
   report.octaveErrorRate=report.voiced?ratio(report.octaveErrorFrames,report.scoredFrames):0;
   report.grossErrorRate=report.voiced?ratio(report.grossErrorFrames,report.scoredFrames):0;
@@ -370,7 +385,9 @@ function finalizeRegion(
     let pass=true;
     if(report.voiced){
       if(criteria.minVoicedFrameAccuracy!==undefined)pass&&=report.frameAccuracy>=criteria.minVoicedFrameAccuracy;
+      if(criteria.minVoicedNoteAccuracy!==undefined)pass&&=report.noteAccuracy>=criteria.minVoicedNoteAccuracy;
       if(criteria.minVoicedDetectionRate!==undefined)pass&&=report.detectionRate>=criteria.minVoicedDetectionRate;
+      if(criteria.maxDropoutRate!==undefined)pass&&=report.dropoutRate<=criteria.maxDropoutRate;
       if(criteria.maxVoicedCentsMae!==undefined)pass&&=report.centsMae!==null&&report.centsMae<=criteria.maxVoicedCentsMae;
       if(criteria.maxVoicedCentsP95!==undefined)pass&&=report.centsP95!==null&&report.centsP95<=criteria.maxVoicedCentsP95;
       if(criteria.maxOctaveErrorRate!==undefined)pass&&=report.octaveErrorRate<=criteria.maxOctaveErrorRate;
@@ -403,6 +420,7 @@ function aggregateReports(reports:TunerBenchmarkRecordingReport[]):TunerBenchmar
   const unvoicedFrames=unvoiced.reduce((sum,region)=>sum+region.scoredFrames,0);
   const detectedVoicedFrames=voiced.reduce((sum,region)=>sum+region.detectedFrames,0);
   const correctVoicedFrames=voiced.reduce((sum,region)=>sum+region.correctFrames,0);
+  const noteCorrectVoicedFrames=voiced.reduce((sum,region)=>sum+region.noteCorrectFrames,0);
   const falsePositiveFrames=unvoiced.reduce((sum,region)=>sum+region.falsePositiveFrames,0);
   const octaveErrorFrames=voiced.reduce((sum,region)=>sum+region.octaveErrorFrames,0);
 
@@ -416,12 +434,15 @@ function aggregateReports(reports:TunerBenchmarkRecordingReport[]):TunerBenchmar
     unvoicedFrames,
     detectedVoicedFrames,
     correctVoicedFrames,
+    noteCorrectVoicedFrames,
     falsePositiveFrames,
     dropoutFrames:voiced.reduce((sum,region)=>sum+region.dropoutFrames,0),
     octaveErrorFrames,
     grossErrorFrames:voiced.reduce((sum,region)=>sum+region.grossErrorFrames,0),
     voicedDetectionRate:ratio(detectedVoicedFrames,voicedFrames),
     voicedFrameAccuracy:ratio(correctVoicedFrames,voicedFrames),
+    voicedNoteAccuracy:ratio(noteCorrectVoicedFrames,voicedFrames),
+    dropoutRate:ratio(voiced.reduce((sum,region)=>sum+region.dropoutFrames,0),voicedFrames),
     unvoicedFalsePositiveRate:ratio(falsePositiveFrames,unvoicedFrames),
     octaveErrorRate:ratio(octaveErrorFrames,voicedFrames),
     grossErrorRate:ratio(voiced.reduce((sum,region)=>sum+region.grossErrorFrames,0),voicedFrames),
@@ -437,7 +458,9 @@ function criteriaPass(aggregate:TunerBenchmarkAggregate,criteria:TunerBenchmarkC
   if(!criteria)return null;
   let pass=true;
   if(criteria.minVoicedFrameAccuracy!==undefined)pass&&=aggregate.voicedFrameAccuracy>=criteria.minVoicedFrameAccuracy;
+  if(criteria.minVoicedNoteAccuracy!==undefined)pass&&=aggregate.voicedNoteAccuracy>=criteria.minVoicedNoteAccuracy;
   if(criteria.minVoicedDetectionRate!==undefined)pass&&=aggregate.voicedDetectionRate>=criteria.minVoicedDetectionRate;
+  if(criteria.maxDropoutRate!==undefined)pass&&=aggregate.dropoutRate<=criteria.maxDropoutRate;
   if(criteria.maxVoicedCentsMae!==undefined)pass&&=aggregate.centsMae!==null&&aggregate.centsMae<=criteria.maxVoicedCentsMae;
   if(criteria.maxVoicedCentsP95!==undefined)pass&&=aggregate.centsP95!==null&&aggregate.centsP95<=criteria.maxVoicedCentsP95;
   if(criteria.maxOctaveErrorRate!==undefined)pass&&=aggregate.octaveErrorRate<=criteria.maxOctaveErrorRate;
@@ -517,6 +540,9 @@ export function benchmarkTunerRecording(
       if(error===null)continue;
       const absolute=Math.abs(error);
       accumulator.absCents.push(absolute);
+
+      const detectedNote=noteFromFrequency(result.tracked.frequency,a4).label;
+      if(detectedNote===report.expectedNote)report.noteCorrectFrames++;
 
       const tolerance=report.toleranceCents as number;
       if(absolute<=tolerance){

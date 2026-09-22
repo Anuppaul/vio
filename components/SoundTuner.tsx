@@ -240,20 +240,26 @@ export default function SoundTuner(){
   function processCapturedFrames(
     ts:number,
     input:Float32Array|null,
-    shortRaw:Float32Array|null,
-    fastRaw:Float32Array,
-    spectrum:Float32Array
+    shortFrame:Float32Array|null,
+    fastFrame:Float32Array,
+    spectrum:Float32Array,
+    metrics?:{prepared?:boolean;rms?:number;onset?:boolean}
   ){
     const ctx=ctxRef.current,longDetector=detectorRef.current,shortDetector=shortDetectorRef.current,fastDetector=fastDetectorRef.current;
     if(!ctx||!longDetector||!shortDetector||!fastDetector)return;
 
-    const analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current,fastAnalysis=fastBufferRef.current;
-    if(input)prepareSensitiveFrame(input,analysis);
-    if(shortRaw)prepareSensitiveFrame(shortRaw,shortAnalysis);
-    prepareSensitiveFrame(fastRaw,fastAnalysis);
-    const inputRms=rms(fastRaw);
+    const prepared=metrics?.prepared===true;
+    const analysis=prepared&&input?input:analysisBufferRef.current;
+    const shortAnalysis=prepared&&shortFrame?shortFrame:shortBufferRef.current;
+    const fastAnalysis=prepared?fastFrame:fastBufferRef.current;
+    if(!prepared){
+      if(input)prepareSensitiveFrame(input,analysis);
+      if(shortFrame)prepareSensitiveFrame(shortFrame,shortAnalysis);
+      prepareSensitiveFrame(fastFrame,fastAnalysis);
+    }
+    const inputRms=metrics?.rms??rms(fastFrame);
 
-    const [shortFrequency,shortClarity]=shortRaw
+    const [shortFrequency,shortClarity]=shortFrame
       ?shortDetector.findPitch(shortAnalysis,ctx.sampleRate)
       :[0,0];
     const [fastFrequency,fastClarity]=fastDetector.findPitch(fastAnalysis,ctx.sampleRate);
@@ -271,7 +277,7 @@ export default function SoundTuner(){
 
     if(ts-yinConsensusAtRef.current>=YIN_CONSENSUS_MS){
       const lowCandidate=longFrequency>0&&longFrequency<90;
-      const consensusInput=lowCandidate?input:shortRaw;
+      const consensusInput=lowCandidate?input:shortFrame;
       if(consensusInput){
         yinConsensusAtRef.current=ts;
         const prepared=lowCandidate?analysis:shortAnalysis;
@@ -287,7 +293,7 @@ export default function SoundTuner(){
     if(ts-mpmConsensusAtRef.current>=MPM_CONSENSUS_MS){
       const hint=shortFrequency>0?shortFrequency:longFrequency;
       const lowMpm=hint>0&&hint<220;
-      const mpmInput=lowMpm?shortRaw:fastRaw;
+      const mpmInput=lowMpm?shortFrame:fastFrame;
       if(hint>=70&&mpmInput){
         mpmConsensusAtRef.current=ts;
         const range=detectRangeRef.current;
@@ -302,9 +308,11 @@ export default function SoundTuner(){
       }
     }
 
-    const recentRms=segmentRms(fastRaw,FAST_BUFFER_SIZE-512,FAST_BUFFER_SIZE);
-    const previousRms=segmentRms(fastRaw,0,FAST_BUFFER_SIZE-512);
-    const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
+    const onset=metrics?.onset??(()=>{
+      const recentRms=segmentRms(fastFrame,FAST_BUFFER_SIZE-512,FAST_BUFFER_SIZE);
+      const previousRms=segmentRms(fastFrame,0,FAST_BUFFER_SIZE-512);
+      return recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
+    })();
     const useFast=fastFrequency>0&&(onset||fastFrequency>=500)&&fastClarity>=shortClarity*.86;
     const responsiveFrequency=useFast?fastFrequency:shortFrequency;
     const responsiveClarity=useFast?fastClarity:shortClarity;
@@ -371,23 +379,24 @@ export default function SoundTuner(){
     }
 
     const now=performance.now();
-    fastRawBufferRef.current.set(frame.fast);
+    fastBufferRef.current.set(frame.fast);
     if(frame.short){
-      shortRawBufferRef.current.set(frame.short);
+      shortBufferRef.current.set(frame.short);
       workletShortReadyRef.current=true;
     }
     if(frame.long){
-      bufferRef.current.set(frame.long);
+      analysisBufferRef.current.set(frame.long);
       workletLongReadyRef.current=true;
     }
     const prefer=workletLongReadyRef.current?'long':workletShortReadyRef.current?'short':'fast';
     const spectrum=spectrumForCurrentCapture(prefer);
     processCapturedFrames(
       now,
-      workletLongReadyRef.current?bufferRef.current:null,
-      workletShortReadyRef.current?shortRawBufferRef.current:null,
-      fastRawBufferRef.current,
-      spectrum
+      workletLongReadyRef.current?analysisBufferRef.current:null,
+      workletShortReadyRef.current?shortBufferRef.current:null,
+      fastBufferRef.current,
+      spectrum,
+      {prepared:true,rms:frame.rms,onset:frame.onset}
     );
   }
 

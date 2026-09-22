@@ -59,6 +59,7 @@ type NativePitchPlugin={
   requestPermissions(options:{permissions:string[]}):Promise<{microphone?:NativePermissionState}>;
   start():Promise<NativePitchStartInfo>;
   stop():Promise<void>;
+  diagnostics():Promise<NativePitchStartInfo>;
   addListener(eventName:'pitch',listener:(sample:NativePitchSample)=>void):Promise<PluginListenerHandle>;
   addListener(eventName:'error',listener:(error:NativePitchError)=>void):Promise<PluginListenerHandle>;
 };

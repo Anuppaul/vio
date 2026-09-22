@@ -155,6 +155,11 @@ public class NativePitchPlugin extends Plugin {
         call.resolve();
     }
 
+    @PluginMethod
+    public void diagnostics(PluginCall call) {
+        call.resolve(captureInfo());
+    }
+
     @Override
     protected void handleOnDestroy() {
         stopCapture();

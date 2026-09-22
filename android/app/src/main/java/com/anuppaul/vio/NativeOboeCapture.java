@@ -2,6 +2,7 @@ package com.anuppaul.vio;
 
 final class NativeOboeCapture {
     private static final boolean LOADED;
+    private static volatile boolean runtimeAvailable;
 
     static {
         boolean loaded = false;
@@ -12,55 +13,117 @@ final class NativeOboeCapture {
             loaded = false;
         }
         LOADED = loaded;
+        runtimeAvailable = loaded;
     }
 
     private NativeOboeCapture() {}
 
     static boolean isAvailable() {
-        return LOADED;
+        return LOADED && runtimeAvailable;
+    }
+
+    private static void markUnavailable() {
+        runtimeAvailable = false;
     }
 
     static int start() {
-        return LOADED ? nativeStart() : Integer.MIN_VALUE;
+        if (!isAvailable()) return Integer.MIN_VALUE;
+        try {
+            return nativeStart();
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return Integer.MIN_VALUE;
+        }
     }
 
     static void stop() {
-        if (LOADED) nativeStop();
+        if (!isAvailable()) return;
+        try {
+            nativeStop();
+        } catch (Throwable ignored) {
+            markUnavailable();
+        }
     }
 
     static int read(float[] output, int maxFrames, int timeoutMs) {
-        if (!LOADED) return -1;
-        return nativeRead(output, maxFrames, timeoutMs);
+        if (!isAvailable()) return -1;
+        try {
+            return nativeRead(output, maxFrames, timeoutMs);
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return -1;
+        }
     }
 
     static boolean isRunning() {
-        return LOADED && nativeIsRunning();
+        if (!isAvailable()) return false;
+        try {
+            return nativeIsRunning();
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return false;
+        }
     }
 
     static int getSampleRate() {
-        return LOADED ? nativeGetSampleRate() : 0;
+        if (!isAvailable()) return 0;
+        try {
+            return nativeGetSampleRate();
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return 0;
+        }
     }
 
     static int getFramesPerBurst() {
-        return LOADED ? nativeGetFramesPerBurst() : 0;
+        if (!isAvailable()) return 0;
+        try {
+            return nativeGetFramesPerBurst();
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return 0;
+        }
     }
 
     static int getBufferCapacityFrames() {
-        return LOADED ? nativeGetBufferCapacityFrames() : 0;
+        if (!isAvailable()) return 0;
+        try {
+            return nativeGetBufferCapacityFrames();
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return 0;
+        }
     }
 
     static long getDroppedFrames() {
-        return LOADED ? nativeGetDroppedFrames() : 0L;
+        if (!isAvailable()) return 0L;
+        try {
+            return nativeGetDroppedFrames();
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return 0L;
+        }
     }
 
     static int getLastErrorCode() {
-        return LOADED ? nativeGetLastErrorCode() : Integer.MIN_VALUE;
+        if (!isAvailable()) return Integer.MIN_VALUE;
+        try {
+            return nativeGetLastErrorCode();
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return Integer.MIN_VALUE;
+        }
     }
 
     static String getBackendName() {
-        if (!LOADED) return "oboe-unavailable";
-        String value = nativeGetBackendName();
-        return value == null || value.isEmpty() ? "oboe" : value;
+        if (!isAvailable()) return "oboe-unavailable";
+        try {
+            String value = nativeGetBackendName();
+            return value == null || value.isEmpty() ? "oboe" : value;
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return "oboe-unavailable";
+        }
     }
 
     private static native int nativeStart();

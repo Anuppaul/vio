@@ -25,6 +25,7 @@ const YIN_CONSENSUS_MS=112;
 const MPM_CONSENSUS_MS=128;
 const LONG_LOW_CADENCE_MS=32;
 const LONG_HIGH_CADENCE_MS=64;
+const UI_UPDATE_MS=33;
 const MIN_DETECT_HZ=20;
 const MAX_DETECT_HZ=5000;
 
@@ -88,7 +89,7 @@ export default function SoundTuner(){
   const spectrumRef=useRef(new Float32Array(BUFFER_SIZE/2));
   const shortSpectrumRef=useRef(new Float32Array(SHORT_BUFFER_SIZE/2));
   const fastSpectrumRef=useRef(new Float32Array(FAST_BUFFER_SIZE/2));
-  const rafRef=useRef(0),lastRef=useRef(0),captureStartedAtRef=useRef(0);
+  const rafRef=useRef(0),lastRef=useRef(0),captureStartedAtRef=useRef(0),uiAtRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const longFrequencyRef=useRef(0);
   const longClarityRef=useRef(0);
@@ -170,9 +171,13 @@ export default function SoundTuner(){
   }
 
   function applyTrackedPitch(rawFrequency:number,rawRms:number,clarity:number,mode:PitchMode,now=performance.now()){
-    setMicLevel(levelPercent(rawRms));
     const tracked=trackerRef.current.accept({frequency:rawFrequency,clarity,rms:rawRms,mode,now});
+    const due=now-uiAtRef.current>=UI_UPDATE_MS;
+
     if(tracked.frequency===null){
+      if(!due)return;
+      uiAtRef.current=now;
+      setMicLevel(levelPercent(rawRms));
       if(tracked.state==='attack'){
         setStatus('Listening · note attack detected');
         return;
@@ -191,10 +196,15 @@ export default function SoundTuner(){
     }
 
     const mapped=noteFromFrequency(tracked.frequency,a4Ref.current);
-    if(displayedMidiRef.current!==mapped.midi){
+    const noteChanged=displayedMidiRef.current!==mapped.midi;
+    if(noteChanged){
       displayedMidiRef.current=mapped.midi;
       needleFilterRef.current.reset();
     }
+    if(!due&&!noteChanged)return;
+
+    uiAtRef.current=now;
+    setMicLevel(levelPercent(rawRms));
     const filteredCents=needleFilterRef.current.filter(mapped.cents,now);
     const displayFrequency=mapped.target*Math.pow(2,filteredCents/1200);
     setNote(mapped.label);
@@ -363,7 +373,7 @@ export default function SoundTuner(){
       streamRef.current=stream;sourceRef.current=source;
       analyserRef.current=analyser;shortAnalyserRef.current=shortAnalyser;fastAnalyserRef.current=fastAnalyser;
       trackerRef.current.reset();needleFilterRef.current.reset();
-      longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;
+      longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
       captureStartedAtRef.current=performance.now();
       setRunning(true);clearPitch(false);setMicLevel(0);
       setStatus('Listening · harmonic-aware tracking ready');lastRef.current=0;
@@ -379,7 +389,7 @@ export default function SoundTuner(){
       if(listener)void listener.remove();
       if(errorListener)void errorListener.remove();
       void NativePitch.stop().catch(()=>{});
-      longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;
+      longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
     cancelAnimationFrame(rafRef.current);rafRef.current=0;

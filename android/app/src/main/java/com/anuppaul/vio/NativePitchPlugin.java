@@ -35,6 +35,7 @@ public class NativePitchPlugin extends Plugin {
     private static final int FAST_ANALYSIS_SIZE = 2048;
     private static final int HOP_SIZE = 1024;
     private static final int CHUNK_SIZE = 512;
+    private static final int MPM_UPDATE_HOPS = 4;
     private static final double MIN_FREQUENCY = 20.0;
     private static final double MAX_FREQUENCY = 5000.0;
     private static final double MIN_SUSTAINED_CONFIDENCE = 0.64;
@@ -228,7 +229,9 @@ public class NativePitchPlugin extends Plugin {
         NativeYinDetector sustainedDetector = new NativeYinDetector(sampleRate, ANALYSIS_SIZE);
         NativeYinDetector transientDetector = new NativeYinDetector(sampleRate, SHORT_ANALYSIS_SIZE);
         NativeYinDetector fastDetector = new NativeYinDetector(sampleRate, FAST_ANALYSIS_SIZE);
-
+        NativeMpmDetector mpmDetector = new NativeMpmDetector(sampleRate, SHORT_ANALYSIS_SIZE, 70.0, MAX_FREQUENCY);
+        PitchResult mpmPitch = null;
+        int mpmHops = 0;
 
         int write = 0;
         int filled = 0;
@@ -272,6 +275,11 @@ public class NativePitchPlugin extends Plugin {
             PitchResult sustainedPitch = sustainedDetector.detect(frame);
             PitchResult transientPitch = transientDetector.detect(shortFrame);
             PitchResult fastPitch = fastDetector.detect(fastFrame);
+            mpmHops++;
+            if (mpmHops >= MPM_UPDATE_HOPS) {
+                mpmHops = 0;
+                mpmPitch = mpmDetector.detect(shortFrame);
+            }
 
             double recentRms = rmsRange(frame, ANALYSIS_SIZE - 1024, ANALYSIS_SIZE);
             double previousRms = rmsRange(frame, ANALYSIS_SIZE - 3072, ANALYSIS_SIZE - 1024);
@@ -287,6 +295,7 @@ public class NativePitchPlugin extends Plugin {
             }
 
             PitchResult pitch = chooseHybridPitch(sustainedPitch, responsivePitch, onset);
+            pitch = mergeMpmConsensus(pitch, mpmPitch);
             emitPitch(acceptPitch(pitch, System.nanoTime()), rms);
         }
 
@@ -353,6 +362,43 @@ public class NativePitchPlugin extends Plugin {
         }
         if (transientOk) return new PitchResult(transientPitch.frequency, transientPitch.confidence, "transient");
         return new PitchResult(sustained.frequency, sustained.confidence, "sustained");
+    }
+
+    private PitchResult mergeMpmConsensus(PitchResult primary, PitchResult mpm) {
+        if (mpm == null || mpm.confidence < 0.58) return primary;
+        if (primary == null) {
+            return mpm.confidence >= 0.72
+                ? new PitchResult(mpm.frequency, mpm.confidence, "sustained")
+                : null;
+        }
+
+        double direct = pitchCentsApart(primary.frequency, mpm.frequency);
+        if (direct <= 35.0) {
+            double frequency = Math.sqrt(primary.frequency * mpm.frequency);
+            double confidence = Math.min(1.0, Math.max(primary.confidence, mpm.confidence) + 0.08);
+            return new PitchResult(frequency, confidence, primary.mode);
+        }
+
+        double lower = Math.min(primary.frequency, mpm.frequency);
+        double higher = Math.max(primary.frequency, mpm.frequency);
+        double ratio = higher / lower;
+        int harmonic = (int) Math.round(ratio);
+        if (harmonic >= 2 && harmonic <= 4) {
+            double harmonicError = Math.abs(1200.0 * (Math.log(ratio / harmonic) / Math.log(2.0)));
+            if (harmonicError <= 42.0) {
+                PitchResult lowerPitch = primary.frequency <= mpm.frequency ? primary : mpm;
+                PitchResult higherPitch = lowerPitch == primary ? mpm : primary;
+                if (lowerPitch.confidence >= higherPitch.confidence * 0.78) {
+                    return new PitchResult(
+                        lowerPitch.frequency,
+                        Math.min(1.0, lowerPitch.confidence + 0.04),
+                        lowerPitch == primary ? primary.mode : "sustained"
+                    );
+                }
+            }
+        }
+
+        return primary;
     }
 
     private PitchResult acceptPitch(PitchResult pitch, long now) {
@@ -446,6 +492,111 @@ public class NativePitchPlugin extends Plugin {
             this.frequency = frequency;
             this.confidence = confidence;
             this.mode = mode;
+        }
+    }
+
+
+    private static final class NativeMpmDetector {
+        private static final double PEAK_RATIO = 0.90;
+        private static final double MINIMUM_CLARITY = 0.55;
+
+        private final int downsample;
+        private final double rate;
+        private final double minFrequency;
+        private final double maxFrequency;
+        private final float[] samples;
+        private final double[] prefixEnergy;
+        private final double[] nsdf;
+        private final int minTau;
+        private final int maxTau;
+
+        NativeMpmDetector(int sampleRate, int inputSize, double minFrequency, double maxFrequency) {
+            this.downsample = sampleRate <= 32000 ? 1 : 2;
+            this.rate = sampleRate / (double) downsample;
+            this.minFrequency = minFrequency;
+            this.maxFrequency = Math.min(maxFrequency, rate * 0.45);
+            int size = inputSize / downsample;
+            this.samples = new float[size];
+            this.prefixEnergy = new double[size + 1];
+            this.minTau = Math.max(2, (int) Math.floor(rate / this.maxFrequency));
+            this.maxTau = Math.min(size / 2 - 2, (int) Math.ceil(rate / this.minFrequency));
+            this.nsdf = new double[Math.max(4, this.maxTau + 2)];
+        }
+
+        PitchResult detect(float[] input) {
+            if (maxTau <= minTau || samples.length < 512) return null;
+
+            double mean = 0.0;
+            for (int i = 0; i < samples.length; i++) {
+                double value = 0.0;
+                int base = i * downsample;
+                for (int j = 0; j < downsample; j++) value += input[base + j];
+                samples[i] = (float) (value / downsample);
+                mean += samples[i];
+            }
+            mean /= samples.length;
+
+            prefixEnergy[0] = 0.0;
+            for (int i = 0; i < samples.length; i++) {
+                samples[i] -= (float) mean;
+                prefixEnergy[i + 1] = prefixEnergy[i] + samples[i] * samples[i];
+            }
+            if (prefixEnergy[samples.length] <= 1e-10) return null;
+
+            nsdf[0] = 1.0;
+            double strongest = 0.0;
+            for (int tau = 1; tau <= maxTau; tau++) {
+                int limit = samples.length - tau;
+                double correlation = 0.0;
+                for (int i = 0; i < limit; i++) correlation += samples[i] * samples[i + tau];
+                double denominator = prefixEnergy[limit] + (prefixEnergy[samples.length] - prefixEnergy[tau]);
+                nsdf[tau] = denominator > 1e-12
+                    ? Math.max(-1.0, Math.min(1.0, 2.0 * correlation / denominator))
+                    : 0.0;
+            }
+
+            for (int tau = minTau + 1; tau < maxTau; tau++) {
+                if (
+                    nsdf[tau] > 0.0 &&
+                    nsdf[tau] >= nsdf[tau - 1] &&
+                    nsdf[tau] > nsdf[tau + 1]
+                ) strongest = Math.max(strongest, nsdf[tau]);
+            }
+            if (strongest < MINIMUM_CLARITY) return null;
+
+            double cutoff = Math.max(MINIMUM_CLARITY, strongest * PEAK_RATIO);
+            int selected = -1;
+            for (int tau = minTau + 1; tau < maxTau; tau++) {
+                if (
+                    nsdf[tau] >= cutoff &&
+                    nsdf[tau] >= nsdf[tau - 1] &&
+                    nsdf[tau] > nsdf[tau + 1]
+                ) {
+                    selected = tau;
+                    break;
+                }
+            }
+            if (selected < 0) return null;
+
+            double refined = selected;
+            if (selected > 1 && selected < maxTau) {
+                double left = nsdf[selected - 1];
+                double center = nsdf[selected];
+                double right = nsdf[selected + 1];
+                double denominator = left - 2.0 * center + right;
+                if (Math.abs(denominator) > 1e-12) {
+                    double offset = 0.5 * (left - right) / denominator;
+                    refined += Math.max(-1.0, Math.min(1.0, offset));
+                }
+            }
+
+            double frequency = rate / refined;
+            if (
+                !Double.isFinite(frequency) ||
+                frequency < minFrequency ||
+                frequency > maxFrequency
+            ) return null;
+            return new PitchResult(frequency, Math.max(0.0, Math.min(1.0, nsdf[selected])), "sustained");
         }
     }
 

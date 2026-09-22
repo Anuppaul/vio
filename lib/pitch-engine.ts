@@ -367,6 +367,7 @@ export class PitchTracker {
     if (!tonal) {
       this.quietCandidate = 0;
       this.quietCandidateFrames = 0;
+      if (!this.locked) this.attackStartedAt = 0;
       if (rms > 0 && rms <= floor * 1.8) {
         this.noiseFloor = floor * 0.985 + rms * 0.015;
       }

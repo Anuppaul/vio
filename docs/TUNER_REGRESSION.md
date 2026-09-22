@@ -55,3 +55,7 @@ The full engine also checks:
 ## Interpretation
 
 A passing synthetic report is a regression gate, not proof of real-world accuracy. Real violin recordings and physical Android devices are still required before calibration thresholds should be considered final.
+
+## Real audio benchmark
+
+For annotated WAV recordings, device/dataset grouping, lock latency, cents distributions and false-positive measurement, see `docs/TUNER_AUDIO_BENCHMARK.md`.

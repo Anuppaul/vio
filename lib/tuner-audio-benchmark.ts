@@ -264,6 +264,7 @@ export function normalizeTunerBenchmarkManifest(input:unknown):TunerBenchmarkMan
     }
 
     let previousEnd=-Infinity;
+    const seenRegions=new Set<string>();
     const regions:TunerBenchmarkRegion[]=recording.regions.map((rawRegion,regionIndex)=>{
       if(!rawRegion||typeof rawRegion!=='object'||Array.isArray(rawRegion))throw new Error(`recordings[${index}].regions[${regionIndex}] must be an object`);
       const region=rawRegion as Record<string,unknown>;
@@ -279,7 +280,12 @@ export function normalizeTunerBenchmarkManifest(input:unknown):TunerBenchmarkMan
         endMs,
         voiced:region.voiced
       };
-      if(region.id!==undefined)normalized.id=String(region.id);
+      if(region.id!==undefined){
+        normalized.id=String(region.id).trim();
+        if(!normalized.id)throw new Error(`recordings[${index}].regions[${regionIndex}].id must not be empty`);
+        if(seenRegions.has(normalized.id))throw new Error(`Duplicate region id in recording ${id}: ${normalized.id}`);
+        seenRegions.add(normalized.id);
+      }
       if(region.label!==undefined)normalized.label=String(region.label);
       if(region.expectedHz!==undefined)normalized.expectedHz=assertFiniteNumber(region.expectedHz,`recordings[${index}].regions[${regionIndex}].expectedHz`);
       if(region.expectedMidi!==undefined)normalized.expectedMidi=assertFiniteNumber(region.expectedMidi,`recordings[${index}].regions[${regionIndex}].expectedMidi`);

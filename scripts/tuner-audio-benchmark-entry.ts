@@ -14,17 +14,19 @@ type CliOptions={
   manifest:string;
   json:boolean;
   out:string|null;
+  csv:string|null;
   only:Set<string>|null;
 };
 
 function usage(){
-  console.log('Usage: node scripts/run-tuner-audio-benchmark.mjs --manifest <file> [--json] [--out <report.json>] [--only id1,id2]');
+  console.log('Usage: node scripts/run-tuner-audio-benchmark.mjs --manifest <file> [--json] [--out <report.json>] [--csv <regions.csv>] [--only id1,id2]');
 }
 
 function parseArgs(argv:string[]):CliOptions{
   let manifest='';
   let json=false;
   let out:string|null=null;
+  let csv:string|null=null;
   let only:Set<string>|null=null;
 
   for(let i=0;i<argv.length;i++){
@@ -35,20 +37,22 @@ function parseArgs(argv:string[]):CliOptions{
       json=true;
     }else if(arg==='--out'){
       out=argv[++i]??null;
+    }else if(arg==='--csv'){
+      csv=argv[++i]??null;
     }else if(arg==='--only'){
       const value=argv[++i]??'';
       only=new Set(value.split(',').map(item=>item.trim()).filter(Boolean));
     }else if(arg==='--help'||arg==='-h'){
       usage();
       process.exitCode=0;
-      return{manifest:'',json,out,only};
+      return{manifest:'',json,out,csv,only};
     }else{
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
 
   if(!manifest)throw new Error('--manifest is required');
-  return{manifest,json,out,only};
+  return{manifest,json,out,csv,only};
 }
 
 function percent(value:number){
@@ -72,6 +76,56 @@ function printAggregate(label:string,aggregate:TunerBenchmarkAggregate){
   console.log(`  lock success rate: ${percent(aggregate.lockSuccessRate)}`);
   console.log(`  cents MAE / median / p95: ${numberOrDash(aggregate.centsMae)} / ${numberOrDash(aggregate.centsMedian)} / ${numberOrDash(aggregate.centsP95)}`);
   console.log(`  median lock: ${aggregate.medianLockMs===null?'—':aggregate.medianLockMs.toFixed(1)+' ms'}`);
+}
+
+function csvCell(value:unknown){
+  if(value===null||value===undefined)return '';
+  const text=String(value);
+  return /[",\n]/.test(text)?`"${text.replaceAll('"','""')}"`:text;
+}
+
+function benchmarkCsv(recordings:TunerBenchmarkRecordingReport[]){
+  const header=[
+    'recording_id','file','tags','region_id','label','voiced','start_ms','end_ms',
+    'expected_note','expected_hz','tolerance_cents','scored_frames','detection_rate',
+    'fine_accuracy','note_accuracy','dropout_rate','false_positive_rate',
+    'octave_error_rate','gross_error_rate','cents_mae','cents_median','cents_p95',
+    'lock_latency_ms','pass'
+  ];
+  const rows=[header.map(csvCell).join(',')];
+
+  for(const recording of recordings){
+    for(const region of recording.regions){
+      rows.push([
+        recording.id,
+        recording.file,
+        recording.tags.join('|'),
+        region.id,
+        region.label,
+        region.voiced,
+        region.startMs,
+        region.endMs,
+        region.expectedNote,
+        region.expectedHz,
+        region.toleranceCents,
+        region.scoredFrames,
+        region.detectionRate,
+        region.frameAccuracy,
+        region.noteAccuracy,
+        region.dropoutRate,
+        region.falsePositiveRate,
+        region.octaveErrorRate,
+        region.grossErrorRate,
+        region.centsMae,
+        region.centsMedian,
+        region.centsP95,
+        region.lockLatencyMs,
+        region.pass
+      ].map(csvCell).join(','));
+    }
+  }
+
+  return rows.join('\n')+'\n';
 }
 
 function printRecording(recording:TunerBenchmarkRecordingReport){
@@ -138,6 +192,12 @@ if(!options.manifest){
     const outPath=resolve(options.out);
     await mkdir(dirname(outPath),{recursive:true});
     await writeFile(outPath,JSON.stringify(report,null,2)+'\n','utf8');
+  }
+
+  if(options.csv){
+    const csvPath=resolve(options.csv);
+    await mkdir(dirname(csvPath),{recursive:true});
+    await writeFile(csvPath,benchmarkCsv(report.recordings),'utf8');
   }
 
   if(options.json){

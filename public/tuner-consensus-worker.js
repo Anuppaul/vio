@@ -1,4 +1,5 @@
 const workspaces=new Map();
+const mpmWorkspaces=new Map();
 let lowDecimated=new Float32Array(0);
 
 function clamp01(v){return Math.max(0,Math.min(1,v))}
@@ -184,6 +185,19 @@ function detectPitch(samples,sampleRate,minFreq,maxFreq){
   return fuseCandidates(candidates);
 }
 
+function mpmWorkspace(size,maxTau){
+  let w=mpmWorkspaces.get(size);
+  if(!w||w.maxTau<maxTau){
+    w={
+      maxTau,
+      centered:new Float32Array(size),
+      prefix:new Float64Array(size+1),
+      nsdf:new Float64Array(maxTau+2)
+    };
+    mpmWorkspaces.set(size,w);
+  }
+  return w;
+}
 function detectMpm(samples,sampleRate,minFrequency=55,maxFrequency=2000){
   const size=samples.length;
   if(size<512||maxFrequency<=minFrequency)return null;
@@ -191,20 +205,20 @@ function detectMpm(samples,sampleRate,minFrequency=55,maxFrequency=2000){
   const maxTau=Math.min(Math.floor(sampleRate/minFrequency),Math.floor(size/2)-2);
   if(maxTau<=minTau)return null;
 
+  const {centered,prefix,nsdf}=mpmWorkspace(size,maxTau);
   let mean=0;
   for(let i=0;i<size;i++)mean+=samples[i];
   mean/=size;
-  const centered=new Float32Array(size);
-  const prefix=new Float64Array(size+1);
+  prefix[0]=0;
   for(let i=0;i<size;i++){
     const value=samples[i]-mean;
     centered[i]=value;
     prefix[i+1]=prefix[i]+value*value;
   }
-  const nsdf=new Float64Array(maxTau+2);
+
   nsdf[0]=1;
   let strongest=0;
-  const peaks=[];
+  let hasPeak=false;
   for(let tau=1;tau<=maxTau;tau++){
     const limit=size-tau;
     let correlation=0;
@@ -215,13 +229,22 @@ function detectMpm(samples,sampleRate,minFrequency=55,maxFrequency=2000){
   for(let tau=minTau+1;tau<maxTau;tau++){
     const value=nsdf[tau];
     if(value>0&&value>=nsdf[tau-1]&&value>nsdf[tau+1]){
-      peaks.push(tau);strongest=Math.max(strongest,value);
+      hasPeak=true;
+      strongest=Math.max(strongest,value);
     }
   }
-  if(!peaks.length||strongest<.55)return null;
+  if(!hasPeak||strongest<.55)return null;
+
   const cutoff=Math.max(.55,strongest*.90);
-  let selected=peaks.find(peak=>nsdf[peak]>=cutoff);
-  if(selected===undefined)return null;
+  let selected=-1;
+  for(let tau=minTau+1;tau<maxTau;tau++){
+    if(nsdf[tau]>=cutoff&&nsdf[tau]>=nsdf[tau-1]&&nsdf[tau]>nsdf[tau+1]){
+      selected=tau;
+      break;
+    }
+  }
+  if(selected<0)return null;
+
   const refined=parabolic(nsdf,selected);
   const frequency=sampleRate/refined;
   if(!Number.isFinite(frequency)||frequency<minFrequency||frequency>maxFrequency)return null;

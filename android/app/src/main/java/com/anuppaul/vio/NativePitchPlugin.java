@@ -79,6 +79,8 @@ public class NativePitchPlugin extends Plugin {
             }
 
             recorder = created;
+            lastAcceptedPitch = null;
+            lastAcceptedPitchAt = 0L;
             disablePlatformAudioEffects(created.getAudioSessionId());
             try {
                 created.startRecording();
@@ -492,6 +494,8 @@ public class NativePitchPlugin extends Plugin {
             try { localWorker.join(350); } catch (InterruptedException error) { Thread.currentThread().interrupt(); }
         }
         releasePlatformAudioEffects();
+        lastAcceptedPitch = null;
+        lastAcceptedPitchAt = 0L;
     }
 
     private void releaseRecorder(AudioRecord audioRecord) {

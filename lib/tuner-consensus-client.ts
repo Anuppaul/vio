@@ -44,11 +44,20 @@ export function createTunerConsensusClient(
   let stopped=false;
   let pending=false;
   let lastSubmitted=0;
+  let timeoutId:number|null=null;
+
+  const clearPendingTimeout=()=>{
+    if(timeoutId!==null){
+      self.clearTimeout(timeoutId);
+      timeoutId=null;
+    }
+  };
 
   worker.onmessage=event=>{
     if(stopped)return;
     const data=event.data;
     pending=false;
+    clearPendingTimeout();
     if(data?.type==='result'){
       onResult({
         sequence:Number(data.sequence)||0,
@@ -65,6 +74,7 @@ export function createTunerConsensusClient(
   };
   worker.onerror=()=>{
     pending=false;
+    clearPendingTimeout();
     onError('Consensus DSP worker stopped unexpectedly.');
   };
 
@@ -87,9 +97,17 @@ export function createTunerConsensusClient(
           short,
           fast
         },transfer);
+        clearPendingTimeout();
+        timeoutId=self.setTimeout(()=>{
+          if(stopped||!pending)return;
+          pending=false;
+          timeoutId=null;
+          onError('Consensus DSP worker timed out.');
+        },350);
         return true;
       }catch{
         pending=false;
+        clearPendingTimeout();
         return false;
       }
     },
@@ -97,6 +115,7 @@ export function createTunerConsensusClient(
       if(stopped)return;
       stopped=true;
       pending=false;
+      clearPendingTimeout();
       worker.terminate();
     }
   };

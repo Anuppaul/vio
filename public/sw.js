@@ -1,10 +1,10 @@
-const VERSION='vio-pwa-v52';
+const VERSION='vio-pwa-v53';
 const APP_CACHE=`${VERSION}-app`;
 const AUDIO_CACHE=`${VERSION}-audio`;
 const RUNTIME_CACHE=`${VERSION}-runtime`;
 
 const ROUTES=['/','/sound-tuner','/scale-practice','/tanpura','/exercise','/metronome','/manifest.webmanifest'];
-const WORKLETS=['/tuner-capture-worklet.js?v=1'];
+const TUNER_WORKERS=['/tuner-capture-worklet.js?v=2','/tuner-consensus-worker.js?v=1'];
 const EAR_NOTES=['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
 const EAR_AUDIO=[];
 for(let octave=3;octave<=5;octave++) for(const note of EAR_NOTES) EAR_AUDIO.push(`/assets/ear/${note}${octave}.mp3`);
@@ -29,7 +29,7 @@ async function cacheOne(cache,url){
 
 async function warmApp(){
   const cache=await caches.open(APP_CACHE);
-  for(const url of [...ROUTES,...ICONS,...WORKLETS]){
+  for(const url of [...ROUTES,...ICONS,...TUNER_WORKERS]){
     const response=await cacheOne(cache,url);
     if(!response||!response.headers.get('content-type')?.includes('text/html')) continue;
     try{
@@ -105,7 +105,7 @@ self.addEventListener('fetch',event=>{
     event.respondWith(networkFirst(request));
     return;
   }
-  if(url.pathname.startsWith('/assets/')||url.pathname.startsWith('/icons/')||url.pathname.startsWith('/_next/static/')||url.pathname==='/tuner-capture-worklet.js'){
+  if(url.pathname.startsWith('/assets/')||url.pathname.startsWith('/icons/')||url.pathname.startsWith('/_next/static/')||url.pathname==='/tuner-capture-worklet.js'||url.pathname==='/tuner-consensus-worker.js'){
     event.respondWith(cacheFirst(request));
     return;
   }

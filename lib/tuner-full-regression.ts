@@ -19,6 +19,7 @@ import {
   syntheticNoise,
   syntheticSine
 } from './pitch-regression';
+import { isPitchOctaveError, pitchCentsError } from './tuner-metrics';
 import { prepareSensitiveFrame, segmentRms } from './tuner-signal';
 import { spectrumDbFromSamples } from './tuner-spectrum';
 import { detectPitch } from './yin';
@@ -92,18 +93,6 @@ function scaledCopy(input:Float32Array,gain:number){
 
 function silence(){
   return new Float32Array(SYNTHETIC_FRAME_SIZE);
-}
-
-function centsError(actual:number,expected:number){
-  return 1200*Math.log2(actual/expected);
-}
-
-function isOctaveError(actual:number,expected:number){
-  if(!(actual>0)||!(expected>0))return false;
-  const octaves=Math.round(Math.log2(actual/expected));
-  if(octaves===0)return false;
-  const corrected=actual/Math.pow(2,octaves);
-  return Math.abs(centsError(corrected,expected))<=55;
 }
 
 export class FullTunerHarness{
@@ -253,7 +242,7 @@ export class FullTunerHarness{
       note,
       centsFromExpected:
         tracked.frequency&&expectedHz
-          ?centsError(tracked.frequency,expectedHz)
+          ?pitchCentsError(tracked.frequency,expectedHz)
           :null
     };
   }
@@ -329,7 +318,7 @@ function runStaticCase(
       lockedFrames++;
       if(firstLockMs===null)firstLockMs=now-toneStart;
       if(testCase.expectedHz===null)falsePositiveFrames++;
-      else if(isOctaveError(result.tracked.frequency,testCase.expectedHz))octaveErrorFrames++;
+      else if(isPitchOctaveError(result.tracked.frequency,testCase.expectedHz))octaveErrorFrames++;
     }
     now+=FRAME_STEP_MS;
   }
@@ -341,7 +330,7 @@ function runStaticCase(
   const finalNote=finalFrequency?noteFromFrequency(finalFrequency).label:null;
   const finalCentsError=
     finalFrequency&&testCase.expectedHz
-      ?centsError(finalFrequency,testCase.expectedHz)
+      ?pitchCentsError(finalFrequency,testCase.expectedHz)
       :null;
 
   const pass=testCase.expectedHz===null

@@ -545,7 +545,12 @@ export default function SoundTuner(){
       const stream=await requestRawMicrophone();
       if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
       const ctx=ctxRef.current||createBrowserAudioContext();
-      if(!ctx){stream.getTracks().forEach(track=>track.stop());setStatus('Web Audio unavailable');return}
+      if(!ctx){
+        stream.getTracks().forEach(track=>track.stop());
+        startingRef.current=false;setStarting(false);
+        setStatus('Web Audio unavailable');
+        return;
+      }
       ctxRef.current=ctx;await resumeBrowserAudio(ctx);
       if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
       const browserRange=detectorRangeForSampleRate(ctx.sampleRate);
@@ -565,7 +570,7 @@ export default function SoundTuner(){
       if(workletWatchdogRef.current!==null){window.clearTimeout(workletWatchdogRef.current);workletWatchdogRef.current=null}
       longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
       captureStartedAtRef.current=performance.now();
-      setRunning(true);clearPitch(false);setMicLevel(0);lastRef.current=0;
+      clearPitch(false);setMicLevel(0);lastRef.current=0;
 
       const capture=await createTunerWorkletCapture(
         ctx,
@@ -579,7 +584,7 @@ export default function SoundTuner(){
       }
       if(capture){
         workletCaptureRef.current=capture;
-        startingRef.current=false;setStarting(false);
+        startingRef.current=false;setStarting(false);setRunning(true);
         setCapturePath('AudioWorklet');
         setStatus('Listening · AudioWorklet capture · harmonic-aware tracking');
         workletWatchdogRef.current=window.setTimeout(()=>{
@@ -588,7 +593,7 @@ export default function SoundTuner(){
           }
         },WORKLET_STARTUP_WATCHDOG_MS);
       }else{
-        startingRef.current=false;setStarting(false);
+        startingRef.current=false;setStarting(false);setRunning(true);
         setCapturePath('Fallback');
         setStatus('Listening · analyser fallback · harmonic-aware tracking');
         rafRef.current=requestAnimationFrame(analyse);
@@ -599,6 +604,18 @@ export default function SoundTuner(){
       setRunning(false);setMicLevel(0);clearPitch(true);
       setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`);
     }
+  }
+
+  function cancelStart(){
+    if(!startingRef.current)return;
+    captureSessionRef.current++;
+    startingRef.current=false;setStarting(false);
+    cleanupWebCaptureResources(true);
+    if(nativeListenerRef.current){void nativeListenerRef.current.remove();nativeListenerRef.current=null}
+    if(nativeErrorListenerRef.current){void nativeErrorListenerRef.current.remove();nativeErrorListenerRef.current=null}
+    if(nativeActiveRef.current){nativeActiveRef.current=false;void NativePitch.stop().catch(()=>{})}
+    setRunning(false);setMicLevel(0);clearPitch(true);
+    setStatus('Microphone start cancelled');
   }
 
   function stop(){
@@ -641,7 +658,7 @@ export default function SoundTuner(){
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>setA4(+e.target.value)}/><div className="seg three"><button onClick={()=>setA4(415)} className={a4===415?'active':''}>415</button><button onClick={()=>setA4(440)} className={a4===440?'active':''}>440</button><button onClick={()=>setA4(442)} className={a4===442?'active':''}>442</button></div></div>
           <div className="control"><div className="control-label"><span>Optional reference tones</span></div><div className="seg four">{OPEN_STRINGS.map((midi,i)=><button key={midi} className={activeRef===midi?'active':''} onClick={()=>activeRef===midi?stopReference():playReference(midi)}>{OPEN_LABELS[i]}</button>)}</div><label className="toggle" style={{marginTop:9}}><span>Loop reference</span><input type="checkbox" checked={loop} onChange={e=>{setLoop(e.target.checked);if(audioRef.current)audioRef.current.loop=e.target.checked}}/></label></div>
           <div className="control"><div className="status">{status}</div></div>
-          <button className={`primary ${running?'danger':''}`} onClick={running?stop:start} disabled={starting}>{running?'Stop microphone':starting?'Starting microphone…':'Start tuning'}</button>
+          <button className={`primary ${running||starting?'danger':''}`} onClick={running?stop:starting?cancelStart:start}>{running?'Stop microphone':starting?'Cancel starting':'Start tuning'}</button>
         </aside>
       </div>
     </section>

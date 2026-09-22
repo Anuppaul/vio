@@ -318,12 +318,22 @@ public class NativePitchPlugin extends Plugin {
                 }
             }
 
-            PitchResult pitch = chooseHybridPitch(sustainedPitch, responsivePitch, onset);
-            PitchResult mpmForFrame = mpmPitch;
             boolean fastShortAgree =
                 fastPitch != null &&
                 transientPitch != null &&
                 pitchCentsApart(fastPitch.frequency, transientPitch.frequency) <= 45.0;
+            PitchResult sustainedForFrame = sustainedPitch;
+            if (
+                onset &&
+                fastShortAgree &&
+                responsivePitch != null &&
+                sustainedForFrame != null &&
+                pitchCentsApart(sustainedForFrame.frequency, responsivePitch.frequency) > 80.0
+            ) {
+                sustainedForFrame = null;
+            }
+            PitchResult pitch = chooseHybridPitch(sustainedForFrame, responsivePitch, onset);
+            PitchResult mpmForFrame = mpmPitch;
             if (
                 onset &&
                 fastShortAgree &&
@@ -339,8 +349,8 @@ public class NativePitchPlugin extends Plugin {
                 pitch != null &&
                 pitch.frequency < 80.0 &&
                 (
-                    sustainedPitch == null ||
-                    pitchCentsApart(sustainedPitch.frequency, pitch.frequency) > 45.0
+                    sustainedForFrame == null ||
+                    pitchCentsApart(sustainedForFrame.frequency, pitch.frequency) > 45.0
                 ) &&
                 (
                     mpmForFrame == null ||

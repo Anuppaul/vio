@@ -13,6 +13,10 @@ import {
   type TunerWorkletCapture
 } from '@/lib/tuner-capture';
 import {
+  createTunerConsensusClient,
+  type TunerConsensusClient
+} from '@/lib/tuner-consensus-client';
+import {
   OneEuroFilter,
   PitchTracker,
   centsApart,
@@ -29,6 +33,7 @@ const FAST_BUFFER_SIZE=2048;
 const ANALYSIS_MS=16;
 const YIN_CONSENSUS_MS=112;
 const MPM_CONSENSUS_MS=128;
+const CONSENSUS_WORKER_MS=96;
 const LONG_LOW_CADENCE_MS=32;
 const LONG_HIGH_CADENCE_MS=64;
 const UI_UPDATE_MS=33;
@@ -82,6 +87,7 @@ export default function SoundTuner(){
   const [loop,setLoop]=useState(false);
   const [detectRange,setDetectRange]=useState(()=>detectorRangeForSampleRate(48000));
   const [capturePath,setCapturePath]=useState<'Native'|'AudioWorklet'|'Fallback'>('Fallback');
+  const [dspPath,setDspPath]=useState<'Native'|'Worker'|'Main'>('Main');
 
   const ctxRef=useRef<AudioContext|null>(null);
   const analyserRef=useRef<AnalyserNode|null>(null);
@@ -93,6 +99,10 @@ export default function SoundTuner(){
   const workletFrameSeenRef=useRef(false);
   const workletSequenceRef=useRef(0);
   const workletWatchdogRef=useRef<number|null>(null);
+  const consensusWorkerRef=useRef<TunerConsensusClient|null>(null);
+  const consensusWorkerAtRef=useRef(0);
+  const consensusSequenceRef=useRef(0);
+  const consensusAppliedRef=useRef(0);
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
   const trackCleanupRef=useRef<(()=>void)|null>(null);
@@ -275,7 +285,24 @@ export default function SoundTuner(){
     const longFrequency=longFrequencyRef.current;
     const longClarity=longClarityRef.current;
 
-    if(ts-yinConsensusAtRef.current>=YIN_CONSENSUS_MS){
+    const worker=consensusWorkerRef.current;
+    if(worker&&ts-consensusWorkerAtRef.current>=CONSENSUS_WORKER_MS){
+      consensusWorkerAtRef.current=ts;
+      const sequence=++consensusSequenceRef.current;
+      const hint=shortFrequency>0?shortFrequency:longFrequency;
+      worker.submit({
+        sequence,
+        sampleRate:ctx.sampleRate,
+        minFrequency:detectRangeRef.current.min,
+        maxFrequency:detectRangeRef.current.max,
+        hintFrequency:hint,
+        long:input,
+        short:shortFrame,
+        fast:fastAnalysis
+      });
+    }
+
+    if(!worker&&ts-yinConsensusAtRef.current>=YIN_CONSENSUS_MS){
       const lowCandidate=longFrequency>0&&longFrequency<90;
       const consensusInput=lowCandidate?input:shortFrame;
       if(consensusInput){
@@ -290,7 +317,7 @@ export default function SoundTuner(){
       }
     }
 
-    if(ts-mpmConsensusAtRef.current>=MPM_CONSENSUS_MS){
+    if(!worker&&ts-mpmConsensusAtRef.current>=MPM_CONSENSUS_MS){
       const hint=shortFrequency>0?shortFrequency:longFrequency;
       const lowMpm=hint>0&&hint<220;
       const mpmInput=lowMpm?shortFrame:fastFrame;
@@ -443,6 +470,8 @@ export default function SoundTuner(){
       workletWatchdogRef.current=null;
     }
     workletCaptureRef.current?.stop();workletCaptureRef.current=null;
+    consensusWorkerRef.current?.stop();consensusWorkerRef.current=null;
+    consensusWorkerAtRef.current=0;consensusSequenceRef.current=0;consensusAppliedRef.current=0;
     workletShortReadyRef.current=false;workletLongReadyRef.current=false;
     workletFrameSeenRef.current=false;workletSequenceRef.current=0;
     try{
@@ -561,7 +590,7 @@ export default function SoundTuner(){
         return;
       }
       const nativeRange=detectorRangeForSampleRate(nativeInfo.sampleRate);
-      detectRangeRef.current=nativeRange;setDetectRange(nativeRange);setCapturePath('Native');
+      detectRangeRef.current=nativeRange;setDetectRange(nativeRange);setCapturePath('Native');setDspPath('Native');
       nativeActiveRef.current=true;startingRef.current=false;setStarting(false);
       setRunning(true);clearPitch(false);setMicLevel(0);
       setStatus('Listening · harmonic-aware tracking ready');
@@ -604,6 +633,27 @@ export default function SoundTuner(){
       attachWebAudioContextLifecycle(ctx);
       const browserRange=detectorRangeForSampleRate(ctx.sampleRate);
       detectRangeRef.current=browserRange;setDetectRange(browserRange);
+
+      consensusWorkerRef.current=createTunerConsensusClient(
+        result=>{
+          if(result.sequence<consensusAppliedRef.current)return;
+          consensusAppliedRef.current=result.sequence;
+          yinConsensusRef.current=result.yin
+            ?{frequency:result.yin.frequency,clarity:result.yin.clarity,mode:'sustained'}
+            :null;
+          mpmConsensusRef.current=result.mpm
+            ?{frequency:result.mpm.frequency,clarity:result.mpm.clarity,mode:'sustained'}
+            :null;
+        },
+        ()=>{
+          consensusWorkerRef.current?.stop();
+          consensusWorkerRef.current=null;
+          consensusWorkerAtRef.current=0;
+          setDspPath('Main');
+        }
+      );
+      setDspPath(consensusWorkerRef.current?'Worker':'Main');
+
       const source=ctx.createMediaStreamSource(stream);
       const analyser=ctx.createAnalyser(),shortAnalyser=ctx.createAnalyser(),fastAnalyser=ctx.createAnalyser();
       for(const [node,size] of [[analyser,BUFFER_SIZE],[shortAnalyser,SHORT_BUFFER_SIZE],[fastAnalyser,FAST_BUFFER_SIZE]] as const){
@@ -616,6 +666,7 @@ export default function SoundTuner(){
       trackerRef.current.reset();needleFilterRef.current.reset();
       workletShortReadyRef.current=false;workletLongReadyRef.current=false;
       workletFrameSeenRef.current=false;workletSequenceRef.current=0;
+      consensusWorkerAtRef.current=0;consensusSequenceRef.current=0;consensusAppliedRef.current=0;
       if(workletWatchdogRef.current!==null){window.clearTimeout(workletWatchdogRef.current);workletWatchdogRef.current=null}
       longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
       captureStartedAtRef.current=performance.now();
@@ -701,7 +752,7 @@ export default function SoundTuner(){
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
             <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?'Play a steady tone':inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
-          <div className="target-row"><span className="target-chip">{Math.ceil(detectRange.min)}–{Math.floor(detectRange.max)} Hz</span><span className="target-chip">{running?capturePath:'Auto capture'}</span><span className="target-chip">Harmonic validated</span></div>
+          <div className="target-row"><span className="target-chip">{Math.ceil(detectRange.min)}–{Math.floor(detectRange.max)} Hz</span><span className="target-chip">{running?capturePath:'Auto capture'}</span><span className="target-chip">{running?'DSP '+dspPath:'DSP auto'}</span><span className="target-chip">Harmonic validated</span></div>
         </main>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>setA4(+e.target.value)}/><div className="seg three"><button onClick={()=>setA4(415)} className={a4===415?'active':''}>415</button><button onClick={()=>setA4(440)} className={a4===440?'active':''}>440</button><button onClick={()=>setA4(442)} className={a4===442?'active':''}>442</button></div></div>

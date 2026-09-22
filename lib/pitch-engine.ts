@@ -36,6 +36,22 @@ const ATTACK_CONFIRM_MS = 85;
 const BACKGROUND_LEARN_FRAMES = 12;
 const BACKGROUND_TOLERANCE_CENTS = 42;
 
+export function detectorRangeForSampleRate(
+  sampleRate:number,
+  longWindowSamples=8192,
+  requestedMin=20,
+  requestedMax=5000
+) {
+  const safeRate=Number.isFinite(sampleRate)&&sampleRate>0?sampleRate:48000;
+  const cyclesForLowConfidence=3;
+  const min=Math.max(requestedMin,safeRate*cyclesForLowConfidence/longWindowSamples);
+  const max=Math.min(requestedMax,safeRate*.45);
+  return {
+    min,
+    max:Math.max(min,max)
+  };
+}
+
 export function centsApart(a: number, b: number) {
   if (!(a > 0) || !(b > 0)) return Infinity;
   return Math.abs(1200 * Math.log2(a / b));

@@ -72,14 +72,20 @@ export default function SoundTuner(){
 
   const ctxRef=useRef<AudioContext|null>(null);
   const analyserRef=useRef<AnalyserNode|null>(null);
+  const shortAnalyserRef=useRef<AnalyserNode|null>(null);
+  const fastAnalyserRef=useRef<AnalyserNode|null>(null);
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
+  const shortRawBufferRef=useRef(new Float32Array(SHORT_BUFFER_SIZE));
+  const fastRawBufferRef=useRef(new Float32Array(FAST_BUFFER_SIZE));
   const analysisBufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const shortBufferRef=useRef(new Float32Array(SHORT_BUFFER_SIZE));
   const fastBufferRef=useRef(new Float32Array(FAST_BUFFER_SIZE));
   const spectrumRef=useRef(new Float32Array(BUFFER_SIZE/2));
-  const rafRef=useRef(0),lastRef=useRef(0);
+  const shortSpectrumRef=useRef(new Float32Array(SHORT_BUFFER_SIZE/2));
+  const fastSpectrumRef=useRef(new Float32Array(FAST_BUFFER_SIZE/2));
+  const rafRef=useRef(0),lastRef=useRef(0),captureStartedAtRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const shortDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const fastDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
@@ -188,16 +194,26 @@ export default function SoundTuner(){
   }
 
   function analyse(ts:number){
-    const analyser=analyserRef.current,ctx=ctxRef.current,longDetector=detectorRef.current,shortDetector=shortDetectorRef.current,fastDetector=fastDetectorRef.current;
-    if(!analyser||!ctx||!longDetector||!shortDetector||!fastDetector)return;
+    const analyser=analyserRef.current,shortAnalyser=shortAnalyserRef.current,fastAnalyser=fastAnalyserRef.current,ctx=ctxRef.current,longDetector=detectorRef.current,shortDetector=shortDetectorRef.current,fastDetector=fastDetectorRef.current;
+    if(!analyser||!shortAnalyser||!fastAnalyser||!ctx||!longDetector||!shortDetector||!fastDetector)return;
     if(ts-lastRef.current>=ANALYSIS_MS){
       lastRef.current=ts;
-      const input=bufferRef.current;analyser.getFloatTimeDomainData(input);
-      const inputRms=rms(input),analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current,fastAnalysis=fastBufferRef.current,spectrum=spectrumRef.current;
+      const input=bufferRef.current,shortRaw=shortRawBufferRef.current,fastRaw=fastRawBufferRef.current;
+      analyser.getFloatTimeDomainData(input);
+      shortAnalyser.getFloatTimeDomainData(shortRaw);
+      fastAnalyser.getFloatTimeDomainData(fastRaw);
+      const analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current,fastAnalysis=fastBufferRef.current;
       prepareSensitiveFrame(input,analysis);
-      shortAnalysis.set(analysis.subarray(BUFFER_SIZE-SHORT_BUFFER_SIZE));
-      fastAnalysis.set(analysis.subarray(BUFFER_SIZE-FAST_BUFFER_SIZE));
-      analyser.getFloatFrequencyData(spectrum);
+      prepareSensitiveFrame(shortRaw,shortAnalysis);
+      prepareSensitiveFrame(fastRaw,fastAnalysis);
+
+      const elapsed=Math.max(0,ts-captureStartedAtRef.current);
+      const longSpectrum=spectrumRef.current,shortSpectrum=shortSpectrumRef.current,fastSpectrum=fastSpectrumRef.current;
+      analyser.getFloatFrequencyData(longSpectrum);
+      shortAnalyser.getFloatFrequencyData(shortSpectrum);
+      fastAnalyser.getFloatFrequencyData(fastSpectrum);
+      const spectrum=elapsed<70?fastSpectrum:elapsed<150?shortSpectrum:longSpectrum;
+      const inputRms=rms(fastRaw);
 
       const [longFrequency,longClarity]=longDetector.findPitch(analysis,ctx.sampleRate);
       const [shortFrequency,shortClarity]=shortDetector.findPitch(shortAnalysis,ctx.sampleRate);
@@ -232,8 +248,8 @@ export default function SoundTuner(){
         }
       }
 
-      const recentRms=segmentRms(input,BUFFER_SIZE-2048,BUFFER_SIZE);
-      const previousRms=segmentRms(input,BUFFER_SIZE-6144,BUFFER_SIZE-2048);
+      const recentRms=segmentRms(fastRaw,FAST_BUFFER_SIZE-512,FAST_BUFFER_SIZE);
+      const previousRms=segmentRms(fastRaw,0,FAST_BUFFER_SIZE-512);
       const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
       const useFast=fastFrequency>0&&(onset||fastFrequency>=500)&&fastClarity>=shortClarity*.86;
       const responsiveFrequency=useFast?fastFrequency:shortFrequency;
@@ -297,11 +313,16 @@ export default function SoundTuner(){
       const ctx=ctxRef.current||createBrowserAudioContext();
       if(!ctx){stream.getTracks().forEach(t=>t.stop());setStatus('Web Audio unavailable');return}
       ctxRef.current=ctx;await resumeBrowserAudio(ctx);
-      const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser();
-      analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;analyser.minDecibels=-100;analyser.maxDecibels=-10;
-      source.connect(analyser);
-      streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;
+      const source=ctx.createMediaStreamSource(stream);
+      const analyser=ctx.createAnalyser(),shortAnalyser=ctx.createAnalyser(),fastAnalyser=ctx.createAnalyser();
+      for(const [node,size] of [[analyser,BUFFER_SIZE],[shortAnalyser,SHORT_BUFFER_SIZE],[fastAnalyser,FAST_BUFFER_SIZE]] as const){
+        node.fftSize=size;node.smoothingTimeConstant=0;node.minDecibels=-100;node.maxDecibels=-10;
+        source.connect(node);
+      }
+      streamRef.current=stream;sourceRef.current=source;
+      analyserRef.current=analyser;shortAnalyserRef.current=shortAnalyser;fastAnalyserRef.current=fastAnalyser;
       trackerRef.current.reset();needleFilterRef.current.reset();
+      captureStartedAtRef.current=performance.now();
       setRunning(true);clearPitch(false);setMicLevel(0);
       setStatus('Listening · harmonic-aware tracking ready');lastRef.current=0;
       rafRef.current=requestAnimationFrame(analyse);
@@ -319,13 +340,13 @@ export default function SoundTuner(){
       setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
     cancelAnimationFrame(rafRef.current);rafRef.current=0;
-    try{sourceRef.current?.disconnect();analyserRef.current?.disconnect()}catch{}
+    try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}
     streamRef.current?.getTracks().forEach(t=>t.stop());
-    sourceRef.current=null;analyserRef.current=null;streamRef.current=null;
+    sourceRef.current=null;analyserRef.current=null;shortAnalyserRef.current=null;fastAnalyserRef.current=null;streamRef.current=null;
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;

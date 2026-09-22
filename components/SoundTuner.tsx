@@ -168,8 +168,16 @@ export default function SoundTuner(){
     setMicLevel(levelPercent(rawRms));
     const tracked=trackerRef.current.accept({frequency:rawFrequency,clarity,rms:rawRms,mode,now});
     if(tracked.frequency===null){
+      if(tracked.state==='attack'){
+        setStatus('Listening · note attack detected');
+        return;
+      }
       if(tracked.state==='candidate'){
         setStatus('Listening · confirming pitch');
+        return;
+      }
+      if(tracked.state==='release'){
+        setStatus('Listening · note releasing');
         return;
       }
       clearPitch(false);

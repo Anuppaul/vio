@@ -145,6 +145,7 @@ public class NativePitchPlugin extends Plugin {
         result.put("framesPerBurst", nativeFramesPerBurst);
         result.put("bufferCapacityFrames", nativeBufferCapacityFrames);
         result.put("droppedFrames", usingOboe ? NativeOboeCapture.getDroppedFrames() : 0L);
+        result.put("ringCapacityFrames", usingOboe ? NativeOboeCapture.getRingCapacityFrames() : 0);
         result.put("oboeAvailable", NativeOboeCapture.isAvailable());
         result.put("oboeFallbackErrorCode", usingOboe ? 0 : lastOboeStartError);
         return result;

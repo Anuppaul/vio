@@ -339,6 +339,13 @@ Java_com_anuppaul_vio_NativeOboeCapture_nativeGetDroppedFrames(
 }
 
 extern "C" JNIEXPORT jint JNICALL
+Java_com_anuppaul_vio_NativeOboeCapture_nativeGetRingCapacityFrames(
+        JNIEnv *,
+        jclass) {
+    return static_cast<jint>(kRingCapacity);
+}
+
+extern "C" JNIEXPORT jint JNICALL
 Java_com_anuppaul_vio_NativeOboeCapture_nativeGetLastErrorCode(
         JNIEnv *,
         jclass) {

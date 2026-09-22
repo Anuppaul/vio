@@ -114,6 +114,16 @@ final class NativeOboeCapture {
         }
     }
 
+    static int getRingCapacityFrames() {
+        if (!isAvailable()) return 0;
+        try {
+            return nativeGetRingCapacityFrames();
+        } catch (Throwable ignored) {
+            markUnavailable();
+            return 0;
+        }
+    }
+
     static int getLastErrorCode() {
         if (!isAvailable()) return Integer.MIN_VALUE;
         try {
@@ -144,6 +154,7 @@ final class NativeOboeCapture {
     private static native int nativeGetFramesPerBurst();
     private static native int nativeGetBufferCapacityFrames();
     private static native long nativeGetDroppedFrames();
+    private static native int nativeGetRingCapacityFrames();
     private static native int nativeGetLastErrorCode();
     private static native String nativeGetBackendName();
 }

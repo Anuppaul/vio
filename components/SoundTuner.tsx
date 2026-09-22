@@ -51,6 +51,7 @@ type NativePitchStartInfo={
   framesPerBurst?:number;
   bufferCapacityFrames?:number;
   droppedFrames?:number;
+  ringCapacityFrames?:number;
   oboeAvailable?:boolean;
   oboeFallbackErrorCode?:number;
 };

@@ -23,6 +23,8 @@ const LOCK_TOLERANCE_CENTS = 70;
 const SWITCH_TOLERANCE_CENTS = 45;
 const DROPOUT_HOLD_MS = 150;
 const RELEASE_MS = 240;
+const BACKGROUND_LEARN_FRAMES = 12;
+const BACKGROUND_TOLERANCE_CENTS = 42;
 
 export function centsApart(a: number, b: number) {
   if (!(a > 0) || !(b > 0)) return Infinity;
@@ -195,6 +197,10 @@ export class PitchTracker {
   private initialHistory: number[] = [];
   private lockHistory: number[] = [];
   private switchHistory: number[] = [];
+  private quietCandidate = 0;
+  private quietCandidateFrames = 0;
+  private backgroundFrequency = 0;
+  private backgroundRms = 0;
 
   reset() {
     this.noiseFloor = 0;
@@ -203,6 +209,10 @@ export class PitchTracker {
     this.initialHistory.length = 0;
     this.lockHistory.length = 0;
     this.switchHistory.length = 0;
+    this.quietCandidate = 0;
+    this.quietCandidateFrames = 0;
+    this.backgroundFrequency = 0;
+    this.backgroundRms = 0;
   }
 
   private holdOrRelease(now: number, state: PitchTrackResult['state'] = 'dropout'): PitchTrackResult {
@@ -222,17 +232,67 @@ export class PitchTracker {
     const { frequency, clarity, rms, mode, now } = observation;
     const minimumClarity = mode === 'transient' ? 0.58 : 0.66;
 
-    if (this.noiseFloor <= 0 && rms > 0) this.noiseFloor = Math.max(MIN_RMS, rms * 0.18);
+    if (this.noiseFloor <= 0 && rms > 0) this.noiseFloor = Math.max(MIN_RMS, rms);
     const floor = Math.max(this.noiseFloor, MIN_RMS);
     const snrRatio = rms > 0 ? rms / floor : 0;
-    const strongPeriodic = clarity >= 0.9;
-    const voiced = frequency > 0 && rms >= MIN_RMS && clarity >= minimumClarity && (snrRatio >= 1.18 || strongPeriodic);
+    const strongPeriodic = clarity >= 0.92;
+    const tonal = frequency > 0 && rms >= MIN_RMS && clarity >= minimumClarity;
 
-    if (!voiced) {
+    if (!tonal) {
+      this.quietCandidate = 0;
+      this.quietCandidateFrames = 0;
       if (rms > 0 && rms <= floor * 1.8) {
         this.noiseFloor = floor * 0.985 + rms * 0.015;
       }
       return this.holdOrRelease(now);
+    }
+
+    const energyRise = snrRatio >= 1.18;
+    const matchesBackground =
+      this.backgroundFrequency > 0 &&
+      centsApart(this.backgroundFrequency, frequency) <= BACKGROUND_TOLERANCE_CENTS;
+
+    if (!this.locked && !energyRise) {
+      if (
+        this.quietCandidate > 0 &&
+        centsApart(this.quietCandidate, frequency) <= BACKGROUND_TOLERANCE_CENTS
+      ) {
+        this.quietCandidate = Math.sqrt(this.quietCandidate * frequency);
+        this.quietCandidateFrames++;
+      } else {
+        this.quietCandidate = frequency;
+        this.quietCandidateFrames = 1;
+      }
+
+      if (this.quietCandidateFrames >= BACKGROUND_LEARN_FRAMES) {
+        this.backgroundFrequency = this.quietCandidate;
+        this.backgroundRms = this.backgroundRms > 0
+          ? this.backgroundRms * .8 + rms * .2
+          : rms;
+        this.noiseFloor = floor * .92 + rms * .08;
+        return this.holdOrRelease(now, 'candidate');
+      }
+
+      if (!strongPeriodic || this.quietCandidateFrames < 4) {
+        return { frequency: null, confidence: clarity, held: false, state: 'candidate' };
+      }
+    } else {
+      this.quietCandidate = 0;
+      this.quietCandidateFrames = 0;
+    }
+
+    if (
+      matchesBackground &&
+      this.backgroundRms > 0 &&
+      rms < this.backgroundRms * 1.35 &&
+      !this.locked
+    ) {
+      this.noiseFloor = floor * .985 + rms * .015;
+      return { frequency: null, confidence: clarity, held: false, state: 'idle' };
+    }
+
+    if (!energyRise && !strongPeriodic && !this.locked) {
+      return { frequency: null, confidence: clarity, held: false, state: 'candidate' };
     }
 
     if (rms <= floor * 1.45 && clarity < 0.82) {

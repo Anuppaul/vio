@@ -60,6 +60,7 @@ public class NativePitchPlugin extends Plugin {
     private int nativeFramesPerBurst = 0;
     private int nativeBufferCapacityFrames = 0;
     private int lastOboeStartError = 0;
+    private int oboeRecoveryCount = 0;
 
     @PluginMethod
     public void start(PluginCall call) {
@@ -75,6 +76,7 @@ public class NativePitchPlugin extends Plugin {
             }
 
             lastOboeStartError = 0;
+            oboeRecoveryCount = 0;
             if (NativeOboeCapture.isAvailable()) {
                 configureOboeDefaults();
                 int oboeResult = NativeOboeCapture.start();
@@ -451,22 +453,108 @@ public class NativePitchPlugin extends Plugin {
             emitPitch(acceptPitch(pitch), rms);
         }
 
-        if (failureMessage != null && running.compareAndSet(true, false)) {
-            synchronized (captureLock) {
-                if (oboeBackend) {
-                    usingOboe = false;
-                    NativeOboeCapture.stop();
-                } else if (recorder == local) {
-                    recorder = null;
+        if (failureMessage != null) {
+            if (oboeBackend && recoverFromOboeFailure()) {
+                return;
+            }
+            if (running.compareAndSet(true, false)) {
+                synchronized (captureLock) {
+                    if (oboeBackend) {
+                        usingOboe = false;
+                        NativeOboeCapture.stop();
+                    } else if (recorder == local) {
+                        recorder = null;
+                    }
                 }
+                if (!oboeBackend) {
+                    try { if (local != null) local.stop(); } catch (Exception ignored) {}
+                    releaseRecorder(local);
+                    releasePlatformAudioEffects();
+                }
+                emitCaptureError(failureMessage);
             }
-            if (!oboeBackend) {
-                try { if (local != null) local.stop(); } catch (Exception ignored) {}
-                releaseRecorder(local);
-                releasePlatformAudioEffects();
-            }
-            emitCaptureError(failureMessage);
         }
+    }
+
+    private boolean recoverFromOboeFailure() {
+        if (!running.compareAndSet(true, false)) {
+            return false;
+        }
+
+        synchronized (captureLock) {
+            if (!usingOboe) {
+                return false;
+            }
+
+            usingOboe = false;
+            NativeOboeCapture.stop();
+
+            if (oboeRecoveryCount < 1 && NativeOboeCapture.isAvailable()) {
+                oboeRecoveryCount++;
+                configureOboeDefaults();
+                int result = NativeOboeCapture.start();
+                int rate = NativeOboeCapture.getSampleRate();
+                if (result == 0 && rate > 0 && NativeOboeCapture.isRunning()) {
+                    usingOboe = true;
+                    sampleRate = rate;
+                    audioSourceName = NativeOboeCapture.getBackendName();
+                    nativeFramesPerBurst = NativeOboeCapture.getFramesPerBurst();
+                    nativeBufferCapacityFrames = NativeOboeCapture.getBufferCapacityFrames();
+                    running.set(true);
+                    launchCaptureWorkerLocked("vio-native-pitch-oboe-recovered");
+                    emitBackendChange();
+                    return true;
+                }
+                lastOboeStartError = result != 0
+                    ? result
+                    : NativeOboeCapture.getLastErrorCode();
+                NativeOboeCapture.stop();
+            }
+
+            AudioRecord created = createRecorder();
+            if (created == null) {
+                return false;
+            }
+
+            recorder = created;
+            nativeFramesPerBurst = 0;
+            nativeBufferCapacityFrames = 0;
+            disablePlatformAudioEffects(created.getAudioSessionId());
+            try {
+                created.startRecording();
+            } catch (Exception error) {
+                releaseRecorder(created);
+                recorder = null;
+                releasePlatformAudioEffects();
+                return false;
+            }
+
+            if (created.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
+                releaseRecorder(created);
+                recorder = null;
+                releasePlatformAudioEffects();
+                return false;
+            }
+
+            usingOboe = false;
+            running.set(true);
+            launchCaptureWorkerLocked("vio-native-pitch-audiorecord-recovered");
+            emitBackendChange();
+            return true;
+        }
+    }
+
+    private void launchCaptureWorkerLocked(String name) {
+        worker = new Thread(this::captureLoop, name);
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void emitBackendChange() {
+        JSObject info = captureInfo();
+        mainHandler.post(() -> {
+            if (running.get()) notifyListeners("backend", info);
+        });
     }
 
     private boolean copyLatest(float[] ring, int write, int filled, float[] target) {

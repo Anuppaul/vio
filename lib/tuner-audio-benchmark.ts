@@ -19,7 +19,9 @@ export type TunerBenchmarkCriteria={
   maxVoicedCentsMae?:number;
   maxVoicedCentsP95?:number;
   maxOctaveErrorRate?:number;
+  maxGrossErrorRate?:number;
   maxUnvoicedFalsePositiveRate?:number;
+  minLockSuccessRate?:number;
   maxMedianLockMs?:number;
 };
 
@@ -79,6 +81,8 @@ export type TunerBenchmarkRegionReport={
   frameAccuracy:number;
   falsePositiveRate:number;
   octaveErrorRate:number;
+  grossErrorRate:number;
+  lockSuccessRate:number;
   centsMae:number|null;
   centsMedian:number|null;
   centsP95:number|null;
@@ -175,7 +179,9 @@ function normalizeCriteria(input:unknown):TunerBenchmarkCriteria|undefined{
     'minVoicedFrameAccuracy',
     'minVoicedDetectionRate',
     'maxOctaveErrorRate',
-    'maxUnvoicedFalsePositiveRate'
+    'maxGrossErrorRate',
+    'maxUnvoicedFalsePositiveRate',
+    'minLockSuccessRate'
   ] as const;
   for(const key of unitKeys){
     if(source[key]!==undefined)result[key]=clampUnit(assertFiniteNumber(source[key],`criteria.${key}`),`criteria.${key}`);
@@ -387,6 +393,7 @@ function aggregateReports(reports:TunerBenchmarkRecordingReport[]):TunerBenchmar
     });
   });
   const locks=voiced.map(region=>region.lockLatencyMs).filter((value):value is number=>value!==null);
+  const lockSuccessRegions=locks.length;
 
   const voicedFrames=voiced.reduce((sum,region)=>sum+region.scoredFrames,0);
   const unvoicedFrames=unvoiced.reduce((sum,region)=>sum+region.scoredFrames,0);
@@ -413,6 +420,8 @@ function aggregateReports(reports:TunerBenchmarkRecordingReport[]):TunerBenchmar
     voicedFrameAccuracy:ratio(correctVoicedFrames,voicedFrames),
     unvoicedFalsePositiveRate:ratio(falsePositiveFrames,unvoicedFrames),
     octaveErrorRate:ratio(octaveErrorFrames,voicedFrames),
+    grossErrorRate:ratio(voiced.reduce((sum,region)=>sum+region.grossErrorFrames,0),voicedFrames),
+    lockSuccessRate:ratio(lockSuccessRegions,voiced.length),
     centsMae:mean(cents),
     centsMedian:median(cents),
     centsP95:percentile(cents,.95),
@@ -428,7 +437,9 @@ function criteriaPass(aggregate:TunerBenchmarkAggregate,criteria:TunerBenchmarkC
   if(criteria.maxVoicedCentsMae!==undefined)pass&&=aggregate.centsMae!==null&&aggregate.centsMae<=criteria.maxVoicedCentsMae;
   if(criteria.maxVoicedCentsP95!==undefined)pass&&=aggregate.centsP95!==null&&aggregate.centsP95<=criteria.maxVoicedCentsP95;
   if(criteria.maxOctaveErrorRate!==undefined)pass&&=aggregate.octaveErrorRate<=criteria.maxOctaveErrorRate;
+  if(criteria.maxGrossErrorRate!==undefined)pass&&=aggregate.grossErrorRate<=criteria.maxGrossErrorRate;
   if(criteria.maxUnvoicedFalsePositiveRate!==undefined)pass&&=aggregate.unvoicedFalsePositiveRate<=criteria.maxUnvoicedFalsePositiveRate;
+  if(criteria.minLockSuccessRate!==undefined)pass&&=aggregate.lockSuccessRate>=criteria.minLockSuccessRate;
   if(criteria.maxMedianLockMs!==undefined)pass&&=aggregate.medianLockMs!==null&&aggregate.medianLockMs<=criteria.maxMedianLockMs;
   return pass;
 }

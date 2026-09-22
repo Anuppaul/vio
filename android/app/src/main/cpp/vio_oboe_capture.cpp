@@ -243,6 +243,21 @@ jstring toJString(JNIEnv *env, const std::string &value) {
 
 } // namespace
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_anuppaul_vio_NativeOboeCapture_nativeConfigureDefaults(
+        JNIEnv *,
+        jclass,
+        jint sampleRate,
+        jint framesPerBurst) {
+    if (sampleRate > 0) {
+        oboe::DefaultStreamValues::SampleRate = sampleRate;
+    }
+    if (framesPerBurst > 0) {
+        oboe::DefaultStreamValues::FramesPerBurst = framesPerBurst;
+    }
+    oboe::DefaultStreamValues::ChannelCount = 1;
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_anuppaul_vio_NativeOboeCapture_nativeStart(
         JNIEnv *,

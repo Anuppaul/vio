@@ -76,6 +76,7 @@ public class NativePitchPlugin extends Plugin {
 
             lastOboeStartError = 0;
             if (NativeOboeCapture.isAvailable()) {
+                configureOboeDefaults();
                 int oboeResult = NativeOboeCapture.start();
                 int oboeRate = NativeOboeCapture.getSampleRate();
                 if (oboeResult == 0 && oboeRate > 0 && NativeOboeCapture.isRunning()) {
@@ -163,6 +164,32 @@ public class NativePitchPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         stopCapture();
+    }
+
+    private void configureOboeDefaults() {
+        try {
+            AudioManager manager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            if (manager == null) return;
+
+            int defaultRate = parsePositiveInt(
+                manager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
+            );
+            int defaultBurst = parsePositiveInt(
+                manager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)
+            );
+            NativeOboeCapture.configureDefaults(defaultRate, defaultBurst);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private int parsePositiveInt(String value) {
+        if (value == null || value.isEmpty()) return 0;
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed > 0 ? parsed : 0;
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private AudioRecord createRecorder() {

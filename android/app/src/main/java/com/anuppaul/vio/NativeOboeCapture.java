@@ -26,6 +26,15 @@ final class NativeOboeCapture {
         runtimeAvailable = false;
     }
 
+    static void configureDefaults(int sampleRate, int framesPerBurst) {
+        if (!isAvailable()) return;
+        try {
+            nativeConfigureDefaults(sampleRate, framesPerBurst);
+        } catch (Throwable ignored) {
+            markUnavailable();
+        }
+    }
+
     static int start() {
         if (!isAvailable()) return Integer.MIN_VALUE;
         try {
@@ -126,6 +135,7 @@ final class NativeOboeCapture {
         }
     }
 
+    private static native void nativeConfigureDefaults(int sampleRate, int framesPerBurst);
     private static native int nativeStart();
     private static native void nativeStop();
     private static native int nativeRead(float[] output, int maxFrames, int timeoutMs);

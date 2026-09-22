@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vio.local/benchmarks/tuner/manifest.schema.json",
+  "title": "VIO Sound Tuner Real-Audio Benchmark Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "recordings"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "a4": { "type": "number", "minimum": 400, "maximum": 480 },
+        "hopSize": { "type": "number", "minimum": 128 },
+        "toleranceCents": { "type": "number", "exclusiveMinimum": 0, "maximum": 50 },
+        "ignoreAttackMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "criteria": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minVoicedFrameAccuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minVoicedNoteAccuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minVoicedDetectionRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maxDropoutRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maxVoicedCentsMae": { "type": "number", "minimum": 0 },
+        "maxVoicedCentsP95": { "type": "number", "minimum": 0 },
+        "maxOctaveErrorRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maxGrossErrorRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maxUnvoicedFalsePositiveRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minLockSuccessRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maxMedianLockMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "recordings": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/recording" }
+    }
+  },
+  "$defs": {
+    "recording": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "file", "regions"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "file": { "type": "string", "minLength": 1 },
+        "a4": { "type": "number", "minimum": 400, "maximum": 480 },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "boolean"]
+          }
+        },
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/region" }
+        }
+      }
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startMs", "endMs", "voiced"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "startMs": { "type": "number", "minimum": 0 },
+        "endMs": { "type": "number", "exclusiveMinimum": 0 },
+        "voiced": { "type": "boolean" },
+        "expectedHz": { "type": "number", "exclusiveMinimum": 0 },
+        "expectedMidi": { "type": "number", "minimum": 0, "maximum": 127 },
+        "toleranceCents": { "type": "number", "exclusiveMinimum": 0, "maximum": 50 },
+        "ignoreAttackMs": { "type": "number", "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "voiced": { "const": true } },
+            "required": ["voiced"]
+          },
+          "then": {
+            "oneOf": [
+              {
+                "required": ["expectedHz"],
+                "not": { "required": ["expectedMidi"] }
+              },
+              {
+                "required": ["expectedMidi"],
+                "not": { "required": ["expectedHz"] }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

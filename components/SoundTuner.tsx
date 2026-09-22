@@ -96,6 +96,7 @@ export default function SoundTuner(){
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
   const trackCleanupRef=useRef<(()=>void)|null>(null);
+  const contextCleanupRef=useRef<(()=>void)|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const shortRawBufferRef=useRef(new Float32Array(SHORT_BUFFER_SIZE));
   const fastRawBufferRef=useRef(new Float32Array(FAST_BUFFER_SIZE));
@@ -427,6 +428,7 @@ export default function SoundTuner(){
     cancelAnimationFrame(rafRef.current);rafRef.current=0;
     captureSessionRef.current++;
     trackCleanupRef.current?.();trackCleanupRef.current=null;
+    contextCleanupRef.current?.();contextCleanupRef.current=null;
     if(workletWatchdogRef.current!==null){
       window.clearTimeout(workletWatchdogRef.current);
       workletWatchdogRef.current=null;
@@ -447,6 +449,42 @@ export default function SoundTuner(){
     fastAnalyserRef.current=null;
     streamRef.current=null;
     longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
+  }
+
+  function attachWebAudioContextLifecycle(ctx:AudioContext){
+    contextCleanupRef.current?.();
+    contextCleanupRef.current=null;
+
+    const stateChanged=()=>{
+      if(!streamRef.current)return;
+      if(ctx.state==='suspended'){
+        setStatus('Audio paused by browser · resume the tab to continue');
+      }else if(ctx.state==='running'){
+        const path=workletCaptureRef.current?'AudioWorklet':'analyser fallback';
+        setStatus(`Listening · ${path} resumed`);
+      }else if(ctx.state==='closed'){
+        cleanupWebCaptureResources(true);
+        startingRef.current=false;setStarting(false);
+        setRunning(false);setMicLevel(0);clearPitch(true);
+        setStatus('Browser audio context closed');
+      }
+    };
+    const visibilityChanged=()=>{
+      if(
+        document.visibilityState==='visible' &&
+        ctx.state==='suspended' &&
+        streamRef.current
+      ){
+        void resumeBrowserAudio(ctx).then(()=>stateChanged());
+      }
+    };
+
+    ctx.addEventListener('statechange',stateChanged);
+    document.addEventListener('visibilitychange',visibilityChanged);
+    contextCleanupRef.current=()=>{
+      ctx.removeEventListener('statechange',stateChanged);
+      document.removeEventListener('visibilitychange',visibilityChanged);
+    };
   }
 
   function attachWebMicrophoneLifecycle(track:MediaStreamTrack|undefined){
@@ -553,6 +591,8 @@ export default function SoundTuner(){
       }
       ctxRef.current=ctx;await resumeBrowserAudio(ctx);
       if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
+      if(ctx.state!=='running')throw new Error('Browser audio is suspended');
+      attachWebAudioContextLifecycle(ctx);
       const browserRange=detectorRangeForSampleRate(ctx.sampleRate);
       detectRangeRef.current=browserRange;setDetectRange(browserRange);
       const source=ctx.createMediaStreamSource(stream);

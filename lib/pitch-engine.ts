@@ -293,10 +293,32 @@ export function chooseHarmonicCandidate(
   };
   candidates.sort((a,b)=>score(b)-score(a));
   const best = candidates[0];
-  const agreementBoost = Math.min(.12, Math.max(0,best.evidence-1)*.08);
+  const spectralCoherence =
+    best.coverage*.48 +
+    best.lowOrderCoverage*.34 +
+    best.oddCoverage*.18;
+  const agreement = Math.max(0,Math.min(1,best.evidence/maxEvidence));
+  const lowFrequencySupport = best.frequency < 80
+    ? (
+        centsApart(long.frequency,best.frequency)<=45 ||
+        (Array.isArray(consensus)?consensus:[consensus])
+          .filter((candidate):candidate is PitchCandidate=>candidate!==null)
+          .some(candidate=>centsApart(candidate.frequency,best.frequency)<=45)
+      )
+    : true;
+
+  let confidence =
+    best.clarity*.58 +
+    spectralCoherence*.24 +
+    agreement*.18 -
+    best.humPenalty*.72;
+
+  if(!lowFrequencySupport) confidence*=.48;
+  if(best.coverage<.12&&agreement<.5) confidence*=.72;
+
   return {
     frequency: best.frequency,
-    clarity: Math.min(1,best.clarity+agreementBoost),
+    clarity: Math.max(0,Math.min(1,confidence)),
     mode: best.mode
   };
 }

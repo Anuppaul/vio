@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import process from 'node:process';
 import {
@@ -84,7 +84,7 @@ function printRecording(recording:TunerBenchmarkRecordingReport){
     const mark=region.pass===null?'INFO':region.pass?'PASS':'FAIL';
     if(region.voiced){
       console.log(
-        `  ${mark} region ${region.id} [${region.startMs.toFixed(0)}–${region.endMs.toFixed(0)} ms] expected=${region.expectedNote} ${region.expectedHz?.toFixed(2)} Hz | accuracy=${percent(region.frameAccuracy)} detect=${percent(region.detectionRate)} centsMAE=${numberOrDash(region.centsMae)} p95=${numberOrDash(region.centsP95)} lock=${region.lockLatencyMs===null?'—':region.lockLatencyMs.toFixed(1)+' ms'} octave=${region.octaveErrorFrames} gross=${region.grossErrorFrames}`
+        `  ${mark} region ${region.id} [${region.startMs.toFixed(0)}–${region.endMs.toFixed(0)} ms] expected=${region.expectedNote} ${region.expectedHz?.toFixed(2)} Hz | accuracy=${percent(region.frameAccuracy)} detect=${percent(region.detectionRate)} centsMAE=${numberOrDash(region.centsMae)} p95=${numberOrDash(region.centsP95)} lock=${region.lockLatencyMs===null?'—':region.lockLatencyMs.toFixed(1)+' ms'} octave=${region.octaveErrorFrames} gross=${region.grossErrorFrames} (${percent(region.grossErrorRate)})`
       );
     }else{
       console.log(
@@ -134,6 +134,7 @@ if(!options.manifest){
 
   if(options.out){
     const outPath=resolve(options.out);
+    await mkdir(dirname(outPath),{recursive:true});
     await writeFile(outPath,JSON.stringify(report,null,2)+'\n','utf8');
   }
 

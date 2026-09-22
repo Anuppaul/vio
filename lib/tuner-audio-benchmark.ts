@@ -82,7 +82,6 @@ export type TunerBenchmarkRegionReport={
   falsePositiveRate:number;
   octaveErrorRate:number;
   grossErrorRate:number;
-  lockSuccessRate:number;
   centsMae:number|null;
   centsMedian:number|null;
   centsP95:number|null;
@@ -110,6 +109,8 @@ export type TunerBenchmarkAggregate={
   voicedFrameAccuracy:number;
   unvoicedFalsePositiveRate:number;
   octaveErrorRate:number;
+  grossErrorRate:number;
+  lockSuccessRate:number;
   centsMae:number|null;
   centsMedian:number|null;
   centsP95:number|null;
@@ -333,6 +334,7 @@ function createRegionAccumulator(
       frameAccuracy:0,
       falsePositiveRate:0,
       octaveErrorRate:0,
+      grossErrorRate:0,
       centsMae:null,
       centsMedian:null,
       centsP95:null,
@@ -356,6 +358,7 @@ function finalizeRegion(
   report.frameAccuracy=report.voiced?ratio(report.correctFrames,report.scoredFrames):0;
   report.falsePositiveRate=report.voiced?0:ratio(report.falsePositiveFrames,report.scoredFrames);
   report.octaveErrorRate=report.voiced?ratio(report.octaveErrorFrames,report.scoredFrames):0;
+  report.grossErrorRate=report.voiced?ratio(report.grossErrorFrames,report.scoredFrames):0;
   report.centsMae=mean(accumulator.absCents);
   report.centsMedian=median(accumulator.absCents);
   report.centsP95=percentile(accumulator.absCents,.95);
@@ -371,6 +374,7 @@ function finalizeRegion(
       if(criteria.maxVoicedCentsMae!==undefined)pass&&=report.centsMae!==null&&report.centsMae<=criteria.maxVoicedCentsMae;
       if(criteria.maxVoicedCentsP95!==undefined)pass&&=report.centsP95!==null&&report.centsP95<=criteria.maxVoicedCentsP95;
       if(criteria.maxOctaveErrorRate!==undefined)pass&&=report.octaveErrorRate<=criteria.maxOctaveErrorRate;
+      if(criteria.maxGrossErrorRate!==undefined)pass&&=report.grossErrorRate<=criteria.maxGrossErrorRate;
     }else if(criteria.maxUnvoicedFalsePositiveRate!==undefined){
       pass&&=report.falsePositiveRate<=criteria.maxUnvoicedFalsePositiveRate;
     }

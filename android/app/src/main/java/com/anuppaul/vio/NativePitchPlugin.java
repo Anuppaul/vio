@@ -511,7 +511,35 @@ public class NativePitchPlugin extends Plugin {
 
         if (totalWeight <= 0.0 || considered == 0) return 0.0;
         double coverage = present / (double) considered;
-        return Math.max(0.0, Math.min(1.0, score / totalWeight * 0.82 + coverage * 0.18));
+        double baseScore = score / totalWeight * 0.82 + coverage * 0.18;
+        double humPenalty = mainsHumPenalty(frame, frequency);
+        return Math.max(0.0, Math.min(1.0, baseScore - humPenalty));
+    }
+
+    private double mainsHumPenalty(float[] frame, double frequency) {
+        double penalty = 0.0;
+        double[] mainsFrequencies = { 50.0, 60.0 };
+
+        for (double mains : mainsFrequencies) {
+            int harmonic = (int) Math.round(frequency / mains);
+            if (harmonic < 1 || harmonic > 8) continue;
+            double exact = mains * harmonic;
+            if (pitchCentsApart(frequency, exact) > 11.0) continue;
+
+            double candidatePower = goertzelPower(frame, frequency);
+            double basePower = goertzelPower(frame, mains);
+            double secondPower = mains * 2.0 < sampleRate / 2.0
+                ? goertzelPower(frame, mains * 2.0)
+                : 0.0;
+            double baseEvidence = Math.max(basePower, secondPower * 0.72);
+            double ratio = baseEvidence / Math.max(candidatePower, 1e-12);
+            double current = harmonic == 1
+                ? 0.08
+                : 0.12 + Math.min(0.12, ratio * 0.08);
+            penalty = Math.max(penalty, current);
+        }
+
+        return penalty;
     }
 
     private static double[] createHann(int length) {

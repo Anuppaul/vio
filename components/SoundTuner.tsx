@@ -474,11 +474,13 @@ export default function SoundTuner(){
     };
   }
 
-  async function startNativePitch(){
+  async function startNativePitch(session:number){
     const current=await NativePitch.checkPermissions();
+    if(session!==captureSessionRef.current)return;
     let microphone=current.microphone;
     if(microphone!=='granted'){
       const requested=await NativePitch.requestPermissions({permissions:['microphone']});
+      if(session!==captureSessionRef.current)return;
       microphone=requested.microphone;
     }
     if(microphone!=='granted')throw new Error('microphone permission denied');
@@ -492,6 +494,7 @@ export default function SoundTuner(){
       );
     });
     const errorListener=await NativePitch.addListener('error',error=>{
+      captureSessionRef.current++;
       nativeActiveRef.current=false;
       setRunning(false);setMicLevel(0);clearPitch(true);
       setStatus(`Microphone stopped unexpectedly: ${error.message||'audio capture failed'}`);
@@ -500,6 +503,12 @@ export default function SoundTuner(){
     nativeErrorListenerRef.current=errorListener;
     try{
       const nativeInfo=await NativePitch.start();
+      if(session!==captureSessionRef.current){
+        nativeListenerRef.current=null;nativeErrorListenerRef.current=null;
+        await listener.remove();await errorListener.remove();
+        await NativePitch.stop().catch(()=>{});
+        return;
+      }
       const nativeRange=detectorRangeForSampleRate(nativeInfo.sampleRate);
       detectRangeRef.current=nativeRange;setDetectRange(nativeRange);setCapturePath('Native');
       nativeActiveRef.current=true;setRunning(true);clearPitch(false);setMicLevel(0);
@@ -512,11 +521,16 @@ export default function SoundTuner(){
 
   async function start(){
     if(running)return;stopReference();
+    const session=++captureSessionRef.current;
     if(hasNativePitch()){
-      try{await startNativePitch()}catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
+      try{await startNativePitch(session)}catch(err){
+        if(session===captureSessionRef.current){
+          setRunning(false);setMicLevel(0);clearPitch(true);
+          setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`);
+        }
+      }
       return;
     }
-    const session=++captureSessionRef.current;
     try{
       const stream=await requestRawMicrophone();
       if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
@@ -576,6 +590,7 @@ export default function SoundTuner(){
 
   function stop(){
     if(nativeActiveRef.current||nativeListenerRef.current||nativeErrorListenerRef.current){
+      captureSessionRef.current++;
       nativeActiveRef.current=false;
       const listener=nativeListenerRef.current;nativeListenerRef.current=null;
       const errorListener=nativeErrorListenerRef.current;nativeErrorListenerRef.current=null;

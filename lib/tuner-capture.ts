@@ -85,7 +85,21 @@ export async function createTunerWorkletCapture(
       }catch{
         onError('AudioWorklet frame processing failed.');
       }finally{
-        try{node?.port.postMessage({type:'ack',sequence:Number(data.sequence)||0})}catch{}
+        const short=toFloat32(data.short);
+        const long=toFloat32(data.long);
+        const message={
+          type:'ack',
+          sequence:Number(data.sequence)||0,
+          fastBuffer:fast.buffer,
+          shortBuffer:short?.buffer??null,
+          longBuffer:long?.buffer??null
+        };
+        const transfer:Transferable[]=[fast.buffer];
+        if(short)transfer.push(short.buffer);
+        if(long)transfer.push(long.buffer);
+        try{node?.port.postMessage(message,transfer)}catch{
+          try{node?.port.postMessage({type:'ack',sequence:Number(data.sequence)||0})}catch{}
+        }
       }
     };
     handleProcessorError=()=>onError('AudioWorklet capture processor stopped unexpectedly.');

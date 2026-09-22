@@ -16,17 +16,35 @@ class VioTunerCaptureProcessor extends AudioWorkletProcessor{
     this.sequence=0;
     this.active=true;
     this.awaitingAck=false;
+    this.fastPool=[];
+    this.shortPool=[];
+    this.longPool=[];
     this.port.onmessage=event=>{
-      if(event.data?.type==='stop')this.active=false;
-      if(event.data?.type==='start')this.active=true;
-      if(event.data?.type==='ack')this.awaitingAck=false;
+      const data=event.data;
+      if(data?.type==='stop')this.active=false;
+      if(data?.type==='start')this.active=true;
+      if(data?.type==='ack'){
+        this.awaitingAck=false;
+        this.recycle(data.fastBuffer,this.fastPool,FAST_SIZE);
+        this.recycle(data.shortBuffer,this.shortPool,SHORT_SIZE);
+        this.recycle(data.longBuffer,this.longPool,LONG_SIZE);
+      }
     };
     this.port.postMessage({type:'ready',sampleRate});
   }
 
-  latest(size){
+  recycle(buffer,pool,size){
+    if(!(buffer instanceof ArrayBuffer)||buffer.byteLength!==size*4||pool.length>=2)return;
+    pool.push(new Float32Array(buffer));
+  }
+
+  take(pool,size){
+    return pool.pop()||new Float32Array(size);
+  }
+
+  latest(size,pool){
     if(this.filled<size)return null;
-    const output=new Float32Array(size);
+    const output=this.take(pool,size);
     let start=this.write-size;
     if(start<0)start+=LONG_SIZE;
     const first=Math.min(size,LONG_SIZE-start);
@@ -93,10 +111,10 @@ class VioTunerCaptureProcessor extends AudioWorkletProcessor{
     this.awaitingAck=true;
     this.sequence++;
 
-    const fastRaw=this.latest(FAST_SIZE);
-    const shortRaw=this.filled>=SHORT_SIZE?this.latest(SHORT_SIZE):null;
+    const fastRaw=this.latest(FAST_SIZE,this.fastPool);
+    const shortRaw=this.filled>=SHORT_SIZE?this.latest(SHORT_SIZE,this.shortPool):null;
     const includeLong=this.filled>=LONG_SIZE&&(this.sequence%2===0);
-    const longRaw=includeLong?this.latest(LONG_SIZE):null;
+    const longRaw=includeLong?this.latest(LONG_SIZE,this.longPool):null;
     if(!fastRaw)return true;
 
     const rms=this.segmentRms(fastRaw,0,FAST_SIZE);

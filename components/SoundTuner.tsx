@@ -318,7 +318,7 @@ export default function SoundTuner(){
       );
       const lowNeedsLongSupport=
         picked.frequency>0&&picked.frequency<80&&
-        (!suppressStaleLong&&centsApart(longFrequency,picked.frequency)>45)&&
+        (suppressStaleLong||centsApart(longFrequency,picked.frequency)>45)&&
         !consensusCandidates.some(candidate=>centsApart(candidate.frequency,picked.frequency)<=45);
       applyTrackedPitch(
         lowNeedsLongSupport?0:picked.frequency,

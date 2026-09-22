@@ -15,7 +15,6 @@ import {
   SYNTHETIC_SAMPLE_RATE,
   buildSyntheticPitchCases,
   mixSynthetic,
-  normalizeSynthetic,
   syntheticHarmonicTone,
   syntheticNoise,
   syntheticSine

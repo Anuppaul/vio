@@ -52,7 +52,7 @@ export async function createTunerWorkletCapture(
 
   try{
     if(!loadedContexts.has(ctx)){
-      await ctx.audioWorklet.addModule('/tuner-capture-worklet.js?v=1');
+      await ctx.audioWorklet.addModule('/tuner-capture-worklet.js?v=2');
       loadedContexts.add(ctx);
     }
 
@@ -76,12 +76,16 @@ export async function createTunerWorkletCapture(
           sequence:Number(data.sequence)||0,
           sampleRate:Number(data.sampleRate)||ctx.sampleRate,
           audioTime:Number(data.audioTime)||0,
+          rms:Number(data.rms)||0,
+          onset:Boolean(data.onset),
           fast,
           short:toFloat32(data.short),
           long:toFloat32(data.long)
         });
       }catch{
         onError('AudioWorklet frame processing failed.');
+      }finally{
+        try{node?.port.postMessage({type:'ack',sequence:Number(data.sequence)||0})}catch{}
       }
     };
     handleProcessorError=()=>onError('AudioWorklet capture processor stopped unexpectedly.');

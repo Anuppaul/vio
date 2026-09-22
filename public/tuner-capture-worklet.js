@@ -15,9 +15,11 @@ class VioTunerCaptureProcessor extends AudioWorkletProcessor{
     this.sincePost=0;
     this.sequence=0;
     this.active=true;
+    this.awaitingAck=false;
     this.port.onmessage=event=>{
       if(event.data?.type==='stop')this.active=false;
       if(event.data?.type==='start')this.active=true;
+      if(event.data?.type==='ack')this.awaitingAck=false;
     };
     this.port.postMessage({type:'ready',sampleRate});
   }
@@ -87,6 +89,8 @@ class VioTunerCaptureProcessor extends AudioWorkletProcessor{
 
     if(this.filled<FAST_SIZE||this.sincePost<HOP_SIZE)return true;
     this.sincePost%=HOP_SIZE;
+    if(this.awaitingAck)return true;
+    this.awaitingAck=true;
     this.sequence++;
 
     const fastRaw=this.latest(FAST_SIZE);

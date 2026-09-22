@@ -94,6 +94,7 @@ export default function SoundTuner(){
   const workletWatchdogRef=useRef<number|null>(null);
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
+  const trackCleanupRef=useRef<(()=>void)|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const shortRawBufferRef=useRef(new Float32Array(SHORT_BUFFER_SIZE));
   const fastRawBufferRef=useRef(new Float32Array(FAST_BUFFER_SIZE));
@@ -419,6 +420,34 @@ export default function SoundTuner(){
     rafRef.current=requestAnimationFrame(analyse);
   }
 
+  function attachWebMicrophoneLifecycle(track:MediaStreamTrack|undefined){
+    trackCleanupRef.current?.();
+    trackCleanupRef.current=null;
+    if(!track)return;
+
+    const ended=()=>{
+      trackCleanupRef.current?.();
+      trackCleanupRef.current=null;
+      stop();
+      setStatus('Microphone disconnected');
+    };
+    const muted=()=>{
+      if(streamRef.current)setStatus('Microphone temporarily muted');
+    };
+    const unmuted=()=>{
+      if(streamRef.current)setStatus('Listening · microphone resumed');
+    };
+
+    track.addEventListener('ended',ended);
+    track.addEventListener('mute',muted);
+    track.addEventListener('unmute',unmuted);
+    trackCleanupRef.current=()=>{
+      track.removeEventListener('ended',ended);
+      track.removeEventListener('mute',muted);
+      track.removeEventListener('unmute',unmuted);
+    };
+  }
+
   async function startNativePitch(){
     const current=await NativePitch.checkPermissions();
     let microphone=current.microphone;
@@ -463,6 +492,7 @@ export default function SoundTuner(){
     }
     try{
       const stream=await requestRawMicrophone();
+      attachWebMicrophoneLifecycle(stream.getAudioTracks()[0]);
       const ctx=ctxRef.current||createBrowserAudioContext();
       if(!ctx){stream.getTracks().forEach(t=>t.stop());setStatus('Web Audio unavailable');return}
       ctxRef.current=ctx;await resumeBrowserAudio(ctx);
@@ -519,6 +549,7 @@ export default function SoundTuner(){
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
     cancelAnimationFrame(rafRef.current);rafRef.current=0;
+    trackCleanupRef.current?.();trackCleanupRef.current=null;
     workletCaptureRef.current?.stop();workletCaptureRef.current=null;
     if(workletWatchdogRef.current!==null){window.clearTimeout(workletWatchdogRef.current);workletWatchdogRef.current=null}
     workletShortReadyRef.current=false;workletLongReadyRef.current=false;
@@ -529,7 +560,7 @@ export default function SoundTuner(){
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);if(workletWatchdogRef.current!==null)window.clearTimeout(workletWatchdogRef.current);workletCaptureRef.current?.stop();try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);trackCleanupRef.current?.();if(workletWatchdogRef.current!==null)window.clearTimeout(workletWatchdogRef.current);workletCaptureRef.current?.stop();try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;

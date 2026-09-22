@@ -105,6 +105,7 @@ export default function SoundTuner(){
   const shortSpectrumRef=useRef(new Float32Array(SHORT_BUFFER_SIZE/2));
   const fastSpectrumRef=useRef(new Float32Array(FAST_BUFFER_SIZE/2));
   const rafRef=useRef(0),lastRef=useRef(0),captureStartedAtRef=useRef(0),uiAtRef=useRef(0);
+  const captureSessionRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const longFrequencyRef=useRef(0);
   const longClarityRef=useRef(0);
@@ -420,15 +421,40 @@ export default function SoundTuner(){
     rafRef.current=requestAnimationFrame(analyse);
   }
 
+  function cleanupWebCaptureResources(stopTracks=true){
+    cancelAnimationFrame(rafRef.current);rafRef.current=0;
+    captureSessionRef.current++;
+    trackCleanupRef.current?.();trackCleanupRef.current=null;
+    if(workletWatchdogRef.current!==null){
+      window.clearTimeout(workletWatchdogRef.current);
+      workletWatchdogRef.current=null;
+    }
+    workletCaptureRef.current?.stop();workletCaptureRef.current=null;
+    workletShortReadyRef.current=false;workletLongReadyRef.current=false;
+    workletFrameSeenRef.current=false;workletSequenceRef.current=0;
+    try{
+      sourceRef.current?.disconnect();
+      analyserRef.current?.disconnect();
+      shortAnalyserRef.current?.disconnect();
+      fastAnalyserRef.current?.disconnect();
+    }catch{}
+    if(stopTracks)streamRef.current?.getTracks().forEach(track=>track.stop());
+    sourceRef.current=null;
+    analyserRef.current=null;
+    shortAnalyserRef.current=null;
+    fastAnalyserRef.current=null;
+    streamRef.current=null;
+    longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
+  }
+
   function attachWebMicrophoneLifecycle(track:MediaStreamTrack|undefined){
     trackCleanupRef.current?.();
     trackCleanupRef.current=null;
     if(!track)return;
 
     const ended=()=>{
-      trackCleanupRef.current?.();
-      trackCleanupRef.current=null;
-      stop();
+      cleanupWebCaptureResources(false);
+      setRunning(false);setMicLevel(0);clearPitch(true);
       setStatus('Microphone disconnected');
     };
     const muted=()=>{
@@ -490,12 +516,14 @@ export default function SoundTuner(){
       try{await startNativePitch()}catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
       return;
     }
+    const session=++captureSessionRef.current;
     try{
       const stream=await requestRawMicrophone();
-      attachWebMicrophoneLifecycle(stream.getAudioTracks()[0]);
+      if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
       const ctx=ctxRef.current||createBrowserAudioContext();
-      if(!ctx){stream.getTracks().forEach(t=>t.stop());setStatus('Web Audio unavailable');return}
+      if(!ctx){stream.getTracks().forEach(track=>track.stop());setStatus('Web Audio unavailable');return}
       ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+      if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
       const browserRange=detectorRangeForSampleRate(ctx.sampleRate);
       detectRangeRef.current=browserRange;setDetectRange(browserRange);
       const source=ctx.createMediaStreamSource(stream);
@@ -505,6 +533,7 @@ export default function SoundTuner(){
         source.connect(node);
       }
       streamRef.current=stream;sourceRef.current=source;
+      attachWebMicrophoneLifecycle(stream.getAudioTracks()[0]);
       analyserRef.current=analyser;shortAnalyserRef.current=shortAnalyser;fastAnalyserRef.current=fastAnalyser;
       trackerRef.current.reset();needleFilterRef.current.reset();
       workletShortReadyRef.current=false;workletLongReadyRef.current=false;
@@ -520,6 +549,10 @@ export default function SoundTuner(){
         handleWorkletFrame,
         message=>activateAnalyserFallback(message+' Falling back to browser analyser.')
       );
+      if(session!==captureSessionRef.current){
+        capture?.stop();
+        return;
+      }
       if(capture){
         workletCaptureRef.current=capture;
         setCapturePath('AudioWorklet');
@@ -534,7 +567,11 @@ export default function SoundTuner(){
         setStatus('Listening · analyser fallback · harmonic-aware tracking');
         rafRef.current=requestAnimationFrame(analyse);
       }
-    }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
+    }catch(err){
+      if(session===captureSessionRef.current)cleanupWebCaptureResources(true);
+      setRunning(false);setMicLevel(0);clearPitch(true);
+      setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`);
+    }
   }
 
   function stop(){
@@ -548,19 +585,11 @@ export default function SoundTuner(){
       longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
-    cancelAnimationFrame(rafRef.current);rafRef.current=0;
-    trackCleanupRef.current?.();trackCleanupRef.current=null;
-    workletCaptureRef.current?.stop();workletCaptureRef.current=null;
-    if(workletWatchdogRef.current!==null){window.clearTimeout(workletWatchdogRef.current);workletWatchdogRef.current=null}
-    workletShortReadyRef.current=false;workletLongReadyRef.current=false;
-    workletFrameSeenRef.current=false;workletSequenceRef.current=0;
-    try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}
-    streamRef.current?.getTracks().forEach(t=>t.stop());
-    sourceRef.current=null;analyserRef.current=null;shortAnalyserRef.current=null;fastAnalyserRef.current=null;streamRef.current=null;
+    cleanupWebCaptureResources(true);
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);trackCleanupRef.current?.();if(workletWatchdogRef.current!==null)window.clearTimeout(workletWatchdogRef.current);workletCaptureRef.current?.stop();try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
+  useEffect(()=>()=>{cleanupWebCaptureResources(true);if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;

@@ -21,12 +21,14 @@ const MAX_DETECT_HZ=5000;
 
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
 type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string;mode?:PitchMode};
+type NativePitchError={message:string};
 type NativePitchPlugin={
   checkPermissions():Promise<{microphone?:NativePermissionState}>;
   requestPermissions(options:{permissions:string[]}):Promise<{microphone?:NativePermissionState}>;
   start():Promise<{sampleRate:number;source:string}>;
   stop():Promise<void>;
   addListener(eventName:'pitch',listener:(sample:NativePitchSample)=>void):Promise<PluginListenerHandle>;
+  addListener(eventName:'error',listener:(error:NativePitchError)=>void):Promise<PluginListenerHandle>;
 };
 const NativePitch=registerPlugin<NativePitchPlugin>('NativePitch');
 function hasNativePitch(){return Capacitor.isNativePlatform()&&Capacitor.isPluginAvailable('NativePitch')}
@@ -75,7 +77,7 @@ export default function SoundTuner(){
   const shortDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const trackerRef=useRef(new PitchTracker());
   const needleFilterRef=useRef(new OneEuroFilter());
-  const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
+  const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeErrorListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
   if(!detectorRef.current){
@@ -202,13 +204,20 @@ export default function SoundTuner(){
         sample.mode??'sustained'
       );
     });
+    const errorListener=await NativePitch.addListener('error',error=>{
+      nativeActiveRef.current=false;
+      setRunning(false);setMicLevel(0);clearPitch(true);
+      setStatus(`Microphone stopped unexpectedly: ${error.message||'audio capture failed'}`);
+    });
     nativeListenerRef.current=listener;
+    nativeErrorListenerRef.current=errorListener;
     try{
       await NativePitch.start();
       nativeActiveRef.current=true;setRunning(true);clearPitch(false);setMicLevel(0);
       setStatus('Listening · harmonic-aware tracking ready');
     }catch(err){
-      nativeListenerRef.current=null;await listener.remove();throw err;
+      nativeListenerRef.current=null;nativeErrorListenerRef.current=null;
+      await listener.remove();await errorListener.remove();throw err;
     }
   }
 
@@ -235,10 +244,12 @@ export default function SoundTuner(){
   }
 
   function stop(){
-    if(nativeActiveRef.current||nativeListenerRef.current){
+    if(nativeActiveRef.current||nativeListenerRef.current||nativeErrorListenerRef.current){
       nativeActiveRef.current=false;
       const listener=nativeListenerRef.current;nativeListenerRef.current=null;
+      const errorListener=nativeErrorListenerRef.current;nativeErrorListenerRef.current=null;
       if(listener)void listener.remove();
+      if(errorListener)void errorListener.remove();
       void NativePitch.stop().catch(()=>{});
       setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
@@ -249,7 +260,7 @@ export default function SoundTuner(){
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;

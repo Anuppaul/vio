@@ -231,15 +231,20 @@ public class NativePitchPlugin extends Plugin {
         int filled = 0;
         int sinceAnalysis = 0;
 
+        String failureMessage = null;
         while (running.get()) {
             int count;
             try {
                 count = local.read(chunk, 0, chunk.length, AudioRecord.READ_BLOCKING);
             } catch (Exception error) {
+                if (running.get()) failureMessage = "Native microphone read failed.";
                 break;
             }
             if (count <= 0) {
-                if (count == AudioRecord.ERROR_DEAD_OBJECT || count == AudioRecord.ERROR_INVALID_OPERATION) break;
+                if (count == AudioRecord.ERROR_DEAD_OBJECT || count == AudioRecord.ERROR_INVALID_OPERATION) {
+                    if (running.get()) failureMessage = "Native microphone capture became unavailable.";
+                    break;
+                }
                 continue;
             }
 
@@ -269,6 +274,16 @@ public class NativePitchPlugin extends Plugin {
 
             PitchResult pitch = chooseHybridPitch(sustainedPitch, transientPitch, onset);
             emitPitch(acceptPitch(pitch, System.nanoTime()), rms);
+        }
+
+        if (failureMessage != null && running.compareAndSet(true, false)) {
+            synchronized (captureLock) {
+                if (recorder == local) recorder = null;
+            }
+            try { local.stop(); } catch (Exception ignored) {}
+            releaseRecorder(local);
+            releasePlatformAudioEffects();
+            emitCaptureError(failureMessage);
         }
     }
 
@@ -353,6 +368,14 @@ public class NativePitchPlugin extends Plugin {
     private static double pitchCentsApart(double a, double b) {
         if (!(a > 0.0) || !(b > 0.0)) return Double.POSITIVE_INFINITY;
         return Math.abs(1200.0 * (Math.log(a / b) / Math.log(2.0)));
+    }
+
+    private void emitCaptureError(String message) {
+        mainHandler.post(() -> {
+            JSObject event = new JSObject();
+            event.put("message", message);
+            notifyListeners("error", event);
+        });
     }
 
     private void emitPitch(PitchResult pitch, double rms) {

@@ -83,6 +83,7 @@ export default function SoundTuner(){
   const fastDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const trackerRef=useRef(new PitchTracker());
   const needleFilterRef=useRef(new OneEuroFilter());
+  const displayedMidiRef=useRef<number|null>(null);
   const consensusRef=useRef<PitchCandidate|null>(null);
   const consensusAtRef=useRef(0);
   const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeErrorListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
@@ -116,6 +117,7 @@ export default function SoundTuner(){
   },[a4,activeRef]);
 
   function clearPitch(resetEngine=false){
+    displayedMidiRef.current=null;
     if(resetEngine){
       trackerRef.current.reset();needleFilterRef.current.reset();
       consensusRef.current=null;consensusAtRef.current=0;
@@ -164,6 +166,10 @@ export default function SoundTuner(){
     }
 
     const mapped=noteFromFrequency(tracked.frequency,a4Ref.current);
+    if(displayedMidiRef.current!==mapped.midi){
+      displayedMidiRef.current=mapped.midi;
+      needleFilterRef.current.reset();
+    }
     const filteredCents=needleFilterRef.current.filter(mapped.cents,now);
     setNote(mapped.label);
     setFrequency(tracked.frequency);

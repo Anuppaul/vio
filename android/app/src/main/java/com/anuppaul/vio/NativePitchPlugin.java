@@ -307,7 +307,21 @@ public class NativePitchPlugin extends Plugin {
             }
 
             PitchResult pitch = chooseHybridPitch(sustainedPitch, responsivePitch, onset);
-            pitch = mergeMpmConsensus(pitch, mpmPitch);
+            PitchResult mpmForFrame = mpmPitch;
+            boolean fastShortAgree =
+                fastPitch != null &&
+                transientPitch != null &&
+                pitchCentsApart(fastPitch.frequency, transientPitch.frequency) <= 45.0;
+            if (
+                onset &&
+                fastShortAgree &&
+                responsivePitch != null &&
+                mpmForFrame != null &&
+                pitchCentsApart(mpmForFrame.frequency, responsivePitch.frequency) > 80.0
+            ) {
+                mpmForFrame = null;
+            }
+            pitch = mergeMpmConsensus(pitch, mpmForFrame);
             pitch = validateHarmonicFundamental(pitch, haveShort ? shortFrame : fastFrame);
             emitPitch(acceptPitch(pitch, System.nanoTime()), rms);
         }

@@ -22,14 +22,16 @@ export type SyntheticPitchCaseResult = {
   yin: SyntheticDetectorResult;
 };
 
-const SAMPLE_RATE=48000;
-const FRAME_SIZE=8192;
+export const SYNTHETIC_SAMPLE_RATE=48000;
+export const SYNTHETIC_FRAME_SIZE=8192;
+const SAMPLE_RATE=SYNTHETIC_SAMPLE_RATE;
+const FRAME_SIZE=SYNTHETIC_FRAME_SIZE;
 
 function centsError(actual:number,expected:number){
   return 1200*Math.log2(actual/expected);
 }
 
-function deterministicNoise(length:number,seed=0x51f15e){
+export function syntheticNoise(length=FRAME_SIZE,seed=0x51f15e){
   let state=seed>>>0;
   const out=new Float32Array(length);
   for(let i=0;i<length;i++){
@@ -39,7 +41,7 @@ function deterministicNoise(length:number,seed=0x51f15e){
   return out;
 }
 
-function synthHarmonicTone(
+export function syntheticHarmonicTone(
   frequency:number,
   harmonics:number[],
   {
@@ -67,11 +69,11 @@ function synthHarmonicTone(
     }
     out[i]=value*amplitude;
   }
-  normalize(out,.88);
+  normalizeSynthetic(out,.88);
   return out;
 }
 
-function normalize(samples:Float32Array,target=.9){
+export function normalizeSynthetic(samples:Float32Array,target=.9){
   let peak=0;
   for(const value of samples)peak=Math.max(peak,Math.abs(value));
   if(peak<=0||peak<=target)return samples;
@@ -80,7 +82,7 @@ function normalize(samples:Float32Array,target=.9){
   return samples;
 }
 
-function mix(
+export function mixSynthetic(
   base:Float32Array,
   additions:Array<{samples:Float32Array;gain:number}>
 ){
@@ -89,42 +91,42 @@ function mix(
     const length=Math.min(out.length,addition.samples.length);
     for(let i=0;i<length;i++)out[i]+=addition.samples[i]*addition.gain;
   }
-  return normalize(out,.92);
+  return normalizeSynthetic(out,.92);
 }
 
-function sine(frequency:number,amplitude=.8){
-  const out=new Float32Array(FRAME_SIZE);
+export function syntheticSine(frequency:number,amplitude=.8,length=FRAME_SIZE){
+  const out=new Float32Array(length);
   for(let i=0;i<out.length;i++)out[i]=Math.sin(2*Math.PI*frequency*i/SAMPLE_RATE)*amplitude;
   return out;
 }
 
 export function buildSyntheticPitchCases():SyntheticPitchCase[]{
-  const noise=deterministicNoise(FRAME_SIZE);
-  const hum50=sine(50,.8);
+  const noise=syntheticNoise(FRAME_SIZE);
+  const hum50=syntheticSine(50,.8);
   return [
     {
       name:'A4 pure sine',
       expectedHz:440,
       maxCents:4,
-      samples:sine(440,.78)
+      samples:syntheticSine(440,.78)
     },
     {
       name:'A4 violin-like harmonic stack',
       expectedHz:440,
       maxCents:7,
-      samples:synthHarmonicTone(440,[.32,1,.76,.55,.38,.28,.20,.14])
+      samples:syntheticHarmonicTone(440,[.32,1,.76,.55,.38,.28,.20,.14])
     },
     {
       name:'D4 weak fundamental strong overtones',
       expectedHz:293.6648,
       maxCents:10,
-      samples:synthHarmonicTone(293.6648,[.14,1,.82,.61,.42,.31,.22,.16])
+      samples:syntheticHarmonicTone(293.6648,[.14,1,.82,.61,.42,.31,.22,.16])
     },
     {
       name:'G3 bowed vibrato',
       expectedHz:195.9977,
       maxCents:24,
-      samples:synthHarmonicTone(195.9977,[.58,1,.72,.48,.30,.22],{
+      samples:syntheticHarmonicTone(195.9977,[.58,1,.72,.48,.30,.22],{
         vibratoCents:22,
         vibratoHz:5.4
       })
@@ -133,14 +135,14 @@ export function buildSyntheticPitchCases():SyntheticPitchCase[]{
       name:'E5 octave trap strong second harmonic',
       expectedHz:659.2551,
       maxCents:10,
-      samples:synthHarmonicTone(659.2551,[.20,1,.58,.43,.29,.18])
+      samples:syntheticHarmonicTone(659.2551,[.20,1,.58,.43,.29,.18])
     },
     {
       name:'A4 with 50 Hz mains hum',
       expectedHz:440,
       maxCents:12,
-      samples:mix(
-        synthHarmonicTone(440,[.42,1,.68,.44,.25]),
+      samples:mixSynthetic(
+        syntheticHarmonicTone(440,[.42,1,.68,.44,.25]),
         [{samples:hum50,gain:.32}]
       )
     },
@@ -148,8 +150,8 @@ export function buildSyntheticPitchCases():SyntheticPitchCase[]{
       name:'A4 with broadband room noise',
       expectedHz:440,
       maxCents:15,
-      samples:mix(
-        synthHarmonicTone(440,[.46,1,.70,.47,.31]),
+      samples:mixSynthetic(
+        syntheticHarmonicTone(440,[.46,1,.70,.47,.31]),
         [{samples:noise,gain:.18}]
       )
     },
@@ -157,13 +159,13 @@ export function buildSyntheticPitchCases():SyntheticPitchCase[]{
       name:'50 Hz hum only must not become a musical pitch',
       expectedHz:null,
       maxCents:0,
-      samples:mix(hum50,[{samples:noise,gain:.025}])
+      samples:mixSynthetic(hum50,[{samples:noise,gain:.025}])
     },
     {
       name:'Broadband noise only must remain unpitched',
       expectedHz:null,
       maxCents:0,
-      samples:normalize(noise,.45)
+      samples:normalizeSynthetic(noise,.45)
     }
   ];
 }

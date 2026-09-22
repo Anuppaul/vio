@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "defaults": {
+    "a4": 440,
+    "hopSize": 1024,
+    "toleranceCents": 20,
+    "ignoreAttackMs": 80
+  },
+  "recordings": [
+    {
+      "id": "replace-with-real-violin-recording",
+      "file": "fixtures/replace-with-real-violin-recording.wav",
+      "tags": [
+        "instrument:violin",
+        "articulation:arco",
+        "dynamic:mf",
+        "device:replace-me"
+      ],
+      "metadata": {
+        "source": "replace-with-dataset-or-recording-source"
+      },
+      "regions": [
+        {
+          "id": "room-noise",
+          "label": "room noise before note",
+          "startMs": 0,
+          "endMs": 500,
+          "voiced": false
+        },
+        {
+          "id": "a4",
+          "label": "A4 sustained",
+          "startMs": 600,
+          "endMs": 2400,
+          "voiced": true,
+          "expectedMidi": 69,
+          "toleranceCents": 20,
+          "ignoreAttackMs": 100
+        },
+        {
+          "id": "release",
+          "label": "post-note silence",
+          "startMs": 2500,
+          "endMs": 3200,
+          "voiced": false
+        }
+      ]
+    }
+  ]
+}

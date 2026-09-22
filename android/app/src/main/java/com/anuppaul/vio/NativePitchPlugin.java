@@ -36,6 +36,9 @@ public class NativePitchPlugin extends Plugin {
     private static final int CHUNK_SIZE = 512;
     private static final double MIN_FREQUENCY = 20.0;
     private static final double MAX_FREQUENCY = 5000.0;
+    private static final double MIN_SUSTAINED_CONFIDENCE = 0.64;
+    private static final double MIN_TRANSIENT_CONFIDENCE = 0.56;
+    private static final long DROPOUT_HOLD_NS = 150_000_000L;
     
     private final Object captureLock = new Object();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -48,6 +51,8 @@ public class NativePitchPlugin extends Plugin {
     private AutomaticGainControl automaticGainControl;
     private int sampleRate;
     private String audioSourceName = "microphone";
+    private PitchResult lastAcceptedPitch;
+    private long lastAcceptedPitchAt;
 
     @PluginMethod
     public void start(PluginCall call) {
@@ -263,7 +268,7 @@ public class NativePitchPlugin extends Plugin {
             boolean onset = recentRms > Math.max(previousRms * 1.18, previousRms + 0.00018);
 
             PitchResult pitch = chooseHybridPitch(sustainedPitch, transientPitch, onset);
-            emitPitch(pitch, rms);
+            emitPitch(acceptPitch(pitch, System.nanoTime()), rms);
         }
     }
 
@@ -284,29 +289,34 @@ public class NativePitchPlugin extends Plugin {
     }
 
     private PitchResult chooseHybridPitch(PitchResult sustained, PitchResult transientPitch, boolean onset) {
-        boolean sustainedOk = sustained != null;
-        boolean transientOk = transientPitch != null;
+        boolean sustainedOk = sustained != null && sustained.confidence >= MIN_SUSTAINED_CONFIDENCE;
+        boolean transientOk = transientPitch != null && transientPitch.confidence >= MIN_TRANSIENT_CONFIDENCE;
 
         if (!sustainedOk && !transientOk) return null;
         if (sustainedOk && transientOk) {
             double direct = pitchCentsApart(sustained.frequency, transientPitch.frequency);
-            if (direct <= 55.0) {
+            if (direct <= 45.0) {
                 PitchResult selected = sustained.confidence >= transientPitch.confidence * 0.82 ? sustained : transientPitch;
                 return new PitchResult(selected.frequency, selected.confidence, onset ? "transient" : "sustained");
             }
 
             double lower = Math.min(sustained.frequency, transientPitch.frequency);
             double higher = Math.max(sustained.frequency, transientPitch.frequency);
-            double octaveError = Math.abs(1200.0 * (Math.log(higher / lower) / Math.log(2.0)) - 1200.0);
-            if (octaveError <= 55.0) {
-                PitchResult lowerPitch = sustained.frequency <= transientPitch.frequency ? sustained : transientPitch;
-                PitchResult higherPitch = lowerPitch == sustained ? transientPitch : sustained;
-                if (lowerPitch.confidence >= higherPitch.confidence * 0.62) {
-                    return new PitchResult(lowerPitch.frequency, lowerPitch.confidence, onset ? "transient" : "sustained");
+            double ratio = higher / lower;
+            int harmonic = (int) Math.round(ratio);
+            if (harmonic >= 2 && harmonic <= 4) {
+                double harmonicError = Math.abs(1200.0 * (Math.log(ratio / harmonic) / Math.log(2.0)));
+                if (harmonicError <= 45.0) {
+                    PitchResult lowerPitch = sustained.frequency <= transientPitch.frequency ? sustained : transientPitch;
+                    PitchResult higherPitch = lowerPitch == sustained ? transientPitch : sustained;
+                    double requiredRatio = harmonic == 2 ? 0.62 : 0.74;
+                    if (lowerPitch.confidence >= higherPitch.confidence * requiredRatio) {
+                        return new PitchResult(lowerPitch.frequency, lowerPitch.confidence, onset ? "transient" : "sustained");
+                    }
                 }
             }
 
-            if (onset) {
+            if (onset && transientPitch.confidence >= 0.68) {
                 return new PitchResult(transientPitch.frequency, transientPitch.confidence, "transient");
             }
             PitchResult selected = sustained.confidence >= transientPitch.confidence ? sustained : transientPitch;
@@ -314,6 +324,30 @@ public class NativePitchPlugin extends Plugin {
         }
         if (transientOk) return new PitchResult(transientPitch.frequency, transientPitch.confidence, "transient");
         return new PitchResult(sustained.frequency, sustained.confidence, "sustained");
+    }
+
+    private PitchResult acceptPitch(PitchResult pitch, long now) {
+        if (pitch != null) {
+            double threshold = "transient".equals(pitch.mode)
+                ? MIN_TRANSIENT_CONFIDENCE
+                : MIN_SUSTAINED_CONFIDENCE;
+            if (pitch.confidence >= threshold) {
+                lastAcceptedPitch = pitch;
+                lastAcceptedPitchAt = now;
+                return pitch;
+            }
+        }
+
+        if (lastAcceptedPitch != null && now - lastAcceptedPitchAt <= DROPOUT_HOLD_NS) {
+            return new PitchResult(
+                lastAcceptedPitch.frequency,
+                Math.max(0.0, lastAcceptedPitch.confidence * 0.78),
+                lastAcceptedPitch.mode
+            );
+        }
+        lastAcceptedPitch = null;
+        lastAcceptedPitchAt = 0L;
+        return null;
     }
 
     private static double pitchCentsApart(double a, double b) {
@@ -380,10 +414,10 @@ public class NativePitchPlugin extends Plugin {
 
 
     private static final class NativeYinDetector {
-        private static final int DOWNSAMPLE = 4;
-        private static final double YIN_THRESHOLD = 0.85;
-        private static final double WEAK_SIGNAL_THRESHOLD = 1.00;
+        private static final double YIN_THRESHOLD = 0.15;
+        private static final double WEAK_SIGNAL_THRESHOLD = 0.34;
 
+        private final int downsample;
         private final double downsampledRate;
         private final float[] samples;
         private final double[] difference;
@@ -392,8 +426,9 @@ public class NativePitchPlugin extends Plugin {
         private final int compareLength;
 
         NativeYinDetector(int sampleRate, int inputSize) {
-            downsampledRate = sampleRate / (double) DOWNSAMPLE;
-            int size = inputSize / DOWNSAMPLE;
+            downsample = sampleRate <= 32000 ? 2 : 4;
+            downsampledRate = sampleRate / (double) downsample;
+            int size = inputSize / downsample;
             samples = new float[size];
             minTau = Math.max(2, (int) Math.floor(downsampledRate / MAX_FREQUENCY));
             maxTau = Math.min(size / 2 - 2, (int) Math.ceil(downsampledRate / MIN_FREQUENCY));
@@ -405,9 +440,9 @@ public class NativePitchPlugin extends Plugin {
             double mean = 0.0;
             for (int i = 0; i < samples.length; i++) {
                 float value = 0.0f;
-                int base = i * DOWNSAMPLE;
-                for (int j = 0; j < DOWNSAMPLE; j++) value += input[base + j];
-                value /= DOWNSAMPLE;
+                int base = i * downsample;
+                for (int j = 0; j < downsample; j++) value += input[base + j];
+                value /= downsample;
                 samples[i] = value;
                 mean += value;
             }
@@ -422,12 +457,13 @@ public class NativePitchPlugin extends Plugin {
             if (energy <= 1e-10) return null;
 
             // Normalize only the detector frame. The captured PCM and UI meter remain raw.
-            // Full detector-only amplification. No app-level background/noise filter or pitch lock is applied.
+            // Detector-only normalization: enough gain for quiet notes without turning
+            // broadband room noise into a strong pseudo-periodic candidate.
             // Android noise suppression, AGC and echo cancellation remain disabled.
             double frameRms = Math.sqrt(energy / samples.length);
-            double rmsGain = frameRms > 0.0 ? 0.55 / frameRms : 1.0;
-            double peakGain = peak > 0.0 ? 0.985 / peak : 1.0;
-            double gain = Math.max(1.0, Math.min(256.0, Math.min(rmsGain, peakGain)));
+            double rmsGain = frameRms > 0.0 ? 0.32 / frameRms : 1.0;
+            double peakGain = peak > 0.0 ? 0.97 / peak : 1.0;
+            double gain = Math.max(1.0, Math.min(64.0, Math.min(rmsGain, peakGain)));
             if (gain > 1.0) {
                 for (int i = 0; i < samples.length; i++) samples[i] *= (float) gain;
             }
@@ -457,12 +493,16 @@ public class NativePitchPlugin extends Plugin {
                 }
             }
             if (tauEstimate < 0) {
-                // Raw mode: choose the strongest available periodic lag instead of rejecting
-                // low-confidence room sounds. This intentionally exposes fan/insect/ambient tones.
+                // Recovery path: accept only a genuine local CMND minimum. This keeps
+                // quiet musical notes available without promoting arbitrary room-noise lags.
                 double bestValue = WEAK_SIGNAL_THRESHOLD;
                 int bestTau = -1;
-                for (int tau = minTau; tau <= maxTau; tau++) {
-                    if (difference[tau] < bestValue) {
+                for (int tau = Math.max(minTau + 1, 2); tau < maxTau; tau++) {
+                    if (
+                        difference[tau] <= difference[tau - 1] &&
+                        difference[tau] < difference[tau + 1] &&
+                        difference[tau] <= bestValue
+                    ) {
                         bestValue = difference[tau];
                         bestTau = tau;
                     }

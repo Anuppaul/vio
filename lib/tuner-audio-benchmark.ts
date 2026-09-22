@@ -145,9 +145,10 @@ export type TunerBenchmarkAudio={
 type RegionAccumulator={
   report:TunerBenchmarkRegionReport;
   absCents:number[];
-  lockCandidates:number[];
   lastFrame:FullTunerFrameResult|null;
 };
+
+const recordingCents=new WeakMap<TunerBenchmarkRecordingReport,number[]>();
 
 const DEFAULT_A4=440;
 const DEFAULT_HOP_SIZE=1024;
@@ -335,7 +336,6 @@ function createRegionAccumulator(
       pass:null
     },
     absCents:[],
-    lockCandidates:[],
     lastFrame:null
   };
 }
@@ -365,7 +365,6 @@ function finalizeRegion(
       if(criteria.maxVoicedCentsMae!==undefined)pass&&=report.centsMae!==null&&report.centsMae<=criteria.maxVoicedCentsMae;
       if(criteria.maxVoicedCentsP95!==undefined)pass&&=report.centsP95!==null&&report.centsP95<=criteria.maxVoicedCentsP95;
       if(criteria.maxOctaveErrorRate!==undefined)pass&&=report.octaveErrorRate<=criteria.maxOctaveErrorRate;
-      if(criteria.maxMedianLockMs!==undefined)pass&&=report.lockLatencyMs!==null&&report.lockLatencyMs<=criteria.maxMedianLockMs;
     }else if(criteria.maxUnvoicedFalsePositiveRate!==undefined){
       pass&&=report.falsePositiveRate<=criteria.maxUnvoicedFalsePositiveRate;
     }
@@ -379,9 +378,13 @@ function aggregateReports(reports:TunerBenchmarkRecordingReport[]):TunerBenchmar
   const regionReports=reports.flatMap(recording=>recording.regions);
   const voiced=regionReports.filter(region=>region.voiced);
   const unvoiced=regionReports.filter(region=>!region.voiced);
-  const cents=voiced.flatMap(region=>{
-    if(region.centsMae===null||!region.detectedFrames)return[];
-    return Array.from({length:region.detectedFrames},()=>region.centsMae as number);
+  const cents=reports.flatMap(recording=>{
+    const exact=recordingCents.get(recording);
+    if(exact)return exact;
+    return recording.regions.flatMap(region=>{
+      if(!region.voiced||region.centsMae===null||!region.detectedFrames)return[];
+      return Array.from({length:region.detectedFrames},()=>region.centsMae as number);
+    });
   });
   const locks=voiced.map(region=>region.lockLatencyMs).filter((value):value is number=>value!==null);
 
@@ -443,6 +446,11 @@ export function benchmarkTunerRecording(
   const engine=new FullTunerHarness(audio.sampleRate,a4);
   const accumulators=recording.regions.map((region,index)=>createRegionAccumulator(recording.id,region,index,a4));
   const durationMs=audio.samples.length/audio.sampleRate*1000;
+  for(const region of recording.regions){
+    if(region.endMs>durationMs+1){
+      throw new Error(`Recording ${recording.id} region ending at ${region.endMs} ms exceeds audio duration ${durationMs.toFixed(2)} ms`);
+    }
+  }
 
   let regionIndex=0;
   for(let endSample=2048;endSample<=audio.samples.length;endSample+=hopSize){
@@ -510,6 +518,7 @@ export function benchmarkTunerRecording(
     aggregate:{} as TunerBenchmarkAggregate,
     pass:null
   };
+  recordingCents.set(partial,accumulators.flatMap(accumulator=>accumulator.absCents));
   partial.aggregate=aggregateReports([partial]);
   partial.pass=criteriaPass(partial.aggregate,manifest.criteria);
   return partial;

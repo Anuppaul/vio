@@ -10,6 +10,7 @@ import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } f
 import {
   OneEuroFilter,
   PitchTracker,
+  centsApart,
   chooseHarmonicCandidate,
   type PitchCandidate,
   type PitchMode
@@ -254,10 +255,18 @@ export default function SoundTuner(){
       const useFast=fastFrequency>0&&(onset||fastFrequency>=500)&&fastClarity>=shortClarity*.86;
       const responsiveFrequency=useFast?fastFrequency:shortFrequency;
       const responsiveClarity=useFast?fastClarity:shortClarity;
+      const fastShortAgree=
+        fastFrequency>0&&shortFrequency>0&&
+        centsApart(fastFrequency,shortFrequency)<=45;
+      const consensusCandidates=[yinConsensusRef.current,mpmConsensusRef.current]
+        .filter((candidate):candidate is PitchCandidate=>candidate!==null)
+        .filter(candidate=>
+          !(onset&&fastShortAgree&&responsiveFrequency>0&&centsApart(candidate.frequency,responsiveFrequency)>80)
+        );
       const picked=chooseHarmonicCandidate(
         {frequency:longFrequency>0?longFrequency:0,clarity:longClarity,mode:'sustained'},
         {frequency:responsiveFrequency>0?responsiveFrequency:0,clarity:responsiveClarity,mode:onset?'transient':'sustained'},
-        [yinConsensusRef.current,mpmConsensusRef.current].filter((candidate):candidate is PitchCandidate=>candidate!==null),
+        consensusCandidates,
         spectrum,
         ctx.sampleRate,
         MIN_DETECT_HZ,

@@ -295,13 +295,20 @@ export default function SoundTuner(){
       const fastShortAgree=
         fastFrequency>0&&shortFrequency>0&&
         centsApart(fastFrequency,shortFrequency)<=45;
+      const suppressStaleLong=
+        onset&&fastShortAgree&&responsiveFrequency>0&&
+        longFrequency>0&&centsApart(longFrequency,responsiveFrequency)>80;
       const consensusCandidates=[yinConsensusRef.current,mpmConsensusRef.current]
         .filter((candidate):candidate is PitchCandidate=>candidate!==null)
         .filter(candidate=>
           !(onset&&fastShortAgree&&responsiveFrequency>0&&centsApart(candidate.frequency,responsiveFrequency)>80)
         );
       const picked=chooseHarmonicCandidate(
-        {frequency:longFrequency>0?longFrequency:0,clarity:longClarity,mode:'sustained'},
+        {
+          frequency:!suppressStaleLong&&longFrequency>0?longFrequency:0,
+          clarity:!suppressStaleLong?longClarity:0,
+          mode:'sustained'
+        },
         {frequency:responsiveFrequency>0?responsiveFrequency:0,clarity:responsiveClarity,mode:onset?'transient':'sustained'},
         consensusCandidates,
         spectrum,
@@ -311,7 +318,7 @@ export default function SoundTuner(){
       );
       const lowNeedsLongSupport=
         picked.frequency>0&&picked.frequency<80&&
-        centsApart(longFrequency,picked.frequency)>45&&
+        (!suppressStaleLong&&centsApart(longFrequency,picked.frequency)>45)&&
         !consensusCandidates.some(candidate=>centsApart(candidate.frequency,picked.frequency)<=45);
       applyTrackedPitch(
         lowNeedsLongSupport?0:picked.frequency,

@@ -11,11 +11,20 @@ export type PitchObservation = PitchCandidate & {
   now: number;
 };
 
+export type PitchTrackState =
+  | 'idle'
+  | 'attack'
+  | 'candidate'
+  | 'locked'
+  | 'transition'
+  | 'dropout'
+  | 'release';
+
 export type PitchTrackResult = {
   frequency: number | null;
   confidence: number;
   held: boolean;
-  state: 'idle' | 'candidate' | 'locked' | 'transition' | 'dropout';
+  state: PitchTrackState;
 };
 
 const MIN_RMS = 1e-6;
@@ -23,6 +32,7 @@ const LOCK_TOLERANCE_CENTS = 70;
 const SWITCH_TOLERANCE_CENTS = 45;
 const DROPOUT_HOLD_MS = 150;
 const RELEASE_MS = 240;
+const ATTACK_CONFIRM_MS = 85;
 const BACKGROUND_LEARN_FRAMES = 12;
 const BACKGROUND_TOLERANCE_CENTS = 42;
 
@@ -279,6 +289,7 @@ export class PitchTracker {
   private quietCandidateFrames = 0;
   private backgroundFrequency = 0;
   private backgroundRms = 0;
+  private attackStartedAt = 0;
 
   reset() {
     this.noiseFloor = 0;
@@ -291,17 +302,23 @@ export class PitchTracker {
     this.quietCandidateFrames = 0;
     this.backgroundFrequency = 0;
     this.backgroundRms = 0;
+    this.attackStartedAt = 0;
   }
 
-  private holdOrRelease(now: number, state: PitchTrackResult['state'] = 'dropout'): PitchTrackResult {
-    if (this.locked > 0 && now - this.lastGood <= DROPOUT_HOLD_MS) {
-      return { frequency: this.locked, confidence: 0, held: true, state };
-    }
-    if (this.locked > 0 && now - this.lastGood > RELEASE_MS) {
+  private holdOrRelease(now: number, state: PitchTrackState = 'dropout'): PitchTrackResult {
+    if (this.locked > 0) {
+      const age = now - this.lastGood;
+      if (age <= DROPOUT_HOLD_MS) {
+        return { frequency: this.locked, confidence: 0, held: true, state };
+      }
+      if (age <= RELEASE_MS) {
+        return { frequency: null, confidence: 0, held: false, state: 'release' };
+      }
       this.locked = 0;
       this.initialHistory.length = 0;
       this.lockHistory.length = 0;
       this.switchHistory.length = 0;
+      this.attackStartedAt = 0;
     }
     return { frequency: null, confidence: 0, held: false, state: 'idle' };
   }
@@ -381,15 +398,23 @@ export class PitchTracker {
     const confidence = Math.max(0, Math.min(1, clarity * 0.72 + snrConfidence * 0.28));
 
     if (!(this.locked > 0)) {
+      if (!this.attackStartedAt) this.attackStartedAt = now;
       pushCluster(this.initialHistory, frequency, SWITCH_TOLERANCE_CENTS, 4);
+      const attackAge = now - this.attackStartedAt;
       const needed = mode === 'transient' ? 2 : 2;
       if (this.initialHistory.length < needed) {
-        return { frequency: null, confidence, held: false, state: 'candidate' };
+        return {
+          frequency: null,
+          confidence,
+          held: false,
+          state: mode === 'transient' || attackAge < ATTACK_CONFIRM_MS ? 'attack' : 'candidate'
+        };
       }
       this.locked = medianLog(this.initialHistory);
       this.lastGood = now;
       this.lockHistory = [this.locked];
       this.initialHistory.length = 0;
+      this.attackStartedAt = 0;
       return { frequency: this.locked, confidence, held: false, state: 'locked' };
     }
 
@@ -404,6 +429,7 @@ export class PitchTracker {
       );
       this.lastGood = now;
       this.switchHistory.length = 0;
+      this.attackStartedAt = 0;
       return { frequency: this.locked, confidence, held: false, state: 'locked' };
     }
 
@@ -416,6 +442,7 @@ export class PitchTracker {
       this.lastGood = now;
       this.lockHistory = [this.locked];
       this.switchHistory.length = 0;
+      this.attackStartedAt = 0;
       return { frequency: this.locked, confidence, held: false, state: 'locked' };
     }
 

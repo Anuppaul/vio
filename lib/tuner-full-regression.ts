@@ -28,6 +28,10 @@ const LONG_SIZE=8192;
 const SHORT_SIZE=4096;
 const FAST_SIZE=2048;
 const DEFAULT_HOP_SIZE=1024;
+const LONG_LOW_CADENCE_MS=32;
+const LONG_HIGH_CADENCE_MS=64;
+const CONSENSUS_CADENCE_MS=96;
+const LIVE_HOP_SECONDS=.0213333333;
 const FRAME_STEP_MS=DEFAULT_HOP_SIZE/SYNTHETIC_SAMPLE_RATE*1000;
 
 export type FullTunerFrameResult={
@@ -104,6 +108,12 @@ export class FullTunerHarness{
   private readonly shortPrepared=new Float32Array(SHORT_SIZE);
   private readonly fastPrepared=new Float32Array(FAST_SIZE);
   private readonly range:ReturnType<typeof detectorRangeForSampleRate>;
+  private longFrequency=0;
+  private longClarity=0;
+  private longAt=-Infinity;
+  private yinConsensus:ReturnType<typeof detectPitch>=null;
+  private mpmConsensus:ReturnType<typeof detectMpm>=null;
+  private consensusAt=-Infinity;
 
   constructor(
     readonly sampleRate=SYNTHETIC_SAMPLE_RATE,
@@ -120,6 +130,12 @@ export class FullTunerHarness{
 
   reset(){
     this.tracker.reset();
+    this.longFrequency=0;
+    this.longClarity=0;
+    this.longAt=-Infinity;
+    this.yinConsensus=null;
+    this.mpmConsensus=null;
+    this.consensusAt=-Infinity;
   }
 
   process(
@@ -137,40 +153,53 @@ export class FullTunerHarness{
     if(shortRaw)prepareSensitiveFrame(shortRaw,this.shortPrepared);
     prepareSensitiveFrame(fastRaw,this.fastPrepared);
 
-    const [longFrequency,longClarity]=longRaw
-      ?this.longDetector.findPitch(this.longPrepared,this.sampleRate)
-      :[0,0];
     const [shortFrequency,shortClarity]=shortRaw
       ?this.shortDetector.findPitch(this.shortPrepared,this.sampleRate)
       :[0,0];
     const [fastFrequency,fastClarity]=this.fastDetector.findPitch(this.fastPrepared,this.sampleRate);
 
-    const lowCandidate=longFrequency>0&&longFrequency<90;
-    const yinInput=lowCandidate&&longRaw
-      ?this.longPrepared
-      :shortRaw
-        ?this.shortPrepared
-        :null;
-    const yin=yinInput
-      ?detectPitch(
-        yinInput,
-        this.sampleRate,
-        lowCandidate?this.range.min:Math.max(55,this.range.min),
-        this.range.max
-      )
-      :null;
+    const responsiveHint=fastFrequency>0?fastFrequency:shortFrequency;
+    const longCadence=responsiveHint>350?LONG_HIGH_CADENCE_MS:LONG_LOW_CADENCE_MS;
+    if(longRaw&&now-this.longAt>=longCadence){
+      const [frequency,clarity]=this.longDetector.findPitch(this.longPrepared,this.sampleRate);
+      this.longFrequency=frequency>0?frequency:0;
+      this.longClarity=clarity;
+      this.longAt=now;
+    }
+    const longFrequency=this.longFrequency;
+    const longClarity=this.longClarity;
 
-    const hint=shortFrequency>0?shortFrequency:fastFrequency>0?fastFrequency:longFrequency;
-    const lowMpm=hint>0&&hint<220;
-    const mpmInput=lowMpm&&shortRaw?this.shortPrepared:this.fastPrepared;
-    const mpm=hint>=70
-      ?detectMpm(
-        mpmInput,
-        this.sampleRate,
-        lowMpm?Math.max(70,this.range.min):Math.max(180,this.range.min),
-        this.range.max
-      )
-      :null;
+    if(now-this.consensusAt>=CONSENSUS_CADENCE_MS){
+      this.consensusAt=now;
+      const lowCandidate=longFrequency>0&&longFrequency<90;
+      const yinInput=lowCandidate&&longRaw
+        ?this.longPrepared
+        :shortRaw
+          ?this.shortPrepared
+          :null;
+      this.yinConsensus=yinInput
+        ?detectPitch(
+          yinInput,
+          this.sampleRate,
+          lowCandidate?this.range.min:Math.max(55,this.range.min),
+          this.range.max
+        )
+        :null;
+
+      const hint=shortFrequency>0?shortFrequency:fastFrequency>0?fastFrequency:longFrequency;
+      const lowMpm=hint>0&&hint<220;
+      const mpmInput=lowMpm&&shortRaw?this.shortPrepared:this.fastPrepared;
+      this.mpmConsensus=hint>=70
+        ?detectMpm(
+          mpmInput,
+          this.sampleRate,
+          lowMpm?Math.max(70,this.range.min):Math.max(180,this.range.min),
+          this.range.max
+        )
+        :null;
+    }
+    const yin=this.yinConsensus;
+    const mpm=this.mpmConsensus;
 
     const recentRms=segmentRms(fastRaw,FAST_SIZE-512,FAST_SIZE);
     const previousRms=segmentRms(fastRaw,0,FAST_SIZE-512);
@@ -248,7 +277,11 @@ export class FullTunerHarness{
   }
 }
 
-export function tunerFrameStepMs(sampleRate:number,hopSize=DEFAULT_HOP_SIZE){
+export function tunerLiveHopSize(sampleRate:number){
+  return Math.max(512,Math.round(sampleRate*LIVE_HOP_SECONDS/128)*128);
+}
+
+export function tunerFrameStepMs(sampleRate:number,hopSize=tunerLiveHopSize(sampleRate)){
   return hopSize/sampleRate*1000;
 }
 
@@ -256,7 +289,7 @@ export function processProgressiveAudio(
   engine:FullTunerHarness,
   samples:Float32Array,
   {
-    hopSize=DEFAULT_HOP_SIZE,
+    hopSize=tunerLiveHopSize(engine.sampleRate),
     startSample=0,
     endSample=samples.length,
     expectedHz=null,

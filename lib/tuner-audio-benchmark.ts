@@ -2,7 +2,7 @@ import { midiFrequency, noteFromFrequency } from './music';
 import { detectorRangeForSampleRate } from './pitch-engine';
 import {
   FullTunerHarness,
-  tunerFrameStepMs,
+  tunerLiveHopSize,
   type FullTunerFrameResult
 } from './tuner-full-regression';
 import {
@@ -172,7 +172,6 @@ type RegionAccumulator={
 const recordingCents=new WeakMap<TunerBenchmarkRecordingReport,number[]>();
 
 const DEFAULT_A4=440;
-const DEFAULT_HOP_SIZE=1024;
 const DEFAULT_TOLERANCE_CENTS=20;
 const DEFAULT_IGNORE_ATTACK_MS=0;
 
@@ -495,7 +494,7 @@ export function benchmarkTunerRecording(
   if(audio.samples.length<2048)throw new Error(`Recording ${recording.id} is too short for tuner analysis`);
 
   const a4=recording.a4??manifest.defaults?.a4??DEFAULT_A4;
-  const hopSize=Math.round(manifest.defaults?.hopSize??DEFAULT_HOP_SIZE);
+  const hopSize=Math.round(manifest.defaults?.hopSize??tunerLiveHopSize(audio.sampleRate));
   const range=detectorRangeForSampleRate(audio.sampleRate);
   for(const region of recording.regions){
     const expected=expectedFrequency(region,a4);

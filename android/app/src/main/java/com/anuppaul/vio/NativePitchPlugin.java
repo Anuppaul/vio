@@ -306,6 +306,7 @@ public class NativePitchPlugin extends Plugin {
 
             PitchResult pitch = chooseHybridPitch(sustainedPitch, responsivePitch, onset);
             pitch = mergeMpmConsensus(pitch, mpmPitch);
+            pitch = validateHarmonicFundamental(pitch, haveShort ? shortFrame : fastFrame);
             emitPitch(acceptPitch(pitch, System.nanoTime()), rms);
         }
 
@@ -421,6 +422,107 @@ public class NativePitchPlugin extends Plugin {
         }
 
         return primary;
+    }
+
+    private PitchResult validateHarmonicFundamental(PitchResult pitch, float[] frame) {
+        if (pitch == null || frame == null || frame.length < 512) return pitch;
+
+        double[] candidates = {
+            pitch.frequency,
+            pitch.frequency / 2.0,
+            pitch.frequency / 3.0,
+            pitch.frequency * 2.0
+        };
+
+        double primaryScore = harmonicProfileScore(frame, pitch.frequency);
+        double bestScore = primaryScore;
+        double bestFrequency = pitch.frequency;
+
+        for (int i = 1; i < candidates.length; i++) {
+            double candidate = candidates[i];
+            if (candidate < MIN_FREQUENCY || candidate > MAX_FREQUENCY) continue;
+            double score = harmonicProfileScore(frame, candidate);
+            if (score > bestScore) {
+                bestScore = score;
+                bestFrequency = candidate;
+            }
+        }
+
+        boolean changed = Math.abs(bestFrequency - pitch.frequency) > 1e-6;
+        boolean decisive = bestScore >= primaryScore * 1.22 && bestScore - primaryScore >= 0.055;
+        if (changed && decisive) {
+            double confidence = Math.min(
+                1.0,
+                Math.max(pitch.confidence, 0.58 + Math.min(0.34, bestScore * 0.34))
+            );
+            return new PitchResult(bestFrequency, confidence, pitch.mode);
+        }
+
+        return pitch;
+    }
+
+    private double harmonicProfileScore(float[] frame, double frequency) {
+        if (!(frequency > 0.0) || frame.length < 512) return 0.0;
+
+        double nyquist = sampleRate / 2.0;
+        double frameEnergy = 0.0;
+        for (float value : frame) frameEnergy += value * value;
+        if (frameEnergy <= 1e-12) return 0.0;
+
+        double score = 0.0;
+        double totalWeight = 0.0;
+        int present = 0;
+        int considered = 0;
+
+        for (int harmonic = 1; harmonic <= 8; harmonic++) {
+            double target = frequency * harmonic;
+            if (target >= nyquist * 0.94) break;
+
+            double resolution = sampleRate / (double) frame.length;
+            double delta = Math.max(resolution * 2.5, target * 0.018);
+            double tone = goertzelPower(frame, target);
+            double left = target - delta > 1.0 ? goertzelPower(frame, target - delta) : 0.0;
+            double right = target + delta < nyquist ? goertzelPower(frame, target + delta) : 0.0;
+            double floor = Math.max(1e-12, (left + right) * 0.5);
+            double contrast = tone / floor;
+            double presence = Math.max(0.0, Math.min(1.0, (contrast - 1.08) / 2.25));
+            double normalizedEnergy = Math.min(
+                1.0,
+                tone / Math.max(1e-12, frameEnergy * frame.length) * 4.0
+            );
+            double weight = 1.0 / Math.sqrt(harmonic);
+
+            score += weight * (presence * 0.68 + normalizedEnergy * 0.32);
+            totalWeight += weight;
+            considered++;
+            if (presence >= 0.35) present++;
+        }
+
+        if (totalWeight <= 0.0 || considered == 0) return 0.0;
+        double coverage = present / (double) considered;
+        return Math.max(0.0, Math.min(1.0, score / totalWeight * 0.82 + coverage * 0.18));
+    }
+
+    private double goertzelPower(float[] frame, double frequency) {
+        if (!(frequency > 0.0) || frequency >= sampleRate / 2.0) return 0.0;
+        double omega = 2.0 * Math.PI * frequency / sampleRate;
+        double coefficient = 2.0 * Math.cos(omega);
+        double previous = 0.0;
+        double previous2 = 0.0;
+        int last = frame.length - 1;
+
+        for (int i = 0; i < frame.length; i++) {
+            double window = last > 0
+                ? 0.5 - 0.5 * Math.cos(2.0 * Math.PI * i / last)
+                : 1.0;
+            double value = frame[i] * window;
+            double current = value + coefficient * previous - previous2;
+            previous2 = previous;
+            previous = current;
+        }
+
+        double power = previous2 * previous2 + previous * previous - coefficient * previous * previous2;
+        return Math.max(0.0, power);
     }
 
     private PitchResult acceptPitch(PitchResult pitch, long now) {

@@ -2,7 +2,6 @@
   "version": 1,
   "defaults": {
     "a4": 440,
-    "hopSize": 1024,
     "toleranceCents": 20,
     "ignoreAttackMs": 80
   },

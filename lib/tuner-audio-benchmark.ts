@@ -143,6 +143,7 @@ export type TunerBenchmarkRecordingReport={
 
 export type TunerBenchmarkReport={
   version:1;
+  profile:'web-primary';
   criteria:TunerBenchmarkCriteria|null;
   recordings:TunerBenchmarkRecordingReport[];
   aggregate:TunerBenchmarkAggregate;
@@ -617,6 +618,7 @@ export function buildTunerBenchmarkReport(
   }
   return{
     version:1,
+    profile:'web-primary',
     criteria:manifest.criteria??null,
     recordings,
     aggregate,

@@ -100,7 +100,7 @@ function csvCell(value:unknown){
 
 function benchmarkCsv(recordings:TunerBenchmarkRecordingReport[]){
   const header=[
-    'recording_id','file','tags','region_id','label','voiced','start_ms','end_ms',
+    'recording_id','file','wav_sha256','tags','region_id','label','voiced','start_ms','end_ms',
     'expected_note','expected_hz','tolerance_cents','scored_frames','detection_rate',
     'fine_accuracy','note_accuracy','dropout_rate','false_positive_rate',
     'octave_error_rate','gross_error_rate','cents_mae','cents_median','cents_p95',
@@ -113,6 +113,7 @@ function benchmarkCsv(recordings:TunerBenchmarkRecordingReport[]){
       rows.push([
         recording.id,
         recording.file,
+        recording.sha256??'',
         recording.tags.join('|'),
         region.id,
         region.label,
@@ -211,7 +212,7 @@ if(!options.manifest){
     {
       engineCommit:currentCommit(),
       manifestSha256:sha256(manifestText),
-      manifestPath
+      manifestPath:options.manifest
     }
   );
 
@@ -234,6 +235,7 @@ if(!options.manifest){
     console.log('VIO Real-Audio Sound Tuner Benchmark');
     console.log('====================================');
     console.log(`Manifest: ${manifestPath}`);
+    console.log(`Profile: ${report.profile}`);
     console.log(`Engine commit: ${report.provenance?.engineCommit??'unknown'}`);
     console.log(`Manifest SHA256: ${report.provenance?.manifestSha256??'unknown'}`);
     console.log(`Criteria: ${report.criteria?'enabled':'report-only'}`);

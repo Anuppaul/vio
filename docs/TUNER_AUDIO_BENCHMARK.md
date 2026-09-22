@@ -81,7 +81,7 @@ Example:
 `defaults` may define:
 
 - `a4`: reference pitch; default 440 Hz
-- `hopSize`: benchmark frame hop in samples; default 1024
+- `hopSize`: optional fixed benchmark hop in samples. If omitted, VIO derives the same ~21.3 ms sample-rate-aware hop used by the web AudioWorklet
 - `toleranceCents`: fine-pitch pass band for voiced frames; default 20 cents
 - `ignoreAttackMs`: excludes initial attack frames from accuracy/dropout scoring
 
@@ -104,6 +104,8 @@ For unvoiced regions:
 
 - false-positive frames
 - false-positive rate
+
+The benchmark profile is reported as `web-primary`: it models the current web/PWA detector cadence (fast/short each frame, adaptive long-window cadence, ~96 ms independent consensus cadence). Android native behavior still requires its own physical-device acceptance tests.
 
 The report also aggregates by recording and by arbitrary tags such as:
 
@@ -135,6 +137,8 @@ node scripts/run-tuner-audio-benchmark.mjs \
   --manifest benchmarks/tuner/manifest.json \
   --json
 ```
+
+Every report records the current Git commit, manifest SHA256, and each WAV SHA256 so benchmark runs can be compared against the exact engine/data revision.
 
 Write reports:
 

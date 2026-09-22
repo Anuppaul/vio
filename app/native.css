@@ -5,9 +5,28 @@ html.vio-native {
   padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
 }
-.vio-native body {padding-top: var(--vio-top); padding-bottom: calc(28px + var(--vio-bottom));}
+
+/*
+ * Android/Capacitor already renders edge-to-edge. Keep the page flush to the
+ * viewport and let the sticky navigation own the top safe-area exactly once.
+ * Previously body padding + nav top both used --vio-top, creating a large
+ * double gap above the top bar on physical Android devices.
+ */
+.vio-native body {
+  padding-top: 0;
+  padding-bottom: calc(28px + var(--vio-bottom));
+}
+
 .vio-native .suite-nav {
-  /* body already applies the status-bar safe area; avoid adding a second visual gap */
-  top: var(--vio-top);
+  top: max(4px, var(--vio-top));
   margin-top: 0;
+}
+
+/* Mobile native navigation should sit like a normal Android app bar: just
+ * below the status bar, without the browser/PWA outer top margin. */
+@media (max-width: 650px) {
+  .vio-native .suite-nav {
+    top: max(2px, var(--vio-top));
+    margin: 0 6px 10px;
+  }
 }

@@ -36,6 +36,8 @@ public class NativePitchPlugin extends Plugin {
     private static final int HOP_SIZE = 1024;
     private static final int CHUNK_SIZE = 512;
     private static final int MPM_UPDATE_HOPS = 4;
+    private static final double[] FAST_HANN = createHann(FAST_ANALYSIS_SIZE);
+    private static final double[] SHORT_HANN = createHann(SHORT_ANALYSIS_SIZE);
     private static final double MIN_FREQUENCY = 20.0;
     private static final double MAX_FREQUENCY = 5000.0;
     private static final double MIN_SUSTAINED_CONFIDENCE = 0.64;
@@ -503,19 +505,27 @@ public class NativePitchPlugin extends Plugin {
         return Math.max(0.0, Math.min(1.0, score / totalWeight * 0.82 + coverage * 0.18));
     }
 
+    private static double[] createHann(int length) {
+        double[] window = new double[length];
+        int last = length - 1;
+        for (int i = 0; i < length; i++) {
+            window[i] = last > 0
+                ? 0.5 - 0.5 * Math.cos(2.0 * Math.PI * i / last)
+                : 1.0;
+        }
+        return window;
+    }
+
     private double goertzelPower(float[] frame, double frequency) {
         if (!(frequency > 0.0) || frequency >= sampleRate / 2.0) return 0.0;
         double omega = 2.0 * Math.PI * frequency / sampleRate;
         double coefficient = 2.0 * Math.cos(omega);
         double previous = 0.0;
         double previous2 = 0.0;
-        int last = frame.length - 1;
+        double[] window = frame.length == SHORT_ANALYSIS_SIZE ? SHORT_HANN : FAST_HANN;
 
         for (int i = 0; i < frame.length; i++) {
-            double window = last > 0
-                ? 0.5 - 0.5 * Math.cos(2.0 * Math.PI * i / last)
-                : 1.0;
-            double value = frame[i] * window;
+            double value = frame[i] * window[i];
             double current = value + coefficient * previous - previous2;
             previous2 = previous;
             previous = current;

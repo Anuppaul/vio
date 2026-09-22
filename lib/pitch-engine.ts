@@ -163,12 +163,40 @@ export function harmonicSupport(
   return harmonicProfile(frequency,spectrum,sampleRate,harmonics).support;
 }
 
+function mainsHumPenalty(
+  frequency: number,
+  spectrum: Float32Array,
+  sampleRate: number
+) {
+  if (!(frequency > 0)) return 0;
+  let penalty = 0;
+
+  for (const mains of [50, 60]) {
+    const harmonic = Math.round(frequency / mains);
+    if (harmonic < 1 || harmonic > 8) continue;
+    const exact = mains * harmonic;
+    if (centsApart(frequency, exact) > 11) continue;
+
+    const candidateAmplitude = spectrumAmplitude(spectrum, frequency, sampleRate);
+    const mainsAmplitude = spectrumAmplitude(spectrum, mains, sampleRate);
+    const secondAmplitude = spectrumAmplitude(spectrum, mains * 2, sampleRate);
+    const baseEvidence = Math.max(mainsAmplitude, secondAmplitude * .72);
+    const ratio = baseEvidence / Math.max(candidateAmplitude, 1e-8);
+
+    const harmonicPenalty = harmonic === 1 ? .08 : .12 + Math.min(.12, ratio * .08);
+    penalty = Math.max(penalty, harmonicPenalty);
+  }
+
+  return penalty;
+}
+
 type ScoredCandidate = PitchCandidate & {
   support: number;
   coverage: number;
   oddCoverage: number;
   lowOrderCoverage: number;
   transformPenalty: number;
+  humPenalty: number;
   evidence: number;
 };
 
@@ -188,6 +216,7 @@ function addCandidate(
   const existing = output.find(candidate => centsApart(candidate.frequency, frequency) <= 10);
   const profile = harmonicProfile(frequency,spectrum,sampleRate);
   const support = profile.support;
+  const humPenalty = mainsHumPenalty(frequency,spectrum,sampleRate);
   if (existing) {
     if (clarity > existing.clarity) {
       existing.clarity = clarity;
@@ -198,6 +227,7 @@ function addCandidate(
     existing.coverage = Math.max(existing.coverage,profile.coverage);
     existing.oddCoverage = Math.max(existing.oddCoverage,profile.oddCoverage);
     existing.lowOrderCoverage = Math.max(existing.lowOrderCoverage,profile.lowOrderCoverage);
+    existing.humPenalty = Math.min(existing.humPenalty,humPenalty);
     existing.evidence = Math.min(3, existing.evidence + evidence);
     return;
   }
@@ -206,7 +236,7 @@ function addCandidate(
     coverage:profile.coverage,
     oddCoverage:profile.oddCoverage,
     lowOrderCoverage:profile.lowOrderCoverage,
-    transformPenalty,evidence
+    transformPenalty,humPenalty,evidence
   });
 }
 
@@ -257,7 +287,8 @@ export function chooseHarmonicCandidate(
       (candidate.support/maxSupport)*.17 +
       spectralCoherence*.24 +
       (candidate.evidence/maxEvidence)*.16 -
-      candidate.transformPenalty
+      candidate.transformPenalty -
+      candidate.humPenalty
     );
   };
   candidates.sort((a,b)=>score(b)-score(a));

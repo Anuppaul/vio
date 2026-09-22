@@ -90,6 +90,7 @@ export function harmonicSupport(
 type ScoredCandidate = PitchCandidate & {
   support: number;
   transformPenalty: number;
+  evidence: number;
 };
 
 function addCandidate(
@@ -101,7 +102,8 @@ function addCandidate(
   spectrum: Float32Array,
   sampleRate: number,
   minFrequency: number,
-  maxFrequency: number
+  maxFrequency: number,
+  evidence: number
 ) {
   if (!(frequency >= minFrequency && frequency <= maxFrequency)) return;
   const existing = output.find(candidate => centsApart(candidate.frequency, frequency) <= 10);
@@ -113,9 +115,10 @@ function addCandidate(
       existing.transformPenalty = Math.min(existing.transformPenalty, transformPenalty);
     }
     existing.support = Math.max(existing.support, support);
+    existing.evidence = Math.min(3, existing.evidence + evidence);
     return;
   }
-  output.push({ frequency, clarity, mode, support, transformPenalty });
+  output.push({ frequency, clarity, mode, support, transformPenalty, evidence });
 }
 
 /**
@@ -126,29 +129,50 @@ function addCandidate(
 export function chooseHarmonicCandidate(
   long: PitchCandidate,
   short: PitchCandidate,
+  consensus: PitchCandidate | null,
   spectrum: Float32Array,
   sampleRate: number,
   minFrequency: number,
   maxFrequency: number
 ): PitchCandidate {
   const candidates: ScoredCandidate[] = [];
-  for (const source of [long, short]) {
+  const sources: Array<{candidate:PitchCandidate;weight:number}> = [
+    {candidate:long,weight:1},
+    {candidate:short,weight:.86}
+  ];
+  if(consensus)sources.push({candidate:consensus,weight:1.25});
+
+  for (const {candidate:source,weight} of sources) {
     if (!(source.frequency >= minFrequency && source.frequency <= maxFrequency)) continue;
-    addCandidate(candidates, source.frequency, source.clarity, source.mode, 0, spectrum, sampleRate, minFrequency, maxFrequency);
-    addCandidate(candidates, source.frequency / 2, source.clarity, source.mode, 0.035, spectrum, sampleRate, minFrequency, maxFrequency);
-    addCandidate(candidates, source.frequency / 3, source.clarity, source.mode, 0.065, spectrum, sampleRate, minFrequency, maxFrequency);
-    addCandidate(candidates, source.frequency * 2, source.clarity, source.mode, 0.055, spectrum, sampleRate, minFrequency, maxFrequency);
+    addCandidate(candidates, source.frequency, source.clarity, source.mode, 0, spectrum, sampleRate, minFrequency, maxFrequency, weight);
+    addCandidate(candidates, source.frequency / 2, source.clarity, source.mode, 0.04, spectrum, sampleRate, minFrequency, maxFrequency, weight*.32);
+    addCandidate(candidates, source.frequency / 3, source.clarity, source.mode, 0.075, spectrum, sampleRate, minFrequency, maxFrequency, weight*.24);
+    addCandidate(candidates, source.frequency * 2, source.clarity, source.mode, 0.06, spectrum, sampleRate, minFrequency, maxFrequency, weight*.28);
   }
 
   if (!candidates.length) return { frequency: 0, clarity: 0, mode: long.mode };
   const maxSupport = Math.max(...candidates.map(candidate => candidate.support), 1e-12);
+  const maxEvidence = Math.max(...candidates.map(candidate => candidate.evidence), 1e-12);
   candidates.sort((a, b) => {
-    const scoreA = a.clarity * 0.64 + (a.support / maxSupport) * 0.36 - a.transformPenalty;
-    const scoreB = b.clarity * 0.64 + (b.support / maxSupport) * 0.36 - b.transformPenalty;
+    const scoreA =
+      a.clarity * .52 +
+      (a.support / maxSupport) * .30 +
+      (a.evidence / maxEvidence) * .18 -
+      a.transformPenalty;
+    const scoreB =
+      b.clarity * .52 +
+      (b.support / maxSupport) * .30 +
+      (b.evidence / maxEvidence) * .18 -
+      b.transformPenalty;
     return scoreB - scoreA;
   });
   const best = candidates[0];
-  return { frequency: best.frequency, clarity: best.clarity, mode: best.mode };
+  const agreementBoost = Math.min(.12, Math.max(0,best.evidence-1)*.08);
+  return {
+    frequency: best.frequency,
+    clarity: Math.min(1,best.clarity+agreementBoost),
+    mode: best.mode
+  };
 }
 
 function harmonicNear(reference: number, frequency: number) {

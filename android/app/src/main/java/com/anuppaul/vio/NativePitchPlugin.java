@@ -42,7 +42,6 @@ public class NativePitchPlugin extends Plugin {
     private static final double MAX_FREQUENCY = 5000.0;
     private static final double MIN_SUSTAINED_CONFIDENCE = 0.64;
     private static final double MIN_TRANSIENT_CONFIDENCE = 0.56;
-    private static final long DROPOUT_HOLD_NS = 150_000_000L;
     
     private final Object captureLock = new Object();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -55,8 +54,6 @@ public class NativePitchPlugin extends Plugin {
     private AutomaticGainControl automaticGainControl;
     private int sampleRate;
     private String audioSourceName = "microphone";
-    private PitchResult lastAcceptedPitch;
-    private long lastAcceptedPitchAt;
 
     @PluginMethod
     public void start(PluginCall call) {
@@ -81,8 +78,6 @@ public class NativePitchPlugin extends Plugin {
             }
 
             recorder = created;
-            lastAcceptedPitch = null;
-            lastAcceptedPitchAt = 0L;
             disablePlatformAudioEffects(created.getAudioSessionId());
             try {
                 created.startRecording();
@@ -323,7 +318,7 @@ public class NativePitchPlugin extends Plugin {
             }
             pitch = mergeMpmConsensus(pitch, mpmForFrame);
             pitch = validateHarmonicFundamental(pitch, haveShort ? shortFrame : fastFrame);
-            emitPitch(acceptPitch(pitch, System.nanoTime()), rms);
+            emitPitch(acceptPitch(pitch), rms);
         }
 
         if (failureMessage != null && running.compareAndSet(true, false)) {
@@ -549,28 +544,12 @@ public class NativePitchPlugin extends Plugin {
         return Math.max(0.0, power);
     }
 
-    private PitchResult acceptPitch(PitchResult pitch, long now) {
-        if (pitch != null) {
-            double threshold = "transient".equals(pitch.mode)
-                ? MIN_TRANSIENT_CONFIDENCE
-                : MIN_SUSTAINED_CONFIDENCE;
-            if (pitch.confidence >= threshold) {
-                lastAcceptedPitch = pitch;
-                lastAcceptedPitchAt = now;
-                return pitch;
-            }
-        }
-
-        if (lastAcceptedPitch != null && now - lastAcceptedPitchAt <= DROPOUT_HOLD_NS) {
-            return new PitchResult(
-                lastAcceptedPitch.frequency,
-                Math.max(0.0, lastAcceptedPitch.confidence * 0.78),
-                lastAcceptedPitch.mode
-            );
-        }
-        lastAcceptedPitch = null;
-        lastAcceptedPitchAt = 0L;
-        return null;
+    private PitchResult acceptPitch(PitchResult pitch) {
+        if (pitch == null) return null;
+        double threshold = "transient".equals(pitch.mode)
+            ? MIN_TRANSIENT_CONFIDENCE
+            : MIN_SUSTAINED_CONFIDENCE;
+        return pitch.confidence >= threshold ? pitch : null;
     }
 
     private static double pitchCentsApart(double a, double b) {
@@ -620,8 +599,6 @@ public class NativePitchPlugin extends Plugin {
             try { localWorker.join(350); } catch (InterruptedException error) { Thread.currentThread().interrupt(); }
         }
         releasePlatformAudioEffects();
-        lastAcceptedPitch = null;
-        lastAcceptedPitchAt = 0L;
     }
 
     private void releaseRecorder(AudioRecord audioRecord) {

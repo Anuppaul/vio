@@ -44,10 +44,20 @@ const WORKLET_STARTUP_WATCHDOG_MS=650;
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
 type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string;mode?:PitchMode};
 type NativePitchError={message:string};
+type NativePitchStartInfo={
+  sampleRate:number;
+  source:string;
+  backend?:'oboe'|'audiorecord';
+  framesPerBurst?:number;
+  bufferCapacityFrames?:number;
+  droppedFrames?:number;
+  oboeAvailable?:boolean;
+  oboeFallbackErrorCode?:number;
+};
 type NativePitchPlugin={
   checkPermissions():Promise<{microphone?:NativePermissionState}>;
   requestPermissions(options:{permissions:string[]}):Promise<{microphone?:NativePermissionState}>;
-  start():Promise<{sampleRate:number;source:string}>;
+  start():Promise<NativePitchStartInfo>;
   stop():Promise<void>;
   addListener(eventName:'pitch',listener:(sample:NativePitchSample)=>void):Promise<PluginListenerHandle>;
   addListener(eventName:'error',listener:(error:NativePitchError)=>void):Promise<PluginListenerHandle>;
@@ -72,7 +82,7 @@ export default function SoundTuner(){
   const [activeRef,setActiveRef]=useState<number|null>(null);
   const [loop,setLoop]=useState(false);
   const [detectRange,setDetectRange]=useState(()=>detectorRangeForSampleRate(48000));
-  const [capturePath,setCapturePath]=useState<'Native'|'AudioWorklet'|'Fallback'>('Fallback');
+  const [capturePath,setCapturePath]=useState<'Native Oboe'|'Native AudioRecord'|'AudioWorklet'|'Fallback'>('Fallback');
   const [dspPath,setDspPath]=useState<'Native'|'Worker'|'Main'>('Main');
 
   const ctxRef=useRef<AudioContext|null>(null);
@@ -578,10 +588,17 @@ export default function SoundTuner(){
         return;
       }
       const nativeRange=detectorRangeForSampleRate(nativeInfo.sampleRate);
-      detectRangeRef.current=nativeRange;setDetectRange(nativeRange);setCapturePath('Native');setDspPath('Native');
+      const nativeCapturePath=nativeInfo.backend==='oboe'?'Native Oboe':'Native AudioRecord';
+      detectRangeRef.current=nativeRange;setDetectRange(nativeRange);setCapturePath(nativeCapturePath);setDspPath('Native');
       nativeActiveRef.current=true;startingRef.current=false;setStarting(false);
       setRunning(true);clearPitch(false);setMicLevel(0);
-      setStatus('Listening · harmonic-aware tracking ready');
+      const burst=nativeInfo.framesPerBurst&&nativeInfo.framesPerBurst>0
+        ?` · burst ${nativeInfo.framesPerBurst}`
+        :'';
+      const fallback=nativeInfo.backend==='audiorecord'&&nativeInfo.oboeAvailable
+        ?` · Oboe fallback ${nativeInfo.oboeFallbackErrorCode??'unknown'}`
+        :'';
+      setStatus(`Listening · ${nativeInfo.source} · ${nativeInfo.sampleRate} Hz${burst}${fallback}`);
     }catch(err){
       nativeListenerRef.current=null;nativeErrorListenerRef.current=null;
       await listener.remove();await errorListener.remove();throw err;

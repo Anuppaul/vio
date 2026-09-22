@@ -59,6 +59,7 @@ public class NativePitchPlugin extends Plugin {
     private boolean usingOboe = false;
     private int nativeFramesPerBurst = 0;
     private int nativeBufferCapacityFrames = 0;
+    private int lastOboeStartError = 0;
 
     @PluginMethod
     public void start(PluginCall call) {
@@ -73,6 +74,7 @@ public class NativePitchPlugin extends Plugin {
                 return;
             }
 
+            lastOboeStartError = 0;
             if (NativeOboeCapture.isAvailable()) {
                 int oboeResult = NativeOboeCapture.start();
                 int oboeRate = NativeOboeCapture.getSampleRate();
@@ -91,6 +93,9 @@ public class NativePitchPlugin extends Plugin {
                     call.resolve(captureInfo());
                     return;
                 }
+                lastOboeStartError = oboeResult != 0
+                    ? oboeResult
+                    : NativeOboeCapture.getLastErrorCode();
                 NativeOboeCapture.stop();
             }
 
@@ -139,6 +144,8 @@ public class NativePitchPlugin extends Plugin {
         result.put("framesPerBurst", nativeFramesPerBurst);
         result.put("bufferCapacityFrames", nativeBufferCapacityFrames);
         result.put("droppedFrames", usingOboe ? NativeOboeCapture.getDroppedFrames() : 0L);
+        result.put("oboeAvailable", NativeOboeCapture.isAvailable());
+        result.put("oboeFallbackErrorCode", usingOboe ? 0 : lastOboeStartError);
         return result;
     }
 

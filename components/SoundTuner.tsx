@@ -71,6 +71,7 @@ function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
 export default function SoundTuner(){
   const [a4,setA4]=useState(440);
   const [running,setRunning]=useState(false);
+  const [starting,setStarting]=useState(false);
   const [note,setNote]=useState('—');
   const [frequency,setFrequency]=useState<number|null>(null);
   const [cents,setCents]=useState<number|null>(null);
@@ -106,6 +107,7 @@ export default function SoundTuner(){
   const fastSpectrumRef=useRef(new Float32Array(FAST_BUFFER_SIZE/2));
   const rafRef=useRef(0),lastRef=useRef(0),captureStartedAtRef=useRef(0),uiAtRef=useRef(0);
   const captureSessionRef=useRef(0);
+  const startingRef=useRef(false);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const longFrequencyRef=useRef(0);
   const longClarityRef=useRef(0);
@@ -454,6 +456,7 @@ export default function SoundTuner(){
 
     const ended=()=>{
       cleanupWebCaptureResources(false);
+      startingRef.current=false;setStarting(false);
       setRunning(false);setMicLevel(0);clearPitch(true);
       setStatus('Microphone disconnected');
     };
@@ -495,6 +498,7 @@ export default function SoundTuner(){
     });
     const errorListener=await NativePitch.addListener('error',error=>{
       captureSessionRef.current++;
+      startingRef.current=false;setStarting(false);
       nativeActiveRef.current=false;
       setRunning(false);setMicLevel(0);clearPitch(true);
       setStatus(`Microphone stopped unexpectedly: ${error.message||'audio capture failed'}`);
@@ -511,7 +515,8 @@ export default function SoundTuner(){
       }
       const nativeRange=detectorRangeForSampleRate(nativeInfo.sampleRate);
       detectRangeRef.current=nativeRange;setDetectRange(nativeRange);setCapturePath('Native');
-      nativeActiveRef.current=true;setRunning(true);clearPitch(false);setMicLevel(0);
+      nativeActiveRef.current=true;startingRef.current=false;setStarting(false);
+      setRunning(true);clearPitch(false);setMicLevel(0);
       setStatus('Listening · harmonic-aware tracking ready');
     }catch(err){
       nativeListenerRef.current=null;nativeErrorListenerRef.current=null;
@@ -520,14 +525,19 @@ export default function SoundTuner(){
   }
 
   async function start(){
-    if(running)return;stopReference();
+    if(running||startingRef.current)return;
+    startingRef.current=true;setStarting(true);stopReference();
     const session=++captureSessionRef.current;
     if(hasNativePitch()){
       try{await startNativePitch(session)}catch(err){
         if(session===captureSessionRef.current){
+          startingRef.current=false;setStarting(false);
           setRunning(false);setMicLevel(0);clearPitch(true);
           setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`);
         }
+      }
+      if(session===captureSessionRef.current&&startingRef.current){
+        startingRef.current=false;setStarting(false);
       }
       return;
     }
@@ -569,6 +579,7 @@ export default function SoundTuner(){
       }
       if(capture){
         workletCaptureRef.current=capture;
+        startingRef.current=false;setStarting(false);
         setCapturePath('AudioWorklet');
         setStatus('Listening · AudioWorklet capture · harmonic-aware tracking');
         workletWatchdogRef.current=window.setTimeout(()=>{
@@ -577,12 +588,14 @@ export default function SoundTuner(){
           }
         },WORKLET_STARTUP_WATCHDOG_MS);
       }else{
+        startingRef.current=false;setStarting(false);
         setCapturePath('Fallback');
         setStatus('Listening · analyser fallback · harmonic-aware tracking');
         rafRef.current=requestAnimationFrame(analyse);
       }
     }catch(err){
       if(session===captureSessionRef.current)cleanupWebCaptureResources(true);
+      startingRef.current=false;setStarting(false);
       setRunning(false);setMicLevel(0);clearPitch(true);
       setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`);
     }
@@ -591,6 +604,7 @@ export default function SoundTuner(){
   function stop(){
     if(nativeActiveRef.current||nativeListenerRef.current||nativeErrorListenerRef.current){
       captureSessionRef.current++;
+      startingRef.current=false;setStarting(false);
       nativeActiveRef.current=false;
       const listener=nativeListenerRef.current;nativeListenerRef.current=null;
       const errorListener=nativeErrorListenerRef.current;nativeErrorListenerRef.current=null;
@@ -601,6 +615,7 @@ export default function SoundTuner(){
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
     cleanupWebCaptureResources(true);
+    startingRef.current=false;setStarting(false);
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
@@ -612,7 +627,7 @@ export default function SoundTuner(){
   return <>
     <div className="page-head"><div><p className="eyebrow">Universal live pitch</p><h1>Sound Tuner</h1><p>Harmonic-aware real-time pitch detection with confidence gating, dropout hold and adaptive needle smoothing for stable instrument tuning.</p></div><div className="badge">Detect → validate → track</div></div>
     <section className="card">
-      <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
+      <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':starting?'Starting':'Ready'}</div></div>
       <div className="grid-2">
         <main className="tuner-main">
           <div className="control-label"><span>Microphone input</span><span>{running?`${micLevel}%`:'0%'}</span></div><div className="signal"><i style={{width:`${micLevel}%`}}/></div>
@@ -626,7 +641,7 @@ export default function SoundTuner(){
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>setA4(+e.target.value)}/><div className="seg three"><button onClick={()=>setA4(415)} className={a4===415?'active':''}>415</button><button onClick={()=>setA4(440)} className={a4===440?'active':''}>440</button><button onClick={()=>setA4(442)} className={a4===442?'active':''}>442</button></div></div>
           <div className="control"><div className="control-label"><span>Optional reference tones</span></div><div className="seg four">{OPEN_STRINGS.map((midi,i)=><button key={midi} className={activeRef===midi?'active':''} onClick={()=>activeRef===midi?stopReference():playReference(midi)}>{OPEN_LABELS[i]}</button>)}</div><label className="toggle" style={{marginTop:9}}><span>Loop reference</span><input type="checkbox" checked={loop} onChange={e=>{setLoop(e.target.checked);if(audioRef.current)audioRef.current.loop=e.target.checked}}/></label></div>
           <div className="control"><div className="status">{status}</div></div>
-          <button className={`primary ${running?'danger':''}`} onClick={running?stop:start}>{running?'Stop microphone':'Start tuning'}</button>
+          <button className={`primary ${running?'danger':''}`} onClick={running?stop:start} disabled={starting}>{running?'Stop microphone':starting?'Starting microphone…':'Start tuning'}</button>
         </aside>
       </div>
     </section>

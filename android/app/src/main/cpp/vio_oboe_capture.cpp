@@ -15,6 +15,8 @@
 namespace {
 
 constexpr uint64_t kRingCapacity = 65536;
+constexpr uint64_t kBacklogTrimThreshold = 8192;
+constexpr uint64_t kBacklogKeepFrames = 2048;
 
 class OboeCaptureEngine final
         : public oboe::AudioStreamDataCallback,
@@ -95,9 +97,17 @@ public:
         const auto deadline = std::chrono::steady_clock::now() + timeout;
 
         while (true) {
-            const uint64_t read = mReadIndex.load(std::memory_order_relaxed);
+            uint64_t read = mReadIndex.load(std::memory_order_relaxed);
             const uint64_t write = mWriteIndex.load(std::memory_order_acquire);
-            const uint64_t available = write - read;
+            uint64_t available = write - read;
+
+            if (available > kBacklogTrimThreshold) {
+                const uint64_t skipped = available - kBacklogKeepFrames;
+                read += skipped;
+                mReadIndex.store(read, std::memory_order_release);
+                mDroppedFrames.fetch_add(skipped, std::memory_order_relaxed);
+                available = kBacklogKeepFrames;
+            }
 
             if (available > 0) {
                 const int32_t count = static_cast<int32_t>(

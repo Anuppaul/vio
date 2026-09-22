@@ -46,7 +46,7 @@ final class NativeOboeCapture {
     }
 
     static void stop() {
-        if (!isAvailable()) return;
+        if (!LOADED) return;
         try {
             nativeStop();
         } catch (Throwable ignored) {

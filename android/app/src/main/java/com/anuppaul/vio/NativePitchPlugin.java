@@ -261,29 +261,37 @@ public class NativePitchPlugin extends Plugin {
             }
             filled = Math.min(ANALYSIS_SIZE, filled + count);
             sinceAnalysis += count;
-            if (filled < ANALYSIS_SIZE || sinceAnalysis < HOP_SIZE) continue;
+            if (filled < FAST_ANALYSIS_SIZE || sinceAnalysis < HOP_SIZE) continue;
             sinceAnalysis = 0;
 
-            int tail = ANALYSIS_SIZE - write;
-            System.arraycopy(ring, write, frame, 0, tail);
-            if (write > 0) System.arraycopy(ring, 0, frame, tail, write);
+            boolean haveFast = copyLatest(ring, write, filled, fastFrame);
+            boolean haveShort = copyLatest(ring, write, filled, shortFrame);
+            boolean haveLong = copyLatest(ring, write, filled, frame);
 
-            double rms = rms(frame);
-            System.arraycopy(frame, ANALYSIS_SIZE - SHORT_ANALYSIS_SIZE, shortFrame, 0, SHORT_ANALYSIS_SIZE);
-            System.arraycopy(frame, ANALYSIS_SIZE - FAST_ANALYSIS_SIZE, fastFrame, 0, FAST_ANALYSIS_SIZE);
+            PitchResult fastPitch = haveFast ? fastDetector.detect(fastFrame) : null;
+            PitchResult transientPitch = haveShort ? transientDetector.detect(shortFrame) : null;
+            PitchResult sustainedPitch = haveLong ? sustainedDetector.detect(frame) : null;
 
-            PitchResult sustainedPitch = sustainedDetector.detect(frame);
-            PitchResult transientPitch = transientDetector.detect(shortFrame);
-            PitchResult fastPitch = fastDetector.detect(fastFrame);
-            mpmHops++;
-            if (mpmHops >= MPM_UPDATE_HOPS) {
-                mpmHops = 0;
-                mpmPitch = mpmDetector.detect(shortFrame);
+            if (haveShort) {
+                mpmHops++;
+                if (mpmHops >= MPM_UPDATE_HOPS) {
+                    mpmHops = 0;
+                    mpmPitch = mpmDetector.detect(shortFrame);
+                }
             }
 
-            double recentRms = rmsRange(frame, ANALYSIS_SIZE - 1024, ANALYSIS_SIZE);
-            double previousRms = rmsRange(frame, ANALYSIS_SIZE - 3072, ANALYSIS_SIZE - 1024);
+            float[] onsetFrame = haveLong ? frame : (haveShort ? shortFrame : fastFrame);
+            int onsetSize = onsetFrame.length;
+            int recentSize = Math.min(1024, onsetSize / 2);
+            int previousSize = Math.min(2048, onsetSize - recentSize);
+            double recentRms = rmsRange(onsetFrame, onsetSize - recentSize, onsetSize);
+            double previousRms = rmsRange(
+                onsetFrame,
+                Math.max(0, onsetSize - recentSize - previousSize),
+                onsetSize - recentSize
+            );
             boolean onset = recentRms > Math.max(previousRms * 1.18, previousRms + 0.00018);
+            double rms = haveLong ? rms(frame) : (haveShort ? rms(shortFrame) : rms(fastFrame));
 
             PitchResult responsivePitch = transientPitch;
             if (fastPitch != null && fastPitch.confidence >= MIN_TRANSIENT_CONFIDENCE) {
@@ -308,6 +316,18 @@ public class NativePitchPlugin extends Plugin {
             releasePlatformAudioEffects();
             emitCaptureError(failureMessage);
         }
+    }
+
+    private boolean copyLatest(float[] ring, int write, int filled, float[] target) {
+        if (filled < target.length) return false;
+        int start = write - target.length;
+        if (start < 0) start += ring.length;
+        int first = Math.min(target.length, ring.length - start);
+        System.arraycopy(ring, start, target, 0, first);
+        if (first < target.length) {
+            System.arraycopy(ring, 0, target, first, target.length - first);
+        }
+        return true;
     }
 
     private double rms(float[] frame) {

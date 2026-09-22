@@ -8,6 +8,11 @@ import { detectPitch } from '@/lib/yin';
 import { detectMpm } from '@/lib/mpm';
 import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
 import {
+  createTunerWorkletCapture,
+  type TunerCaptureFrame,
+  type TunerWorkletCapture
+} from '@/lib/tuner-capture';
+import {
   OneEuroFilter,
   PitchTracker,
   centsApart,
@@ -75,11 +80,15 @@ export default function SoundTuner(){
   const [activeRef,setActiveRef]=useState<number|null>(null);
   const [loop,setLoop]=useState(false);
   const [detectRange,setDetectRange]=useState(()=>detectorRangeForSampleRate(48000));
+  const [capturePath,setCapturePath]=useState<'Native'|'AudioWorklet'|'Fallback'>('Fallback');
 
   const ctxRef=useRef<AudioContext|null>(null);
   const analyserRef=useRef<AnalyserNode|null>(null);
   const shortAnalyserRef=useRef<AnalyserNode|null>(null);
   const fastAnalyserRef=useRef<AnalyserNode|null>(null);
+  const workletCaptureRef=useRef<TunerWorkletCapture|null>(null);
+  const workletShortReadyRef=useRef(false);
+  const workletLongReadyRef=useRef(false);
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
@@ -220,112 +229,164 @@ export default function SoundTuner(){
     else setStatus(`${mode==='transient'?'Transient':'Pitch'} · ${mapped.label} · ${Math.round(tracked.confidence*100)}% confidence`);
   }
 
-  function analyse(ts:number){
-    const analyser=analyserRef.current,shortAnalyser=shortAnalyserRef.current,fastAnalyser=fastAnalyserRef.current,ctx=ctxRef.current,longDetector=detectorRef.current,shortDetector=shortDetectorRef.current,fastDetector=fastDetectorRef.current;
-    if(!analyser||!shortAnalyser||!fastAnalyser||!ctx||!longDetector||!shortDetector||!fastDetector)return;
-    if(ts-lastRef.current>=ANALYSIS_MS){
-      lastRef.current=ts;
-      const input=bufferRef.current,shortRaw=shortRawBufferRef.current,fastRaw=fastRawBufferRef.current;
-      analyser.getFloatTimeDomainData(input);
-      shortAnalyser.getFloatTimeDomainData(shortRaw);
-      fastAnalyser.getFloatTimeDomainData(fastRaw);
-      const analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current,fastAnalysis=fastBufferRef.current;
-      prepareSensitiveFrame(input,analysis);
-      prepareSensitiveFrame(shortRaw,shortAnalysis);
-      prepareSensitiveFrame(fastRaw,fastAnalysis);
+  function processCapturedFrames(
+    ts:number,
+    input:Float32Array|null,
+    shortRaw:Float32Array|null,
+    fastRaw:Float32Array,
+    spectrum:Float32Array
+  ){
+    const ctx=ctxRef.current,longDetector=detectorRef.current,shortDetector=shortDetectorRef.current,fastDetector=fastDetectorRef.current;
+    if(!ctx||!longDetector||!shortDetector||!fastDetector)return;
 
-      const elapsed=Math.max(0,ts-captureStartedAtRef.current);
-      const longSpectrum=spectrumRef.current,shortSpectrum=shortSpectrumRef.current,fastSpectrum=fastSpectrumRef.current;
-      analyser.getFloatFrequencyData(longSpectrum);
-      shortAnalyser.getFloatFrequencyData(shortSpectrum);
-      fastAnalyser.getFloatFrequencyData(fastSpectrum);
-      const spectrum=elapsed<70?fastSpectrum:elapsed<150?shortSpectrum:longSpectrum;
-      const inputRms=rms(fastRaw);
+    const analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current,fastAnalysis=fastBufferRef.current;
+    if(input)prepareSensitiveFrame(input,analysis);
+    if(shortRaw)prepareSensitiveFrame(shortRaw,shortAnalysis);
+    prepareSensitiveFrame(fastRaw,fastAnalysis);
+    const inputRms=rms(fastRaw);
 
-      const [shortFrequency,shortClarity]=shortDetector.findPitch(shortAnalysis,ctx.sampleRate);
-      const [fastFrequency,fastClarity]=fastDetector.findPitch(fastAnalysis,ctx.sampleRate);
-      const responsiveHint=fastFrequency>0?fastFrequency:shortFrequency;
-      const longCadence=responsiveHint>350?LONG_HIGH_CADENCE_MS:LONG_LOW_CADENCE_MS;
-      if(ts-longAtRef.current>=longCadence){
-        const [frequency,clarity]=longDetector.findPitch(analysis,ctx.sampleRate);
-        longFrequencyRef.current=frequency>0?frequency:0;
-        longClarityRef.current=clarity;
-        longAtRef.current=ts;
-      }
-      const longFrequency=longFrequencyRef.current;
-      const longClarity=longClarityRef.current;
+    const [shortFrequency,shortClarity]=shortRaw
+      ?shortDetector.findPitch(shortAnalysis,ctx.sampleRate)
+      :[0,0];
+    const [fastFrequency,fastClarity]=fastDetector.findPitch(fastAnalysis,ctx.sampleRate);
 
-      if(ts-yinConsensusAtRef.current>=YIN_CONSENSUS_MS){
+    const responsiveHint=fastFrequency>0?fastFrequency:shortFrequency;
+    const longCadence=responsiveHint>350?LONG_HIGH_CADENCE_MS:LONG_LOW_CADENCE_MS;
+    if(input&&ts-longAtRef.current>=longCadence){
+      const [frequency,clarity]=longDetector.findPitch(analysis,ctx.sampleRate);
+      longFrequencyRef.current=frequency>0?frequency:0;
+      longClarityRef.current=clarity;
+      longAtRef.current=ts;
+    }
+    const longFrequency=longFrequencyRef.current;
+    const longClarity=longClarityRef.current;
+
+    if(ts-yinConsensusAtRef.current>=YIN_CONSENSUS_MS){
+      const lowCandidate=longFrequency>0&&longFrequency<90;
+      const consensusInput=lowCandidate?input:shortRaw;
+      if(consensusInput){
         yinConsensusAtRef.current=ts;
-        const lowCandidate=longFrequency>0&&longFrequency<90;
-        const consensusInput=lowCandidate?analysis:shortAnalysis;
+        const prepared=lowCandidate?analysis:shortAnalysis;
         const range=detectRangeRef.current;
         const consensusMin=lowCandidate?range.min:Math.max(55,range.min);
-        const consensusMax=range.max;
-        const independent=detectPitch(consensusInput,ctx.sampleRate,consensusMin,consensusMax);
+        const independent=detectPitch(prepared,ctx.sampleRate,consensusMin,range.max);
         yinConsensusRef.current=independent
           ?{frequency:independent.frequency,clarity:independent.clarity,mode:'sustained'}
           :null;
       }
+    }
 
-      if(ts-mpmConsensusAtRef.current>=MPM_CONSENSUS_MS){
+    if(ts-mpmConsensusAtRef.current>=MPM_CONSENSUS_MS){
+      const hint=shortFrequency>0?shortFrequency:longFrequency;
+      const lowMpm=hint>0&&hint<220;
+      const mpmInput=lowMpm?shortRaw:fastRaw;
+      if(hint>=70&&mpmInput){
         mpmConsensusAtRef.current=ts;
-        const hint=shortFrequency>0?shortFrequency:longFrequency;
-        if(hint>=70){
-          const lowMpm=hint<220;
-          const mpmInput=lowMpm?shortAnalysis:fastAnalysis;
-          const range=detectRangeRef.current;
-          const mpmMin=lowMpm?Math.max(70,range.min):Math.max(180,range.min);
-          const mpmMax=range.max;
-          const independent=detectMpm(mpmInput,ctx.sampleRate,mpmMin,mpmMax);
-          mpmConsensusRef.current=independent
-            ?{frequency:independent.frequency,clarity:independent.clarity,mode:'sustained'}
-            :null;
-        }else{
-          mpmConsensusRef.current=null;
-        }
+        const range=detectRangeRef.current;
+        const prepared=lowMpm?shortAnalysis:fastAnalysis;
+        const mpmMin=lowMpm?Math.max(70,range.min):Math.max(180,range.min);
+        const independent=detectMpm(prepared,ctx.sampleRate,mpmMin,range.max);
+        mpmConsensusRef.current=independent
+          ?{frequency:independent.frequency,clarity:independent.clarity,mode:'sustained'}
+          :null;
+      }else if(hint<70){
+        mpmConsensusRef.current=null;
       }
+    }
 
-      const recentRms=segmentRms(fastRaw,FAST_BUFFER_SIZE-512,FAST_BUFFER_SIZE);
-      const previousRms=segmentRms(fastRaw,0,FAST_BUFFER_SIZE-512);
-      const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
-      const useFast=fastFrequency>0&&(onset||fastFrequency>=500)&&fastClarity>=shortClarity*.86;
-      const responsiveFrequency=useFast?fastFrequency:shortFrequency;
-      const responsiveClarity=useFast?fastClarity:shortClarity;
-      const fastShortAgree=
-        fastFrequency>0&&shortFrequency>0&&
-        centsApart(fastFrequency,shortFrequency)<=45;
-      const suppressStaleLong=
-        onset&&fastShortAgree&&responsiveFrequency>0&&
-        longFrequency>0&&centsApart(longFrequency,responsiveFrequency)>80;
-      const consensusCandidates=[yinConsensusRef.current,mpmConsensusRef.current]
-        .filter((candidate):candidate is PitchCandidate=>candidate!==null)
-        .filter(candidate=>
-          !(onset&&fastShortAgree&&responsiveFrequency>0&&centsApart(candidate.frequency,responsiveFrequency)>80)
-        );
-      const picked=chooseHarmonicCandidate(
-        {
-          frequency:!suppressStaleLong&&longFrequency>0?longFrequency:0,
-          clarity:!suppressStaleLong?longClarity:0,
-          mode:'sustained'
-        },
-        {frequency:responsiveFrequency>0?responsiveFrequency:0,clarity:responsiveClarity,mode:onset?'transient':'sustained'},
-        consensusCandidates,
-        spectrum,
-        ctx.sampleRate,
-        detectRangeRef.current.min,
-        detectRangeRef.current.max
+    const recentRms=segmentRms(fastRaw,FAST_BUFFER_SIZE-512,FAST_BUFFER_SIZE);
+    const previousRms=segmentRms(fastRaw,0,FAST_BUFFER_SIZE-512);
+    const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
+    const useFast=fastFrequency>0&&(onset||fastFrequency>=500)&&fastClarity>=shortClarity*.86;
+    const responsiveFrequency=useFast?fastFrequency:shortFrequency;
+    const responsiveClarity=useFast?fastClarity:shortClarity;
+    const fastShortAgree=
+      fastFrequency>0&&shortFrequency>0&&
+      centsApart(fastFrequency,shortFrequency)<=45;
+    const suppressStaleLong=
+      onset&&fastShortAgree&&responsiveFrequency>0&&
+      longFrequency>0&&centsApart(longFrequency,responsiveFrequency)>80;
+    const consensusCandidates=[yinConsensusRef.current,mpmConsensusRef.current]
+      .filter((candidate):candidate is PitchCandidate=>candidate!==null)
+      .filter(candidate=>
+        !(onset&&fastShortAgree&&responsiveFrequency>0&&centsApart(candidate.frequency,responsiveFrequency)>80)
       );
-      const lowNeedsLongSupport=
-        picked.frequency>0&&picked.frequency<80&&
-        (suppressStaleLong||centsApart(longFrequency,picked.frequency)>45)&&
-        !consensusCandidates.some(candidate=>centsApart(candidate.frequency,picked.frequency)<=45);
-      applyTrackedPitch(
-        lowNeedsLongSupport?0:picked.frequency,
-        inputRms,
-        lowNeedsLongSupport?0:picked.clarity,
-        picked.mode,
-        ts
+    const picked=chooseHarmonicCandidate(
+      {
+        frequency:!suppressStaleLong&&longFrequency>0?longFrequency:0,
+        clarity:!suppressStaleLong?longClarity:0,
+        mode:'sustained'
+      },
+      {
+        frequency:responsiveFrequency>0?responsiveFrequency:0,
+        clarity:responsiveClarity,
+        mode:onset?'transient':'sustained'
+      },
+      consensusCandidates,
+      spectrum,
+      ctx.sampleRate,
+      detectRangeRef.current.min,
+      detectRangeRef.current.max
+    );
+    const lowNeedsLongSupport=
+      picked.frequency>0&&picked.frequency<80&&
+      (suppressStaleLong||centsApart(longFrequency,picked.frequency)>45)&&
+      !consensusCandidates.some(candidate=>centsApart(candidate.frequency,picked.frequency)<=45);
+    applyTrackedPitch(
+      lowNeedsLongSupport?0:picked.frequency,
+      inputRms,
+      lowNeedsLongSupport?0:picked.clarity,
+      picked.mode,
+      ts
+    );
+  }
+
+  function spectrumForCurrentCapture(prefer:'fast'|'short'|'long'){
+    const analyser=prefer==='long'?analyserRef.current:prefer==='short'?shortAnalyserRef.current:fastAnalyserRef.current;
+    const target=prefer==='long'?spectrumRef.current:prefer==='short'?shortSpectrumRef.current:fastSpectrumRef.current;
+    if(!analyser)return target;
+    analyser.getFloatFrequencyData(target);
+    return target;
+  }
+
+  function handleWorkletFrame(frame:TunerCaptureFrame){
+    const now=performance.now();
+    fastRawBufferRef.current.set(frame.fast);
+    if(frame.short){
+      shortRawBufferRef.current.set(frame.short);
+      workletShortReadyRef.current=true;
+    }
+    if(frame.long){
+      bufferRef.current.set(frame.long);
+      workletLongReadyRef.current=true;
+    }
+    const prefer=workletLongReadyRef.current?'long':workletShortReadyRef.current?'short':'fast';
+    const spectrum=spectrumForCurrentCapture(prefer);
+    processCapturedFrames(
+      now,
+      workletLongReadyRef.current?bufferRef.current:null,
+      workletShortReadyRef.current?shortRawBufferRef.current:null,
+      fastRawBufferRef.current,
+      spectrum
+    );
+  }
+
+  function analyse(ts:number){
+    const analyser=analyserRef.current,shortAnalyser=shortAnalyserRef.current,fastAnalyser=fastAnalyserRef.current;
+    if(!analyser||!shortAnalyser||!fastAnalyser)return;
+    if(ts-lastRef.current>=ANALYSIS_MS){
+      lastRef.current=ts;
+      analyser.getFloatTimeDomainData(bufferRef.current);
+      shortAnalyser.getFloatTimeDomainData(shortRawBufferRef.current);
+      fastAnalyser.getFloatTimeDomainData(fastRawBufferRef.current);
+      const elapsed=Math.max(0,ts-captureStartedAtRef.current);
+      const prefer=elapsed<70?'fast':elapsed<150?'short':'long';
+      processCapturedFrames(
+        ts,
+        bufferRef.current,
+        shortRawBufferRef.current,
+        fastRawBufferRef.current,
+        spectrumForCurrentCapture(prefer)
       );
     }
     rafRef.current=requestAnimationFrame(analyse);
@@ -358,7 +419,7 @@ export default function SoundTuner(){
     try{
       const nativeInfo=await NativePitch.start();
       const nativeRange=detectorRangeForSampleRate(nativeInfo.sampleRate);
-      detectRangeRef.current=nativeRange;setDetectRange(nativeRange);
+      detectRangeRef.current=nativeRange;setDetectRange(nativeRange);setCapturePath('Native');
       nativeActiveRef.current=true;setRunning(true);clearPitch(false);setMicLevel(0);
       setStatus('Listening · harmonic-aware tracking ready');
     }catch(err){
@@ -389,11 +450,32 @@ export default function SoundTuner(){
       streamRef.current=stream;sourceRef.current=source;
       analyserRef.current=analyser;shortAnalyserRef.current=shortAnalyser;fastAnalyserRef.current=fastAnalyser;
       trackerRef.current.reset();needleFilterRef.current.reset();
+      workletShortReadyRef.current=false;workletLongReadyRef.current=false;
       longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
       captureStartedAtRef.current=performance.now();
-      setRunning(true);clearPitch(false);setMicLevel(0);
-      setStatus('Listening · harmonic-aware tracking ready');lastRef.current=0;
-      rafRef.current=requestAnimationFrame(analyse);
+      setRunning(true);clearPitch(false);setMicLevel(0);lastRef.current=0;
+
+      const capture=await createTunerWorkletCapture(
+        ctx,
+        source,
+        handleWorkletFrame,
+        message=>{
+          const active=workletCaptureRef.current;
+          if(active){active.stop();workletCaptureRef.current=null}
+          setCapturePath('Fallback');
+          setStatus(message+' Falling back to browser analyser.');
+          if(!rafRef.current)rafRef.current=requestAnimationFrame(analyse);
+        }
+      );
+      if(capture){
+        workletCaptureRef.current=capture;
+        setCapturePath('AudioWorklet');
+        setStatus('Listening · AudioWorklet capture · harmonic-aware tracking');
+      }else{
+        setCapturePath('Fallback');
+        setStatus('Listening · analyser fallback · harmonic-aware tracking');
+        rafRef.current=requestAnimationFrame(analyse);
+      }
     }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
   }
 
@@ -409,13 +491,15 @@ export default function SoundTuner(){
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
     cancelAnimationFrame(rafRef.current);rafRef.current=0;
+    workletCaptureRef.current?.stop();workletCaptureRef.current=null;
+    workletShortReadyRef.current=false;workletLongReadyRef.current=false;
     try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}
     streamRef.current?.getTracks().forEach(t=>t.stop());
     sourceRef.current=null;analyserRef.current=null;shortAnalyserRef.current=null;fastAnalyserRef.current=null;streamRef.current=null;
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);workletCaptureRef.current?.stop();try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;
@@ -431,7 +515,7 @@ export default function SoundTuner(){
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
             <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?'Play a steady tone':inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
-          <div className="target-row"><span className="target-chip">{Math.ceil(detectRange.min)}–{Math.floor(detectRange.max)} Hz</span><span className="target-chip">Harmonic validated</span></div>
+          <div className="target-row"><span className="target-chip">{Math.ceil(detectRange.min)}–{Math.floor(detectRange.max)} Hz</span><span className="target-chip">{capturePath}</span><span className="target-chip">Harmonic validated</span></div>
         </main>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>setA4(+e.target.value)}/><div className="seg three"><button onClick={()=>setA4(415)} className={a4===415?'active':''}>415</button><button onClick={()=>setA4(440)} className={a4===440?'active':''}>440</button><button onClick={()=>setA4(442)} className={a4===442?'active':''}>442</button></div></div>

@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { PitchDetector } from 'pitchy';
 import { OPEN_STRINGS, midiFrequency, noteFromFrequency, rms } from '@/lib/music';
+import { detectPitch } from '@/lib/yin';
 import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
 import {
   OneEuroFilter,
   PitchTracker,
   chooseHarmonicCandidate,
+  type PitchCandidate,
   type PitchMode
 } from '@/lib/pitch-engine';
 
@@ -16,6 +18,7 @@ const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=8192;
 const SHORT_BUFFER_SIZE=4096;
 const ANALYSIS_MS=16;
+const CONSENSUS_MS=96;
 const MIN_DETECT_HZ=20;
 const MAX_DETECT_HZ=5000;
 
@@ -77,6 +80,8 @@ export default function SoundTuner(){
   const shortDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const trackerRef=useRef(new PitchTracker());
   const needleFilterRef=useRef(new OneEuroFilter());
+  const consensusRef=useRef<PitchCandidate|null>(null);
+  const consensusAtRef=useRef(0);
   const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeErrorListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
@@ -102,7 +107,10 @@ export default function SoundTuner(){
   },[a4,activeRef]);
 
   function clearPitch(resetEngine=false){
-    if(resetEngine){trackerRef.current.reset();needleFilterRef.current.reset()}
+    if(resetEngine){
+      trackerRef.current.reset();needleFilterRef.current.reset();
+      consensusRef.current=null;consensusAtRef.current=0;
+    }
     setNote('—');setFrequency(null);setCents(null);setNeedleCents(null);
   }
 
@@ -171,12 +179,24 @@ export default function SoundTuner(){
 
       const [longFrequency,longClarity]=longDetector.findPitch(analysis,ctx.sampleRate);
       const [shortFrequency,shortClarity]=shortDetector.findPitch(shortAnalysis,ctx.sampleRate);
+      if(ts-consensusAtRef.current>=CONSENSUS_MS){
+        consensusAtRef.current=ts;
+        const lowCandidate=longFrequency>0&&longFrequency<90;
+        const consensusInput=lowCandidate?analysis:shortAnalysis;
+        const consensusMin=lowCandidate?MIN_DETECT_HZ:55;
+        const consensusMax=Math.min(MAX_DETECT_HZ,ctx.sampleRate*.45);
+        const independent=detectPitch(consensusInput,ctx.sampleRate,consensusMin,consensusMax);
+        consensusRef.current=independent
+          ?{frequency:independent.frequency,clarity:independent.clarity,mode:'sustained'}
+          :null;
+      }
       const recentRms=segmentRms(input,BUFFER_SIZE-2048,BUFFER_SIZE);
       const previousRms=segmentRms(input,BUFFER_SIZE-6144,BUFFER_SIZE-2048);
       const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
       const picked=chooseHarmonicCandidate(
         {frequency:longFrequency>0?longFrequency:0,clarity:longClarity,mode:'sustained'},
         {frequency:shortFrequency>0?shortFrequency:0,clarity:shortClarity,mode:onset?'transient':'sustained'},
+        consensusRef.current,
         spectrum,
         ctx.sampleRate,
         MIN_DETECT_HZ,

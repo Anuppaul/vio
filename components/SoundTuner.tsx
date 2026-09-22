@@ -23,6 +23,8 @@ const FAST_BUFFER_SIZE=2048;
 const ANALYSIS_MS=16;
 const YIN_CONSENSUS_MS=112;
 const MPM_CONSENSUS_MS=128;
+const LONG_LOW_CADENCE_MS=32;
+const LONG_HIGH_CADENCE_MS=64;
 const MIN_DETECT_HZ=20;
 const MAX_DETECT_HZ=5000;
 
@@ -88,6 +90,9 @@ export default function SoundTuner(){
   const fastSpectrumRef=useRef(new Float32Array(FAST_BUFFER_SIZE/2));
   const rafRef=useRef(0),lastRef=useRef(0),captureStartedAtRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
+  const longFrequencyRef=useRef(0);
+  const longClarityRef=useRef(0);
+  const longAtRef=useRef(0);
   const shortDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const fastDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const trackerRef=useRef(new PitchTracker());
@@ -224,9 +229,18 @@ export default function SoundTuner(){
       const spectrum=elapsed<70?fastSpectrum:elapsed<150?shortSpectrum:longSpectrum;
       const inputRms=rms(fastRaw);
 
-      const [longFrequency,longClarity]=longDetector.findPitch(analysis,ctx.sampleRate);
       const [shortFrequency,shortClarity]=shortDetector.findPitch(shortAnalysis,ctx.sampleRate);
       const [fastFrequency,fastClarity]=fastDetector.findPitch(fastAnalysis,ctx.sampleRate);
+      const responsiveHint=fastFrequency>0?fastFrequency:shortFrequency;
+      const longCadence=responsiveHint>350?LONG_HIGH_CADENCE_MS:LONG_LOW_CADENCE_MS;
+      if(ts-longAtRef.current>=longCadence){
+        const [frequency,clarity]=longDetector.findPitch(analysis,ctx.sampleRate);
+        longFrequencyRef.current=frequency>0?frequency:0;
+        longClarityRef.current=clarity;
+        longAtRef.current=ts;
+      }
+      const longFrequency=longFrequencyRef.current;
+      const longClarity=longClarityRef.current;
 
       if(ts-yinConsensusAtRef.current>=YIN_CONSENSUS_MS){
         yinConsensusAtRef.current=ts;
@@ -349,6 +363,7 @@ export default function SoundTuner(){
       streamRef.current=stream;sourceRef.current=source;
       analyserRef.current=analyser;shortAnalyserRef.current=shortAnalyser;fastAnalyserRef.current=fastAnalyser;
       trackerRef.current.reset();needleFilterRef.current.reset();
+      longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;
       captureStartedAtRef.current=performance.now();
       setRunning(true);clearPitch(false);setMicLevel(0);
       setStatus('Listening · harmonic-aware tracking ready');lastRef.current=0;
@@ -364,7 +379,8 @@ export default function SoundTuner(){
       if(listener)void listener.remove();
       if(errorListener)void errorListener.remove();
       void NativePitch.stop().catch(()=>{});
-      setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
+      longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;
+    setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
     cancelAnimationFrame(rafRef.current);rafRef.current=0;
     try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}

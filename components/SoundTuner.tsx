@@ -32,8 +32,8 @@ const MPM_CONSENSUS_MS=128;
 const LONG_LOW_CADENCE_MS=32;
 const LONG_HIGH_CADENCE_MS=64;
 const UI_UPDATE_MS=33;
-const MIN_DETECT_HZ=20;
-const MAX_DETECT_HZ=5000;
+const WORKLET_MAX_FRAME_AGE_S=.18;
+const WORKLET_STARTUP_WATCHDOG_MS=650;
 
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
 type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string;mode?:PitchMode};
@@ -89,6 +89,9 @@ export default function SoundTuner(){
   const workletCaptureRef=useRef<TunerWorkletCapture|null>(null);
   const workletShortReadyRef=useRef(false);
   const workletLongReadyRef=useRef(false);
+  const workletFrameSeenRef=useRef(false);
+  const workletSequenceRef=useRef(0);
+  const workletWatchdogRef=useRef<number|null>(null);
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
@@ -350,6 +353,18 @@ export default function SoundTuner(){
   }
 
   function handleWorkletFrame(frame:TunerCaptureFrame){
+    const ctx=ctxRef.current;
+    if(!ctx)return;
+    if(frame.sequence<=workletSequenceRef.current)return;
+    workletSequenceRef.current=frame.sequence;
+    if(frame.audioTime>0&&ctx.currentTime-frame.audioTime>WORKLET_MAX_FRAME_AGE_S)return;
+
+    workletFrameSeenRef.current=true;
+    if(workletWatchdogRef.current!==null){
+      window.clearTimeout(workletWatchdogRef.current);
+      workletWatchdogRef.current=null;
+    }
+
     const now=performance.now();
     fastRawBufferRef.current.set(frame.fast);
     if(frame.short){
@@ -369,6 +384,18 @@ export default function SoundTuner(){
       fastRawBufferRef.current,
       spectrum
     );
+  }
+
+  function activateAnalyserFallback(message:string){
+    workletCaptureRef.current?.stop();
+    workletCaptureRef.current=null;
+    if(workletWatchdogRef.current!==null){
+      window.clearTimeout(workletWatchdogRef.current);
+      workletWatchdogRef.current=null;
+    }
+    setCapturePath('Fallback');
+    setStatus(message);
+    if(!rafRef.current)rafRef.current=requestAnimationFrame(analyse);
   }
 
   function analyse(ts:number){
@@ -451,6 +478,8 @@ export default function SoundTuner(){
       analyserRef.current=analyser;shortAnalyserRef.current=shortAnalyser;fastAnalyserRef.current=fastAnalyser;
       trackerRef.current.reset();needleFilterRef.current.reset();
       workletShortReadyRef.current=false;workletLongReadyRef.current=false;
+      workletFrameSeenRef.current=false;workletSequenceRef.current=0;
+      if(workletWatchdogRef.current!==null){window.clearTimeout(workletWatchdogRef.current);workletWatchdogRef.current=null}
       longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
       captureStartedAtRef.current=performance.now();
       setRunning(true);clearPitch(false);setMicLevel(0);lastRef.current=0;
@@ -459,18 +488,17 @@ export default function SoundTuner(){
         ctx,
         source,
         handleWorkletFrame,
-        message=>{
-          const active=workletCaptureRef.current;
-          if(active){active.stop();workletCaptureRef.current=null}
-          setCapturePath('Fallback');
-          setStatus(message+' Falling back to browser analyser.');
-          if(!rafRef.current)rafRef.current=requestAnimationFrame(analyse);
-        }
+        message=>activateAnalyserFallback(message+' Falling back to browser analyser.')
       );
       if(capture){
         workletCaptureRef.current=capture;
         setCapturePath('AudioWorklet');
         setStatus('Listening · AudioWorklet capture · harmonic-aware tracking');
+        workletWatchdogRef.current=window.setTimeout(()=>{
+          if(workletCaptureRef.current&&!workletFrameSeenRef.current){
+            activateAnalyserFallback('AudioWorklet produced no frames · analyser fallback active');
+          }
+        },WORKLET_STARTUP_WATCHDOG_MS);
       }else{
         setCapturePath('Fallback');
         setStatus('Listening · analyser fallback · harmonic-aware tracking');
@@ -492,14 +520,16 @@ export default function SoundTuner(){
     }
     cancelAnimationFrame(rafRef.current);rafRef.current=0;
     workletCaptureRef.current?.stop();workletCaptureRef.current=null;
+    if(workletWatchdogRef.current!==null){window.clearTimeout(workletWatchdogRef.current);workletWatchdogRef.current=null}
     workletShortReadyRef.current=false;workletLongReadyRef.current=false;
+    workletFrameSeenRef.current=false;workletSequenceRef.current=0;
     try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}
     streamRef.current?.getTracks().forEach(t=>t.stop());
     sourceRef.current=null;analyserRef.current=null;shortAnalyserRef.current=null;fastAnalyserRef.current=null;streamRef.current=null;
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);workletCaptureRef.current?.stop();try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);if(workletWatchdogRef.current!==null)window.clearTimeout(workletWatchdogRef.current);workletCaptureRef.current?.stop();try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();shortAnalyserRef.current?.disconnect();fastAnalyserRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;
@@ -515,7 +545,7 @@ export default function SoundTuner(){
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
             <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?'Play a steady tone':inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
-          <div className="target-row"><span className="target-chip">{Math.ceil(detectRange.min)}–{Math.floor(detectRange.max)} Hz</span><span className="target-chip">{capturePath}</span><span className="target-chip">Harmonic validated</span></div>
+          <div className="target-row"><span className="target-chip">{Math.ceil(detectRange.min)}–{Math.floor(detectRange.max)} Hz</span><span className="target-chip">{running?capturePath:'Auto capture'}</span><span className="target-chip">Harmonic validated</span></div>
         </main>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>setA4(+e.target.value)}/><div className="seg three"><button onClick={()=>setA4(415)} className={a4===415?'active':''}>415</button><button onClick={()=>setA4(440)} className={a4===440?'active':''}>440</button><button onClick={()=>setA4(442)} className={a4===442?'active':''}>442</button></div></div>

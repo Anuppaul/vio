@@ -103,6 +103,7 @@ export default function SoundTuner(){
   const consensusWorkerAtRef=useRef(0);
   const consensusSequenceRef=useRef(0);
   const consensusAppliedRef=useRef(0);
+  const livePitchHintRef=useRef(0);
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
   const trackCleanupRef=useRef<(()=>void)|null>(null);
@@ -275,6 +276,7 @@ export default function SoundTuner(){
     const [fastFrequency,fastClarity]=fastDetector.findPitch(fastAnalysis,ctx.sampleRate);
 
     const responsiveHint=fastFrequency>0?fastFrequency:shortFrequency;
+    livePitchHintRef.current=responsiveHint;
     const longCadence=responsiveHint>350?LONG_HIGH_CADENCE_MS:LONG_LOW_CADENCE_MS;
     if(input&&ts-longAtRef.current>=longCadence){
       const [frequency,clarity]=longDetector.findPitch(analysis,ctx.sampleRate);
@@ -471,7 +473,7 @@ export default function SoundTuner(){
     }
     workletCaptureRef.current?.stop();workletCaptureRef.current=null;
     consensusWorkerRef.current?.stop();consensusWorkerRef.current=null;
-    consensusWorkerAtRef.current=0;consensusSequenceRef.current=0;consensusAppliedRef.current=0;
+    consensusWorkerAtRef.current=0;consensusSequenceRef.current=0;consensusAppliedRef.current=0;livePitchHintRef.current=0;
     workletShortReadyRef.current=false;workletLongReadyRef.current=false;
     workletFrameSeenRef.current=false;workletSequenceRef.current=0;
     try{
@@ -637,6 +639,8 @@ export default function SoundTuner(){
       consensusWorkerRef.current=createTunerConsensusClient(
         result=>{
           if(result.sequence<consensusAppliedRef.current)return;
+          const liveHint=livePitchHintRef.current;
+          if(result.hintFrequency>0&&liveHint>0&&centsApart(result.hintFrequency,liveHint)>90)return;
           consensusAppliedRef.current=result.sequence;
           yinConsensusRef.current=result.yin
             ?{frequency:result.yin.frequency,clarity:result.yin.clarity,mode:'sustained'}

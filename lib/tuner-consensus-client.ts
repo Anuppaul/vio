@@ -5,6 +5,7 @@ export type TunerConsensusCandidate={
 
 export type TunerConsensusResult={
   sequence:number;
+  hintFrequency:number;
   yin:TunerConsensusCandidate|null;
   mpm:TunerConsensusCandidate|null;
 };
@@ -60,6 +61,7 @@ export function createTunerConsensusClient(
     if(data?.type==='result'){
       onResult({
         sequence:Number(data.sequence)||0,
+        hintFrequency:Number(data.hintFrequency)||0,
         yin:data.yin&&Number(data.yin.frequency)>0
           ?{frequency:Number(data.yin.frequency),clarity:Number(data.yin.clarity)||0}
           :null,

@@ -274,7 +274,7 @@ self.onmessage=event=>{
       );
       if(result)mpm=result;
     }
-    self.postMessage({type:'result',sequence,yin,mpm});
+    self.postMessage({type:'result',sequence,hintFrequency,yin,mpm});
   }catch{
     self.postMessage({type:'error',sequence,message:'Consensus DSP worker failed.'});
   }

@@ -5,19 +5,22 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 import { PitchDetector } from 'pitchy';
 import { OPEN_STRINGS, midiFrequency, noteFromFrequency, rms } from '@/lib/music';
 import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
+import {
+  OneEuroFilter,
+  PitchTracker,
+  chooseHarmonicCandidate,
+  type PitchMode
+} from '@/lib/pitch-engine';
 
 const OPEN_LABELS=['G3','D4','A4','E5'];
 const BUFFER_SIZE=8192;
 const SHORT_BUFFER_SIZE=4096;
 const ANALYSIS_MS=16;
-const NOTE_SWITCH_DELAY_MS=90;
-const NOTE_BOUNDARY_BUFFER_CENTS=5;
-const NEEDLE_SMOOTHING=.18;
 const MIN_DETECT_HZ=20;
 const MAX_DETECT_HZ=5000;
 
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
-type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string;mode?:'sustained'|'transient'};
+type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string;mode?:PitchMode};
 type NativePitchPlugin={
   checkPermissions():Promise<{microphone?:NativePermissionState}>;
   requestPermissions(options:{permissions:string[]}):Promise<{microphone?:NativePermissionState}>;
@@ -40,26 +43,11 @@ function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
   let sum=0,peak=0;
   for(let i=0;i<input.length;i++){const v=input[i]-mean;sum+=v*v;peak=Math.max(peak,Math.abs(v))}
   const frameRms=Math.sqrt(sum/input.length);
-  const targetRms=.55,maxGain=256,maxPeak=.985;
+  const targetRms=.32,maxGain=64,maxPeak=.97;
   const rmsGain=frameRms>0?targetRms/frameRms:1;
   const peakGain=peak>0?maxPeak/peak:1;
   const gain=Math.max(1,Math.min(maxGain,rmsGain,peakGain));
   for(let i=0;i<input.length;i++)output[i]=(input[i]-mean)*gain;
-}
-function centsApart(a:number,b:number){return a>0&&b>0?Math.abs(1200*Math.log2(a/b)):Infinity}
-type PitchCandidate={frequency:number;clarity:number;mode:'sustained'|'transient'};
-function chooseRawPitch(longFrequency:number,longClarity:number,shortFrequency:number,shortClarity:number,onset:boolean):PitchCandidate{
-  const longOk=longFrequency>=MIN_DETECT_HZ&&longFrequency<=MAX_DETECT_HZ;
-  const shortOk=shortFrequency>=MIN_DETECT_HZ&&shortFrequency<=MAX_DETECT_HZ;
-  if(longOk&&shortOk){
-    if(onset)return{frequency:shortFrequency,clarity:shortClarity,mode:'transient'};
-    return longClarity>=shortClarity
-      ?{frequency:longFrequency,clarity:longClarity,mode:'sustained'}
-      :{frequency:shortFrequency,clarity:shortClarity,mode:'transient'};
-  }
-  if(longOk)return{frequency:longFrequency,clarity:longClarity,mode:'sustained'};
-  if(shortOk)return{frequency:shortFrequency,clarity:shortClarity,mode:'transient'};
-  return{frequency:0,clarity:0,mode:onset?'transient':'sustained'};
 }
 
 export default function SoundTuner(){
@@ -81,71 +69,91 @@ export default function SoundTuner(){
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const analysisBufferRef=useRef(new Float32Array(BUFFER_SIZE));
   const shortBufferRef=useRef(new Float32Array(SHORT_BUFFER_SIZE));
+  const spectrumRef=useRef(new Float32Array(BUFFER_SIZE/2));
   const rafRef=useRef(0),lastRef=useRef(0);
   const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
   const shortDetectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null);
+  const trackerRef=useRef(new PitchTracker());
+  const needleFilterRef=useRef(new OneEuroFilter());
   const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
-  const displayedMidiRef=useRef<number|null>(null),pendingMidiRef=useRef<number|null>(null),pendingSinceRef=useRef(0),needleCentsRef=useRef<number|null>(null);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
   if(!detectorRef.current){
     const detector=PitchDetector.forFloat32Array(BUFFER_SIZE);
     detector.minVolumeAbsolute=0;
-    detector.clarityThreshold=.05;
+    detector.clarityThreshold=.22;
     detectorRef.current=detector;
   }
   if(!shortDetectorRef.current){
     const detector=PitchDetector.forFloat32Array(SHORT_BUFFER_SIZE);
     detector.minVolumeAbsolute=0;
-    detector.clarityThreshold=.05;
+    detector.clarityThreshold=.18;
     shortDetectorRef.current=detector;
   }
-  useEffect(()=>{a4Ref.current=a4},[a4]);
 
-  function clearPitch(){displayedMidiRef.current=null;pendingMidiRef.current=null;pendingSinceRef.current=0;needleCentsRef.current=null;setNote('—');setFrequency(null);setCents(null);setNeedleCents(null)}
-  function updateNeedle(target:number){const previous=needleCentsRef.current,next=previous===null?target:previous+(target-previous)*NEEDLE_SMOOTHING;needleCentsRef.current=next;setNeedleCents(next)}
-  function stopReference(){if(audioRef.current){audioRef.current.pause();audioRef.current.src='';audioRef.current=null}try{oscRef.current?.stop()}catch{}oscRef.current=null;gainRef.current=null;setActiveRef(null)}
+  useEffect(()=>{
+    a4Ref.current=a4;
+    if(audioRef.current)audioRef.current.playbackRate=a4/440;
+    if(oscRef.current&&ctxRef.current&&activeRef!==null){
+      oscRef.current.frequency.setTargetAtTime(midiFrequency(activeRef,a4),ctxRef.current.currentTime,.015);
+    }
+  },[a4,activeRef]);
+
+  function clearPitch(resetEngine=false){
+    if(resetEngine){trackerRef.current.reset();needleFilterRef.current.reset()}
+    setNote('—');setFrequency(null);setCents(null);setNeedleCents(null);
+  }
+
+  function stopReference(){
+    if(audioRef.current){audioRef.current.pause();audioRef.current.src='';audioRef.current=null}
+    try{oscRef.current?.stop()}catch{}
+    oscRef.current=null;gainRef.current=null;setActiveRef(null);
+  }
 
   async function playReference(midi:number){
-    stopReference();setActiveRef(midi);const label=OPEN_LABELS[OPEN_STRINGS.indexOf(midi as typeof OPEN_STRINGS[number])];
-    const sample=`/assets/ear/${label}.mp3`,audio=new Audio(sample);audio.loop=loop;audio.volume=.72;audio.playbackRate=a4/440;audioRef.current=audio;
-    try{await audio.play();setStatus(`Reference ${label} · ${midiFrequency(midi,a4).toFixed(2)} Hz`)}catch{
-      const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
-      const osc=ctx.createOscillator(),gain=ctx.createGain();osc.frequency.value=midiFrequency(midi,a4);osc.type='sine';gain.gain.value=.13;osc.connect(gain).connect(ctx.destination);osc.start();oscRef.current=osc;gainRef.current=gain;setStatus(`Reference ${label} · oscillator`);if(!loop)setTimeout(()=>{try{osc.stop()}catch{}setActiveRef(null)},2000)
+    stopReference();setActiveRef(midi);
+    const label=OPEN_LABELS[OPEN_STRINGS.indexOf(midi as typeof OPEN_STRINGS[number])];
+    const sample=`/assets/ear/${label}.mp3`,audio=new Audio(sample);
+    audio.loop=loop;audio.volume=.72;audio.playbackRate=a4/440;audioRef.current=audio;
+    try{
+      await audio.play();
+      setStatus(`Reference ${label} · ${midiFrequency(midi,a4).toFixed(2)} Hz`);
+    }catch{
+      const ctx=ctxRef.current||createBrowserAudioContext();
+      if(!ctx){setStatus('Web Audio unavailable');return}
+      ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+      const osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.frequency.value=midiFrequency(midi,a4);osc.type='sine';gain.gain.value=.13;
+      osc.connect(gain).connect(ctx.destination);osc.start();
+      oscRef.current=osc;gainRef.current=gain;
+      setStatus(`Reference ${label} · oscillator`);
+      if(!loop)setTimeout(()=>{try{osc.stop()}catch{}setActiveRef(null)},2000);
     }
   }
 
-  function applyPitch(rawFrequency:number,rawRms:number,mode:'sustained'|'transient'='sustained'){
+  function applyTrackedPitch(rawFrequency:number,rawRms:number,clarity:number,mode:PitchMode,now=performance.now()){
     setMicLevel(levelPercent(rawRms));
-    const mapped=rawFrequency>=MIN_DETECT_HZ&&rawFrequency<=MAX_DETECT_HZ?noteFromFrequency(rawFrequency,a4Ref.current):null;
-    if(!mapped){clearPitch();setStatus('Listening · no pitch candidate');return}
-
-    const now=performance.now(),currentMidi=displayedMidiRef.current;
-    if(currentMidi===null){
-      if(pendingMidiRef.current!==mapped.midi){pendingMidiRef.current=mapped.midi;pendingSinceRef.current=now;setStatus('Listening · stabilizing '+mapped.label);return}
-      if(now-pendingSinceRef.current<NOTE_SWITCH_DELAY_MS){setStatus('Listening · stabilizing '+mapped.label);return}
-      displayedMidiRef.current=mapped.midi;pendingMidiRef.current=null;pendingSinceRef.current=0;
-      setNote(mapped.note);setFrequency(rawFrequency);setCents(mapped.cents);updateNeedle(mapped.cents);
-      setStatus(mode==='transient'?'Raw transient · '+mapped.label:'Raw pitch · '+mapped.label);return;
+    const tracked=trackerRef.current.accept({frequency:rawFrequency,clarity,rms:rawRms,mode,now});
+    if(tracked.frequency===null){
+      if(tracked.state==='candidate'){
+        setStatus('Listening · confirming pitch');
+        return;
+      }
+      clearPitch(false);
+      setStatus('Listening · no reliable pitch');
+      return;
     }
 
-    const currentTarget=midiFrequency(currentMidi,a4Ref.current);
-    const currentCents=1200*Math.log2(rawFrequency/currentTarget);
-    if(mapped.midi!==currentMidi){
-      const crossedBoundary=Math.abs(currentCents)>=50+NOTE_BOUNDARY_BUFFER_CENTS;
-      if(crossedBoundary){
-        if(pendingMidiRef.current!==mapped.midi){pendingMidiRef.current=mapped.midi;pendingSinceRef.current=now}
-        else if(now-pendingSinceRef.current>=NOTE_SWITCH_DELAY_MS){
-          displayedMidiRef.current=mapped.midi;pendingMidiRef.current=null;pendingSinceRef.current=0;
-          setNote(mapped.note);setFrequency(rawFrequency);setCents(mapped.cents);updateNeedle(mapped.cents);
-          setStatus(mode==='transient'?'Raw transient · '+mapped.label:'Raw pitch · '+mapped.label);return;
-        }
-      }else{pendingMidiRef.current=null;pendingSinceRef.current=0}
-    }else{pendingMidiRef.current=null;pendingSinceRef.current=0}
+    const mapped=noteFromFrequency(tracked.frequency,a4Ref.current);
+    const filteredCents=needleFilterRef.current.filter(mapped.cents,now);
+    setNote(mapped.label);
+    setFrequency(tracked.frequency);
+    setCents(mapped.cents);
+    setNeedleCents(filteredCents);
 
-    const held=noteFromFrequency(currentTarget,a4Ref.current);
-    setNote(held.note);setFrequency(rawFrequency);setCents(currentCents);updateNeedle(currentCents);
-    setStatus(mode==='transient'?'Raw transient · '+held.label:'Raw pitch · '+held.label);
+    if(tracked.state==='transition')setStatus(`Tracking ${mapped.label} · checking note change`);
+    else if(tracked.held)setStatus(`Tracking ${mapped.label} · brief dropout held`);
+    else setStatus(`${mode==='transient'?'Transient':'Pitch'} · ${mapped.label} · ${Math.round(tracked.confidence*100)}% confidence`);
   }
 
   function analyse(ts:number){
@@ -154,16 +162,25 @@ export default function SoundTuner(){
     if(ts-lastRef.current>=ANALYSIS_MS){
       lastRef.current=ts;
       const input=bufferRef.current;analyser.getFloatTimeDomainData(input);
-      const inputRms=rms(input),analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current;
+      const inputRms=rms(input),analysis=analysisBufferRef.current,shortAnalysis=shortBufferRef.current,spectrum=spectrumRef.current;
       prepareSensitiveFrame(input,analysis);
       shortAnalysis.set(analysis.subarray(BUFFER_SIZE-SHORT_BUFFER_SIZE));
+      analyser.getFloatFrequencyData(spectrum);
+
       const [longFrequency,longClarity]=longDetector.findPitch(analysis,ctx.sampleRate);
       const [shortFrequency,shortClarity]=shortDetector.findPitch(shortAnalysis,ctx.sampleRate);
       const recentRms=segmentRms(input,BUFFER_SIZE-2048,BUFFER_SIZE);
       const previousRms=segmentRms(input,BUFFER_SIZE-6144,BUFFER_SIZE-2048);
       const onset=recentRms>Math.max(previousRms*1.18,previousRms+0.00018);
-      const picked=chooseRawPitch(longFrequency>0?longFrequency:0,longClarity,shortFrequency>0?shortFrequency:0,shortClarity,onset);
-      applyPitch(picked.frequency,inputRms,picked.mode);
+      const picked=chooseHarmonicCandidate(
+        {frequency:longFrequency>0?longFrequency:0,clarity:longClarity,mode:'sustained'},
+        {frequency:shortFrequency>0?shortFrequency:0,clarity:shortClarity,mode:onset?'transient':'sustained'},
+        spectrum,
+        ctx.sampleRate,
+        MIN_DETECT_HZ,
+        MAX_DETECT_HZ
+      );
+      applyTrackedPitch(picked.frequency,inputRms,picked.clarity,picked.mode,ts);
     }
     rafRef.current=requestAnimationFrame(analyse);
   }
@@ -176,11 +193,20 @@ export default function SoundTuner(){
       microphone=requested.microphone;
     }
     if(microphone!=='granted')throw new Error('microphone permission denied');
-    const listener=await NativePitch.addListener('pitch',sample=>applyPitch(sample.frequency>0?sample.frequency:0,sample.rms,sample.mode??'sustained'));
+    trackerRef.current.reset();needleFilterRef.current.reset();
+    const listener=await NativePitch.addListener('pitch',sample=>{
+      applyTrackedPitch(
+        sample.frequency>0?sample.frequency:0,
+        sample.rms,
+        Math.max(0,Math.min(1,sample.confidence||0)),
+        sample.mode??'sustained'
+      );
+    });
     nativeListenerRef.current=listener;
     try{
       await NativePitch.start();
-      nativeActiveRef.current=true;setRunning(true);clearPitch();setMicLevel(0);setStatus('Listening · raw amplified input');
+      nativeActiveRef.current=true;setRunning(true);clearPitch(false);setMicLevel(0);
+      setStatus('Listening · harmonic-aware tracking ready');
     }catch(err){
       nativeListenerRef.current=null;await listener.remove();throw err;
     }
@@ -194,12 +220,17 @@ export default function SoundTuner(){
     }
     try{
       const stream=await requestRawMicrophone();
-      const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){stream.getTracks().forEach(t=>t.stop());setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+      const ctx=ctxRef.current||createBrowserAudioContext();
+      if(!ctx){stream.getTracks().forEach(t=>t.stop());setStatus('Web Audio unavailable');return}
+      ctxRef.current=ctx;await resumeBrowserAudio(ctx);
       const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser();
-      analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;
+      analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;analyser.minDecibels=-100;analyser.maxDecibels=-10;
       source.connect(analyser);
       streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;
-      setRunning(true);clearPitch();setMicLevel(0);setStatus('Listening · raw amplified input');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
+      trackerRef.current.reset();needleFilterRef.current.reset();
+      setRunning(true);clearPitch(false);setMicLevel(0);
+      setStatus('Listening · harmonic-aware tracking ready');lastRef.current=0;
+      rafRef.current=requestAnimationFrame(analyse);
     }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
   }
 
@@ -209,12 +240,13 @@ export default function SoundTuner(){
       const listener=nativeListenerRef.current;nativeListenerRef.current=null;
       if(listener)void listener.remove();
       void NativePitch.stop().catch(()=>{});
-      setRunning(false);setMicLevel(0);clearPitch();setStatus('Microphone stopped');return;
+      setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
     }
     cancelAnimationFrame(rafRef.current);rafRef.current=0;
     try{sourceRef.current?.disconnect();analyserRef.current?.disconnect()}catch{}
-    streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;analyserRef.current=null;streamRef.current=null;
-    setRunning(false);setMicLevel(0);clearPitch();setStatus('Microphone stopped');
+    streamRef.current?.getTracks().forEach(t=>t.stop());
+    sourceRef.current=null;analyserRef.current=null;streamRef.current=null;
+    setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
   useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);streamRef.current?.getTracks().forEach(t=>t.stop());if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
@@ -223,7 +255,7 @@ export default function SoundTuner(){
   const inTune=cents!==null&&Math.abs(cents)<=3;
   const color=cents===null?'#94a3b8':inTune?'#0d9488':cents<0?'#d97706':'#dc2626';
   return <>
-    <div className="page-head"><div><p className="eyebrow">Universal live pitch</p><h1>Sound Tuner</h1><p>Raw amplified real-time pitch detection. The nearest chromatic note is shown immediately, while the needle displays the exact cents offset from that note.</p></div><div className="badge">Raw mic → amplify → note</div></div>
+    <div className="page-head"><div><p className="eyebrow">Universal live pitch</p><h1>Sound Tuner</h1><p>Harmonic-aware real-time pitch detection with confidence gating, dropout hold and adaptive needle smoothing for stable instrument tuning.</p></div><div className="badge">Detect → validate → track</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="grid-2">
@@ -233,7 +265,7 @@ export default function SoundTuner(){
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-5,5)}/><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></svg>
             <div className="tuner-readout"><div className="detected-note" style={{color}}>{note}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'} {cents!==null&&<>· {cents>=0?'+':''}{cents.toFixed(1)} cents</>}</div><div className="hint">{!running?'Start the microphone':cents===null?'Play a steady tone':inTune?'In tune':cents<0?'Flat · tune higher':'Sharp · tune lower'}</div></div>
           </div>
-          <div className="target-row"><span className="target-chip">20–5000 Hz</span><span className="target-chip">~60 Hz UI analysis</span></div>
+          <div className="target-row"><span className="target-chip">20–5000 Hz</span><span className="target-chip">Harmonic validated</span></div>
         </main>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Reference A4</span><span>{a4.toFixed(1)} Hz</span></div><input className="range" type="range" min="415" max="466" step=".1" value={a4} onChange={e=>setA4(+e.target.value)}/><div className="seg three"><button onClick={()=>setA4(415)} className={a4===415?'active':''}>415</button><button onClick={()=>setA4(440)} className={a4===440?'active':''}>440</button><button onClick={()=>setA4(442)} className={a4===442?'active':''}>442</button></div></div>

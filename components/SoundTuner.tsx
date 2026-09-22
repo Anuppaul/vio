@@ -63,6 +63,7 @@ type NativePitchPlugin={
   diagnostics():Promise<NativePitchStartInfo>;
   addListener(eventName:'pitch',listener:(sample:NativePitchSample)=>void):Promise<PluginListenerHandle>;
   addListener(eventName:'error',listener:(error:NativePitchError)=>void):Promise<PluginListenerHandle>;
+  addListener(eventName:'backend',listener:(info:NativePitchStartInfo)=>void):Promise<PluginListenerHandle>;
 };
 const NativePitch=registerPlugin<NativePitchPlugin>('NativePitch');
 function hasNativePitch(){return Capacitor.isNativePlatform()&&Capacitor.isPluginAvailable('NativePitch')}
@@ -132,7 +133,7 @@ export default function SoundTuner(){
   const mpmConsensusRef=useRef<PitchCandidate|null>(null);
   const yinConsensusAtRef=useRef(0);
   const mpmConsensusAtRef=useRef(48);
-  const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeErrorListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
+  const nativeListenerRef=useRef<PluginListenerHandle|null>(null),nativeErrorListenerRef=useRef<PluginListenerHandle|null>(null),nativeBackendListenerRef=useRef<PluginListenerHandle|null>(null),nativeActiveRef=useRef(false),a4Ref=useRef(a4);
   const audioRef=useRef<HTMLAudioElement|null>(null),oscRef=useRef<OscillatorNode|null>(null),gainRef=useRef<GainNode|null>(null);
 
   if(!detectorRef.current){
@@ -553,6 +554,32 @@ export default function SoundTuner(){
     };
   }
 
+  function clearNativeListeners(){
+    const pitch=nativeListenerRef.current;nativeListenerRef.current=null;
+    const error=nativeErrorListenerRef.current;nativeErrorListenerRef.current=null;
+    const backend=nativeBackendListenerRef.current;nativeBackendListenerRef.current=null;
+    if(pitch)void pitch.remove();
+    if(error)void error.remove();
+    if(backend)void backend.remove();
+  }
+
+  function applyNativeBackendInfo(nativeInfo:NativePitchStartInfo,recovered=false){
+    const nativeRange=detectorRangeForSampleRate(nativeInfo.sampleRate);
+    const nativeCapturePath=nativeInfo.backend==='oboe'?'Native Oboe':'Native AudioRecord';
+    detectRangeRef.current=nativeRange;
+    setDetectRange(nativeRange);
+    setCapturePath(nativeCapturePath);
+    setDspPath('Native');
+
+    const burst=nativeInfo.framesPerBurst&&nativeInfo.framesPerBurst>0
+      ?` · burst ${nativeInfo.framesPerBurst}`
+      :'';
+    const fallback=nativeInfo.backend==='audiorecord'&&nativeInfo.oboeAvailable
+      ?` · Oboe fallback ${nativeInfo.oboeFallbackErrorCode??'unknown'}`
+      :'';
+    setStatus(`${recovered?'Recovered':'Listening'} · ${nativeInfo.source} · ${nativeInfo.sampleRate} Hz${burst}${fallback}`);
+  }
+
   async function startNativePitch(session:number){
     const current=await NativePitch.checkPermissions();
     if(session!==captureSessionRef.current)return;
@@ -576,34 +603,33 @@ export default function SoundTuner(){
       captureSessionRef.current++;
       startingRef.current=false;setStarting(false);
       nativeActiveRef.current=false;
+      clearNativeListeners();
       setRunning(false);setMicLevel(0);clearPitch(true);
       setStatus(`Microphone stopped unexpectedly: ${error.message||'audio capture failed'}`);
     });
+    const backendListener=await NativePitch.addListener('backend',nativeInfo=>{
+      if(session!==captureSessionRef.current)return;
+      trackerRef.current.reset();needleFilterRef.current.reset();
+      clearPitch(false);setMicLevel(0);
+      applyNativeBackendInfo(nativeInfo,true);
+    });
     nativeListenerRef.current=listener;
     nativeErrorListenerRef.current=errorListener;
+    nativeBackendListenerRef.current=backendListener;
     try{
       const nativeInfo=await NativePitch.start();
       if(session!==captureSessionRef.current){
-        nativeListenerRef.current=null;nativeErrorListenerRef.current=null;
-        await listener.remove();await errorListener.remove();
+        nativeListenerRef.current=null;nativeErrorListenerRef.current=null;nativeBackendListenerRef.current=null;
+        await listener.remove();await errorListener.remove();await backendListener.remove();
         await NativePitch.stop().catch(()=>{});
         return;
       }
-      const nativeRange=detectorRangeForSampleRate(nativeInfo.sampleRate);
-      const nativeCapturePath=nativeInfo.backend==='oboe'?'Native Oboe':'Native AudioRecord';
-      detectRangeRef.current=nativeRange;setDetectRange(nativeRange);setCapturePath(nativeCapturePath);setDspPath('Native');
       nativeActiveRef.current=true;startingRef.current=false;setStarting(false);
       setRunning(true);clearPitch(false);setMicLevel(0);
-      const burst=nativeInfo.framesPerBurst&&nativeInfo.framesPerBurst>0
-        ?` · burst ${nativeInfo.framesPerBurst}`
-        :'';
-      const fallback=nativeInfo.backend==='audiorecord'&&nativeInfo.oboeAvailable
-        ?` · Oboe fallback ${nativeInfo.oboeFallbackErrorCode??'unknown'}`
-        :'';
-      setStatus(`Listening · ${nativeInfo.source} · ${nativeInfo.sampleRate} Hz${burst}${fallback}`);
+      applyNativeBackendInfo(nativeInfo,false);
     }catch(err){
-      nativeListenerRef.current=null;nativeErrorListenerRef.current=null;
-      await listener.remove();await errorListener.remove();throw err;
+      nativeListenerRef.current=null;nativeErrorListenerRef.current=null;nativeBackendListenerRef.current=null;
+      await listener.remove();await errorListener.remove();await backendListener.remove();throw err;
     }
   }
 
@@ -720,22 +746,18 @@ export default function SoundTuner(){
     captureSessionRef.current++;
     startingRef.current=false;setStarting(false);
     cleanupWebCaptureResources(true);
-    if(nativeListenerRef.current){void nativeListenerRef.current.remove();nativeListenerRef.current=null}
-    if(nativeErrorListenerRef.current){void nativeErrorListenerRef.current.remove();nativeErrorListenerRef.current=null}
+    clearNativeListeners();
     if(nativeActiveRef.current){nativeActiveRef.current=false;void NativePitch.stop().catch(()=>{})}
     setRunning(false);setMicLevel(0);clearPitch(true);
     setStatus('Microphone start cancelled');
   }
 
   function stop(){
-    if(nativeActiveRef.current||nativeListenerRef.current||nativeErrorListenerRef.current){
+    if(nativeActiveRef.current||nativeListenerRef.current||nativeErrorListenerRef.current||nativeBackendListenerRef.current){
       captureSessionRef.current++;
       startingRef.current=false;setStarting(false);
       nativeActiveRef.current=false;
-      const listener=nativeListenerRef.current;nativeListenerRef.current=null;
-      const errorListener=nativeErrorListenerRef.current;nativeErrorListenerRef.current=null;
-      if(listener)void listener.remove();
-      if(errorListener)void errorListener.remove();
+      clearNativeListeners();
       void NativePitch.stop().catch(()=>{});
       longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
@@ -745,7 +767,7 @@ export default function SoundTuner(){
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
   }
 
-  useEffect(()=>()=>{cleanupWebCaptureResources(true);if(nativeListenerRef.current)void nativeListenerRef.current.remove();if(nativeErrorListenerRef.current)void nativeErrorListenerRef.current.remove();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
+  useEffect(()=>()=>{cleanupWebCaptureResources(true);clearNativeListeners();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
 
   const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;

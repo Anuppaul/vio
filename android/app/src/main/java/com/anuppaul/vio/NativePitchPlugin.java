@@ -513,6 +513,7 @@ public class NativePitchPlugin extends Plugin {
 
             AudioRecord created = createRecorder();
             if (created == null) {
+                running.set(true);
                 return false;
             }
 
@@ -526,6 +527,7 @@ public class NativePitchPlugin extends Plugin {
                 releaseRecorder(created);
                 recorder = null;
                 releasePlatformAudioEffects();
+                running.set(true);
                 return false;
             }
 
@@ -533,6 +535,7 @@ public class NativePitchPlugin extends Plugin {
                 releaseRecorder(created);
                 recorder = null;
                 releasePlatformAudioEffects();
+                running.set(true);
                 return false;
             }
 

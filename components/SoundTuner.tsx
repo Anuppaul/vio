@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { PitchDetector } from 'pitchy';
 import { OPEN_STRINGS, midiFrequency, noteFromFrequency, rms } from '@/lib/music';
+import { prepareSensitiveFrame, segmentRms } from '@/lib/tuner-signal';
 import { detectPitch } from '@/lib/yin';
 import { detectMpm } from '@/lib/mpm';
 import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
@@ -57,21 +58,6 @@ function hasNativePitch(){return Capacitor.isNativePlatform()&&Capacitor.isPlugi
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)]}
 function arcPath(r:number,a0:number,a1:number){const [x0,y0]=arcPoint(360,330,r,a0),[x1,y1]=arcPoint(360,330,r,a1);return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`}
 function levelPercent(value:number){if(value<=0)return 0;const db=20*Math.log10(value);return Math.round(Math.max(0,Math.min(100,(db+60)/50*100)))}
-function segmentRms(buffer:Float32Array,start:number,end:number){
-  let sum=0,count=0;for(let i=Math.max(0,start);i<Math.min(buffer.length,end);i++){sum+=buffer[i]*buffer[i];count++}
-  return count?Math.sqrt(sum/count):0;
-}
-function prepareSensitiveFrame(input:Float32Array,output:Float32Array){
-  let mean=0;for(let i=0;i<input.length;i++)mean+=input[i];mean/=input.length;
-  let sum=0,peak=0;
-  for(let i=0;i<input.length;i++){const v=input[i]-mean;sum+=v*v;peak=Math.max(peak,Math.abs(v))}
-  const frameRms=Math.sqrt(sum/input.length);
-  const targetRms=.32,maxGain=64,maxPeak=.97;
-  const rmsGain=frameRms>0?targetRms/frameRms:1;
-  const peakGain=peak>0?maxPeak/peak:1;
-  const gain=Math.max(1,Math.min(maxGain,rmsGain,peakGain));
-  for(let i=0;i<input.length;i++)output[i]=(input[i]-mean)*gain;
-}
 
 export default function SoundTuner(){
   const [a4,setA4]=useState(440);

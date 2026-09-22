@@ -63,7 +63,7 @@ The callback does not:
 
 The existing Java DSP worker reads chunks from the native ring through JNI outside the real-time callback.
 
-When the Java consumer falls behind, the native callback does not block. New frames are dropped and counted rather than stalling the audio thread.
+When the Java consumer falls behind, the native callback does not block. A full ring drops incoming frames rather than stalling the audio thread. If the Java consumer later sees more than 8192 queued frames, it discards stale backlog and keeps the latest 2048 frames so the tuner does not replay old audio after a stall. All skipped/dropped frames are counted.
 
 ## Diagnostics
 
@@ -75,6 +75,7 @@ The Capacitor `NativePitch.start()` response includes:
 - `framesPerBurst`
 - `bufferCapacityFrames`
 - `droppedFrames`
+- `ringCapacityFrames`
 - `oboeAvailable`
 - `oboeFallbackErrorCode`
 
@@ -96,15 +97,25 @@ The checked-in Android module now contains C++ code under:
 android/app/src/main/cpp/
 ```
 
-Android builds therefore require the Android NDK and CMake 3.22.1-compatible tooling. Gradle's external-native-build integration and Prefab resolve the Oboe headers/library.
+Android builds therefore require the Android NDK and CMake 3.22.1-or-newer-compatible tooling. Gradle's external-native-build integration and Prefab resolve the Oboe headers/library. The build does not hard-pin one installed CMake package version; the CMake project itself enforces the minimum.
 
 Native build outputs under `android/.cxx/` and `android/app/.cxx/` are ignored.
 
-## Fallback boundary
+## Fallback and runtime recovery
 
-Failure to load the native library or open an Oboe stream does not disable the tuner. VIO falls back to the previous `AudioRecord` path.
+Failure to load the native library, resolve JNI symbols, or open an Oboe stream does not disable the tuner. VIO falls back to the previous `AudioRecord` path.
 
-If an already-running Oboe stream is disconnected, the native worker reports the capture failure to the existing Sound Tuner error path. Automatic route recovery is a separate acceptance/hardening phase because reconnect behavior must be tested on physical devices (wired headset, USB, Bluetooth, calls, and device route changes).
+For an already-running Oboe stream failure, VIO now performs bounded recovery:
+
+1. Stop the failed Oboe stream.
+2. Attempt one Oboe reopen using the normal low-latency/preset fallback sequence.
+3. If Oboe cannot reopen, attempt the Java `AudioRecord` backend.
+4. Emit a `backend` event when recovery succeeds.
+5. Reset the JS pitch tracker/needle state and update the displayed backend/sample-rate range.
+
+The retry is deliberately bounded to prevent reconnect loops. If neither backend can recover, the existing `error` event stops the tuner cleanly.
+
+Physical route-change acceptance is still required for wired headsets, USB audio, Bluetooth, calls, and device-specific routing behavior.
 
 ## Acceptance still required
 

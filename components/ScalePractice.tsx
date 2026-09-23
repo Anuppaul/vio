@@ -12,22 +12,42 @@ const SA_READY_MIN_INLIERS=5;
 const SA_READY_TOLERANCE_CENTS=12;
 const SA_VOICE_SECONDS=.7;
 const SA_CAPTURE_MAX_SECONDS=1.15;
-const BASE_SWARAS=['সা','ঋ','র','জ্ঞ','গ','ম','ক্ষ','প','দ','ধ','ণ','ন'];
+
+type Saptak='mandra'|'madhya'|'taar';
+type UiLanguage='bn'|'hi'|'en';
+
+const LANGUAGE_OPTIONS:{value:UiLanguage;label:string}[]=[
+  {value:'bn',label:'বাংলা'},
+  {value:'hi',label:'हिन्दी'},
+  {value:'en',label:'English'}
+];
+
+const SWARA_LABELS:Record<UiLanguage,string[]>={
+  bn:['সা','রে♭','রে','গা♭','গা','মা','মা♯','পা','ধা♭','ধা','নি♭','নি'],
+  hi:['सा','रे♭','रे','गा♭','गा','म','म♯','प','ध♭','ध','नि♭','नि'],
+  en:['Sa','Re♭','Re','Ga♭','Ga','Ma','Ma♯','Pa','Dha♭','Dha','Ni♭','Ni']
+};
+
+const SAPTAK_NAMES:Record<UiLanguage,Record<Saptak,string>>={
+  bn:{mandra:'মন্দ্র সপ্তক',madhya:'মধ্য সপ্তক',taar:'তার সপ্তক'},
+  hi:{mandra:'मंद्र सप्तक',madhya:'मध्य सप्तक',taar:'तार सप्तक'},
+  en:{mandra:'Mandra Saptak',madhya:'Madhya Saptak',taar:'Taar Saptak'}
+};
+
 const SAPTAK_OFFSETS={
   mandra:Array.from({length:12},(_,i)=>i-12),
   madhya:Array.from({length:12},(_,i)=>i),
   taar:Array.from({length:12},(_,i)=>i+12)
 };
 
-type Saptak='mandra'|'madhya'|'taar';
-type RelativePitch={offset:number;degree:number;saptak:Saptak;label:string;target:number;cents:number};
+type RelativePitch={offset:number;degree:number;saptak:Saptak;target:number;cents:number};
 
 function mod(n:number,m:number){return((n%m)+m)%m}
 function levelPercent(value:number){if(value<=0)return 0;const db=20*Math.log10(value);return Math.round(Math.max(0,Math.min(100,(db+60)/50*100)))}
 function arcPoint(cx:number,cy:number,r:number,deg:number){const a=deg*Math.PI/180;return[cx+r*Math.sin(a),cy-r*Math.cos(a)]}
 function arcPath(r:number,a0:number,a1:number){const[x0,y0]=arcPoint(360,330,r,a0),[x1,y1]=arcPoint(360,330,r,a1);return`M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`}
-function swaraLabel(degree:number,saptak:Saptak){const base=BASE_SWARAS[degree];return saptak==='taar'?`র্${base}`:base}
-function saptakName(saptak:Saptak){return saptak==='mandra'?'মন্দ্র সপ্তক':saptak==='taar'?'তার সপ্তক':'মধ্য সপ্তক'}
+function swaraLabel(degree:number,language:UiLanguage){return SWARA_LABELS[language][degree]}
+function saptakName(saptak:Saptak,language:UiLanguage){return SAPTAK_NAMES[language][saptak]}
 function stablePitch(values:number[]){
   if(values.length<SA_READY_FRAMES)return null;
   const logs=values.map(v=>Math.log2(v)).sort((a,b)=>a-b),mid=Math.floor(logs.length/2),median=logs.length%2?logs[mid]:(logs[mid-1]+logs[mid])/2;
@@ -41,7 +61,7 @@ function relativePitch(frequency:number,sa:number):RelativePitch|null{
   if(offset<-12||offset>23)return null;
   const degree=mod(offset,12),saptak:Saptak=offset<0?'mandra':offset>=12?'taar':'madhya';
   const target=sa*Math.pow(2,offset/12),cents=1200*Math.log2(frequency/target);
-  return{offset,degree,saptak,label:swaraLabel(degree,saptak),target,cents};
+  return{offset,degree,saptak,target,cents};
 }
 
 export default function ScalePractice(){

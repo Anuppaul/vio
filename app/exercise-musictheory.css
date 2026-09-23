@@ -13,7 +13,7 @@
   overflow:hidden;
   border:1px solid #cfd3d8;
   border-radius:6px;
-  background:#eeeeef;
+  background:#fff;
   box-shadow:0 3px 14px rgba(24,30,39,.12);
   backdrop-filter:none;
 }
@@ -777,4 +777,13 @@ body:has(.exercise-page){
     margin-left:auto !important;
     margin-right:auto !important;
   }
+}
+
+
+/* Exercise outer shell must stay white; the inner practice card provides its own surface. */
+.exercise-page .exercise-app.mt-note-identification{
+  background:#fff !important;
+}
+.exercise-page .exercise-work{
+  background:#fff;
 }

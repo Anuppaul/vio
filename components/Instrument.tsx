@@ -21,16 +21,21 @@ type LockableScreenOrientation=ScreenOrientation&{
 
 type Voice={
   pointerId:number;
-  oscA:OscillatorNode;
-  oscB:OscillatorNode;
-  mixA:GainNode;
-  mixB:GainNode;
+  model:'osc'|'string';
+  oscA:OscillatorNode|null;
+  oscB:OscillatorNode|null;
+  mixA:GainNode|null;
+  mixB:GainNode|null;
   filter:BiquadFilterNode;
   amp:GainNode;
-  lfo:OscillatorNode;
-  lfoDepth:GainNode;
+  lfo:OscillatorNode|null;
+  lfoDepth:GainNode|null;
   noise:AudioBufferSourceNode|null;
   noiseGain:GainNode|null;
+  stringDelay:DelayNode|null;
+  stringFeedback:GainNode|null;
+  stringDamping:BiquadFilterNode|null;
+  stringBody:BiquadFilterNode|null;
   ratio:number;
   release:number;
   noiseAmount:number;
@@ -132,7 +137,7 @@ export default function Instrument(){
 
   useEffect(()=>()=>{
     for(const voice of voicesRef.current.values()){
-      try{voice.amp.gain.cancelScheduledValues(0);voice.amp.gain.value=0;voice.oscA.stop();voice.oscB.stop();voice.lfo.stop();voice.noise?.stop()}catch{}
+      try{voice.amp.gain.cancelScheduledValues(0);voice.amp.gain.value=0;voice.oscA?.stop();voice.oscB?.stop();voice.lfo?.stop();voice.noise?.stop()}catch{}
     }
     voicesRef.current.clear();
     try{ctxRef.current?.close()}catch{}
@@ -188,24 +193,19 @@ export default function Instrument(){
   }
 
   function preset(soundId:SoundId){
-    if(soundId==='geo')return{wave:'geo' as const,a:'sawtooth' as OscillatorType,b:'triangle' as OscillatorType,mixA:.58,mixB:.24,ratio:2,detune:-5,cutoff:6200,q:1.1,attack:.008,release:.22,noise:0,brightMin:1250,brightRange:6900,expressionMin:.10,expressionRange:.30};
+    if(soundId==='geo')return{wave:'geo' as const,a:'sawtooth' as OscillatorType,b:'triangle' as OscillatorType,mixA:0,mixB:0,ratio:1,detune:0,cutoff:7200,q:.72,attack:.004,release:.48,noise:0,brightMin:1450,brightRange:7000,expressionMin:.12,expressionRange:.34};
     if(soundId==='violin')return{wave:'violin' as const,a:'sawtooth' as OscillatorType,b:'sawtooth' as OscillatorType,mixA:.54,mixB:.33,ratio:1,detune:4.5,cutoff:5100,q:.82,attack:.04,release:.42,noise:.038,brightMin:1050,brightRange:5200,expressionMin:.085,expressionRange:.245};
     if(soundId==='glass')return{wave:null,a:'sine' as OscillatorType,b:'triangle' as OscillatorType,mixA:.66,mixB:.22,ratio:2,detune:-7,cutoff:5200,q:1.3,attack:.012,release:.22,noise:0,brightMin:1600,brightRange:6200,expressionMin:.08,expressionRange:.22};
     if(soundId==='warm')return{wave:null,a:'triangle' as OscillatorType,b:'sine' as OscillatorType,mixA:.62,mixB:.34,ratio:1,detune:-7,cutoff:2350,q:.8,attack:.028,release:.28,noise:0,brightMin:800,brightRange:3600,expressionMin:.09,expressionRange:.24};
     return{wave:null,a:'sawtooth' as OscillatorType,b:'triangle' as OscillatorType,mixA:.34,mixB:.38,ratio:1,detune:-7,cutoff:3100,q:1.05,attack:.035,release:.34,noise:.012,brightMin:950,brightRange:4500,expressionMin:.09,expressionRange:.25};
   }
 
-  function periodicWave(ctx:AudioContext,kind:'geo'|'violin'){
+  function periodicWave(ctx:AudioContext,kind:'violin'){
     const cached=waveCacheRef.current.get(kind);
     if(cached)return cached;
-    const harmonics=kind==='violin'
-      ?[0,1,.86,.72,.63,.50,.42,.34,.29,.24,.20,.17,.145,.12,.10,.085,.07]
-      :[0,1,.68,.48,.37,.29,.23,.19,.16,.13,.11,.095,.08,.07,.06];
+    const harmonics=[0,1,.86,.72,.63,.50,.42,.34,.29,.24,.20,.17,.145,.12,.10,.085,.07];
     const real=new Float32Array(harmonics.length),imag=new Float32Array(harmonics.length);
-    for(let n=1;n<harmonics.length;n++){
-      imag[n]=harmonics[n];
-      if(kind==='geo'&&n%3===0)real[n]=harmonics[n]*.11;
-    }
+    for(let n=1;n<harmonics.length;n++)imag[n]=harmonics[n];
     const wave=ctx.createPeriodicWave(real,imag,{disableNormalization:false});
     waveCacheRef.current.set(kind,wave);
     return wave;
@@ -223,6 +223,34 @@ export default function Instrument(){
     }
     noiseBufferRef.current=buffer;
     return buffer;
+  }
+
+  function startPhysicalString(ctx:AudioContext,master:GainNode,frequency:number,amp:GainNode,filter:BiquadFilterNode){
+    const delay=ctx.createDelay(1);
+    const damping=ctx.createBiquadFilter();
+    const feedback=ctx.createGain();
+    const body=ctx.createBiquadFilter();
+    const excitation=ctx.createBufferSource();
+    const excitationGain=ctx.createGain();
+
+    delay.delayTime.value=clamp(1/Math.max(35,frequency),.0008,.045);
+    damping.type='lowpass';damping.frequency.value=5600;damping.Q.value=.35;
+    feedback.gain.value=.986;
+    body.type='peaking';body.frequency.value=285;body.Q.value=1.15;body.gain.value=5.5;
+
+    delay.connect(damping);
+    damping.connect(feedback).connect(delay);
+    damping.connect(body).connect(filter).connect(amp).connect(master);
+
+    excitation.buffer=bowNoise(ctx);
+    excitation.loop=false;
+    excitationGain.gain.setValueAtTime(.82,ctx.currentTime);
+    excitationGain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.038);
+    excitation.connect(excitationGain).connect(delay);
+    excitation.start();
+    excitation.stop(ctx.currentTime+.05);
+
+    return{delay,damping,feedback,body,excitation};
   }
 
   function frequencyForOffset(offset:number){
@@ -249,14 +277,20 @@ export default function Instrument(){
     if(!ctx)return;
     const now=ctx.currentTime,slide=immediate ? .002 : .018;
     voice.offset=point.offset;
-    voice.oscA.frequency.setTargetAtTime(point.frequency,now,slide);
-    voice.oscB.frequency.setTargetAtTime(point.frequency*voice.ratio,now,slide);
+    if(voice.model==='string'&&voice.stringDelay){
+      const delayTime=clamp(1/Math.max(35,point.frequency),.0008,.045);
+      voice.stringDelay.delayTime.setTargetAtTime(delayTime,now,slide);
+      if(voice.stringFeedback)voice.stringFeedback.gain.setTargetAtTime(.981+(1-point.y)*.012,now,.03);
+    }else{
+      voice.oscA?.frequency.setTargetAtTime(point.frequency,now,slide);
+      voice.oscB?.frequency.setTargetAtTime(point.frequency*voice.ratio,now,slide);
+    }
     const brightness=voice.brightMin+(1-point.y)*voice.brightRange;
     voice.filter.frequency.setTargetAtTime(brightness,now,.025);
     const expression=voice.expressionMin+(1-point.y)*voice.expressionRange;
     voice.amp.gain.setTargetAtTime(expression,now,.02);
     if(voice.noiseGain)voice.noiseGain.gain.setTargetAtTime(voice.noiseAmount*(.45+(1-point.y)*.85),now,.025);
-    voice.lfoDepth.gain.setTargetAtTime(liveRef.current.vibrato,now,.025);
+    voice.lfoDepth?.gain.setTargetAtTime(liveRef.current.vibrato,now,.025);
   }
 
   async function startVoice(event:ReactPointerEvent<HTMLDivElement>){
@@ -271,32 +305,47 @@ export default function Instrument(){
       if(!pendingPointersRef.current.has(event.pointerId)||!master)return;
       pendingPointersRef.current.delete(event.pointerId);
       const p=preset(liveRef.current.sound);
-      const oscA=ctx.createOscillator(),oscB=ctx.createOscillator();
-      const mixA=ctx.createGain(),mixB=ctx.createGain(),filter=ctx.createBiquadFilter(),amp=ctx.createGain();
-      const lfo=ctx.createOscillator(),lfoDepth=ctx.createGain();
-      if(p.wave){
-        const wave=periodicWave(ctx,p.wave);
-        oscA.setPeriodicWave(wave);oscB.setPeriodicWave(wave);
-      }else{
-        oscA.type=p.a;oscB.type=p.b;
-      }
-      mixA.gain.value=p.mixA;mixB.gain.value=p.mixB;
-      oscB.detune.value=p.detune;
+      const filter=ctx.createBiquadFilter(),amp=ctx.createGain();
       filter.type='lowpass';filter.Q.value=p.q;filter.frequency.value=p.cutoff;
       amp.gain.value=.0001;
-      lfo.type='sine';lfo.frequency.value=p.wave==='violin'?5.3:5.8;lfoDepth.gain.value=liveRef.current.vibrato;
-      lfo.connect(lfoDepth);lfoDepth.connect(oscA.detune);lfoDepth.connect(oscB.detune);
-      oscA.connect(mixA).connect(filter);oscB.connect(mixB).connect(filter);
+
+      let oscA:OscillatorNode|null=null,oscB:OscillatorNode|null=null;
+      let mixA:GainNode|null=null,mixB:GainNode|null=null;
+      let lfo:OscillatorNode|null=null,lfoDepth:GainNode|null=null;
       let noise:AudioBufferSourceNode|null=null,noiseGain:GainNode|null=null;
-      if(p.noise>0){
-        noise=ctx.createBufferSource();noise.buffer=bowNoise(ctx);noise.loop=true;
-        noiseGain=ctx.createGain();noiseGain.gain.value=p.noise;
-        noise.connect(noiseGain).connect(filter);
+      let stringDelay:DelayNode|null=null,stringFeedback:GainNode|null=null,stringDamping:BiquadFilterNode|null=null,stringBody:BiquadFilterNode|null=null;
+
+      if(liveRef.current.sound==='geo'){
+        const physical=startPhysicalString(ctx,master,point.frequency,amp,filter);
+        stringDelay=physical.delay;stringFeedback=physical.feedback;stringDamping=physical.damping;stringBody=physical.body;
+        noise=physical.excitation;
+      }else{
+        oscA=ctx.createOscillator();oscB=ctx.createOscillator();
+        mixA=ctx.createGain();mixB=ctx.createGain();
+        lfo=ctx.createOscillator();lfoDepth=ctx.createGain();
+        if(p.wave==='violin'){
+          const wave=periodicWave(ctx,'violin');
+          oscA.setPeriodicWave(wave);oscB.setPeriodicWave(wave);
+        }else{
+          oscA.type=p.a;oscB.type=p.b;
+        }
+        mixA.gain.value=p.mixA;mixB.gain.value=p.mixB;
+        oscB.detune.value=p.detune;
+        lfo.type='sine';lfo.frequency.value=p.wave==='violin'?5.3:5.8;lfoDepth.gain.value=liveRef.current.vibrato;
+        lfo.connect(lfoDepth);lfoDepth.connect(oscA.detune);lfoDepth.connect(oscB.detune);
+        oscA.connect(mixA).connect(filter);oscB.connect(mixB).connect(filter);
+        if(p.noise>0){
+          noise=ctx.createBufferSource();noise.buffer=bowNoise(ctx);noise.loop=true;
+          noiseGain=ctx.createGain();noiseGain.gain.value=p.noise;
+          noise.connect(noiseGain).connect(filter);
+        }
+        filter.connect(amp).connect(master);
       }
-      filter.connect(amp).connect(master);
-      const voice:Voice={pointerId:event.pointerId,oscA,oscB,mixA,mixB,filter,amp,lfo,lfoDepth,noise,noiseGain,ratio:p.ratio,release:p.release,noiseAmount:p.noise,brightMin:p.brightMin,brightRange:p.brightRange,expressionMin:p.expressionMin,expressionRange:p.expressionRange,offset:point.offset};
+
+      const voice:Voice={pointerId:event.pointerId,model:liveRef.current.sound==='geo'?'string':'osc',oscA,oscB,mixA,mixB,filter,amp,lfo,lfoDepth,noise,noiseGain,stringDelay,stringFeedback,stringDamping,stringBody,ratio:p.ratio,release:p.release,noiseAmount:p.noise,brightMin:p.brightMin,brightRange:p.brightRange,expressionMin:p.expressionMin,expressionRange:p.expressionRange,offset:point.offset};
       voicesRef.current.set(event.pointerId,voice);
-      oscA.start();oscB.start();lfo.start();noise?.start();
+      oscA?.start();oscB?.start();lfo?.start();
+      if(noise&&liveRef.current.sound!=='geo')noise.start();
       amp.gain.setValueAtTime(.0001,ctx.currentTime);
       amp.gain.exponentialRampToValueAtTime(.13,ctx.currentTime+p.attack);
       setVoiceExpression(voice,point,true);
@@ -331,10 +380,11 @@ export default function Instrument(){
     try{
       voice.amp.gain.cancelScheduledValues(now);
       voice.amp.gain.setTargetAtTime(.0001,now,Math.max(.03,release/4));
-      voice.oscA.stop(now+release);
-      voice.oscB.stop(now+release);
-      voice.lfo.stop(now+release);
-      voice.noise?.stop(now+release);
+      voice.oscA?.stop(now+release);
+      voice.oscB?.stop(now+release);
+      voice.lfo?.stop(now+release);
+      if(voice.noise&&voice.model!=='string')voice.noise.stop(now+release);
+      if(voice.stringFeedback)voice.stringFeedback.gain.setTargetAtTime(.0001,now,.08);
     }catch{}
     setTouches(current=>current.filter(t=>t.pointerId!==pointerId));
     if(voicesRef.current.size===0)setStatus('Touch or drag across the surface');
@@ -362,9 +412,13 @@ export default function Instrument(){
     if(!ctx)return;
     for(const voice of voicesRef.current.values()){
       const frequency=tonicHz*Math.pow(2,voice.offset/12);
-      voice.oscA.frequency.setTargetAtTime(frequency,ctx.currentTime,.02);
-      voice.oscB.frequency.setTargetAtTime(frequency*voice.ratio,ctx.currentTime,.02);
-      voice.lfoDepth.gain.setTargetAtTime(vibrato,ctx.currentTime,.02);
+      if(voice.model==='string'&&voice.stringDelay){
+        voice.stringDelay.delayTime.setTargetAtTime(clamp(1/Math.max(35,frequency),.0008,.045),ctx.currentTime,.02);
+      }else{
+        voice.oscA?.frequency.setTargetAtTime(frequency,ctx.currentTime,.02);
+        voice.oscB?.frequency.setTargetAtTime(frequency*voice.ratio,ctx.currentTime,.02);
+      }
+      voice.lfoDepth?.gain.setTargetAtTime(vibrato,ctx.currentTime,.02);
     }
   },[tonicHz,vibrato]);
 
@@ -395,7 +449,7 @@ export default function Instrument(){
       <div className="control">
         <div className="control-label"><span>Sound</span></div>
         <select value={sound} onChange={e=>setSound(e.target.value as SoundId)}>
-          <option value="geo">Geo Lead</option>
+          <option value="geo">Geo String</option>
           <option value="violin">Refined Violin</option>
           <option value="bowed">Bowed</option>
           <option value="warm">Warm</option>

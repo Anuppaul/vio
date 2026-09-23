@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.view.View;
 import android.view.Window;
 
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -27,6 +28,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -71,9 +73,43 @@ public class NativePitchPlugin extends Plugin {
     private int lastOboeStartError = 0;
     private int oboeRecoveryCount = 0;
 
+    private PermissionState microphonePermissionState() {
+        PermissionState capacitorState = getPermissionState("microphone");
+        if (capacitorState != null) return capacitorState;
+
+        return ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO)
+            == PackageManager.PERMISSION_GRANTED
+            ? PermissionState.GRANTED
+            : PermissionState.PROMPT;
+    }
+
+    @Override
+    @PluginMethod
+    @PermissionCallback
+    public void checkPermissions(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("microphone", microphonePermissionState().toString());
+        call.resolve(result);
+    }
+
+    @Override
+    @PluginMethod
+    public void requestPermissions(PluginCall call) {
+        if (microphonePermissionState() == PermissionState.GRANTED) {
+            checkPermissions(call);
+            return;
+        }
+        requestPermissionForAlias("microphone", call, "microphonePermissionCallback");
+    }
+
+    @PermissionCallback
+    public void microphonePermissionCallback(PluginCall call) {
+        checkPermissions(call);
+    }
+
     @PluginMethod
     public void start(PluginCall call) {
-        if (getPermissionState("microphone") != PermissionState.GRANTED) {
+        if (microphonePermissionState() != PermissionState.GRANTED) {
             call.reject("Microphone permission is required.");
             return;
         }

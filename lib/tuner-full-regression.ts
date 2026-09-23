@@ -390,6 +390,103 @@ function runStaticCase(
   };
 }
 
+function runQuietOnsetTrackerCase():FullTemporalRegressionResult{
+  const tracker=new PitchTracker();
+  let now=0;
+
+  for(let i=0;i<6;i++){
+    tracker.accept({
+      frequency:0,
+      clarity:0,
+      rms:.01,
+      mode:'sustained',
+      now
+    });
+    now+=FRAME_STEP_MS;
+  }
+
+  let last:PitchTrackResult|null=null;
+  for(let i=0;i<4;i++){
+    last=tracker.accept({
+      frequency:440,
+      clarity:.74,
+      rms:.0108,
+      mode:'transient',
+      now
+    });
+    now+=FRAME_STEP_MS;
+  }
+
+  const finalNote=last?.frequency?noteFromFrequency(last.frequency).label:null;
+  return{
+    name:'Quiet A4 onset locks below energy-rise gate',
+    pass:finalNote==='A4'&&last?.state==='locked',
+    finalNote,
+    switchLatencyMs:null,
+    dropoutHeldFrames:0,
+    releaseSeen:false,
+    idleSeenAfterRelease:false,
+    falsePositiveFrames:0
+  };
+}
+
+function runHarmonicSwitchGuardCase():FullTemporalRegressionResult{
+  const tracker=new PitchTracker();
+  let now=0;
+
+  tracker.accept({frequency:0,clarity:0,rms:.004,mode:'sustained',now});
+  now+=FRAME_STEP_MS;
+
+  for(let i=0;i<3;i++){
+    tracker.accept({
+      frequency:440,
+      clarity:.92,
+      rms:.02,
+      mode:i<2?'transient':'sustained',
+      now
+    });
+    now+=FRAME_STEP_MS;
+  }
+
+  const switchStart=now;
+  let prematureSwitch=false;
+  let last:PitchTrackResult|null=null;
+  for(let i=0;i<4;i++){
+    last=tracker.accept({
+      frequency:880,
+      clarity:.90,
+      rms:.02,
+      mode:'sustained',
+      now
+    });
+    if(last.frequency&&noteFromFrequency(last.frequency).label==='A5')prematureSwitch=true;
+    now+=FRAME_STEP_MS;
+  }
+
+  for(let i=0;i<2;i++){
+    last=tracker.accept({
+      frequency:880,
+      clarity:.90,
+      rms:.02,
+      mode:'sustained',
+      now
+    });
+    now+=FRAME_STEP_MS;
+  }
+
+  const finalNote=last?.frequency?noteFromFrequency(last.frequency).label:null;
+  return{
+    name:'Harmonic octave candidate needs sustained confirmation',
+    pass:!prematureSwitch&&finalNote==='A5',
+    finalNote,
+    switchLatencyMs:finalNote==='A5'?now-switchStart:null,
+    dropoutHeldFrames:0,
+    releaseSeen:false,
+    idleSeenAfterRelease:false,
+    falsePositiveFrames:0
+  };
+}
+
 function runTransitionCase():FullTemporalRegressionResult{
   const engine=new FullTunerHarness();
   let now=warmNoiseFrames(engine);
@@ -524,6 +621,8 @@ function runHumOnlyCase():FullTemporalRegressionResult{
 export function runFullTunerRegression():FullTunerRegressionReport{
   const staticCases=buildSyntheticPitchCases().map(runStaticCase);
   const temporalCases=[
+    runQuietOnsetTrackerCase(),
+    runHarmonicSwitchGuardCase(),
     runTransitionCase(),
     runDropoutCase(),
     runReleaseCase(),

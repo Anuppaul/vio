@@ -11,7 +11,8 @@ const items = [
   { href: '/scale-practice', label: 'Scale Practice', icon: 'সা' },
   { href: '/tanpura', label: 'Tanpura', icon: 'ॐ' },
   { href: '/exercise', label: 'Exercise', icon: '𝄞' },
-  { href: '/metronome', label: 'Metronome', icon: '●' }
+  { href: '/metronome', label: 'Metronome', icon: '●' },
+  { href: '/instrument', label: 'Instrument', icon: '≈' }
 ];
 
 function offlineNavigate(event: MouseEvent<HTMLAnchorElement>, href: string){

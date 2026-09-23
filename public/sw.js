@@ -1,9 +1,9 @@
-const VERSION='vio-pwa-v69';
+const VERSION='vio-pwa-v70';
 const APP_CACHE=`${VERSION}-app`;
 const AUDIO_CACHE=`${VERSION}-audio`;
 const RUNTIME_CACHE=`${VERSION}-runtime`;
 
-const ROUTES=['/','/sound-tuner','/scale-practice','/tanpura','/exercise','/metronome','/manifest.webmanifest'];
+const ROUTES=['/','/sound-tuner','/scale-practice','/tanpura','/exercise','/metronome','/instrument','/manifest.webmanifest'];
 const TUNER_WORKERS=['/tuner-capture-worklet.js?v=3','/tuner-consensus-worker.js?v=2'];
 const EAR_NOTES=['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
 const EAR_AUDIO=[];

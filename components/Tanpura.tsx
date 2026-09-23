@@ -6,6 +6,47 @@ import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-aud
 const KEYS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 function keyFreq(key:string){return 130.81278265*Math.pow(2,KEYS.indexOf(key)/12)}
 
+const WEB_COMPACT_LOOP_PREVIEW=process.env.NEXT_PUBLIC_VIO_NATIVE!=='1';
+
+function zeroCrossNear(buffer:AudioBuffer,index:number,radius:number){
+  const data=buffer.getChannelData(0),length=buffer.length;
+  const center=Math.max(1,Math.min(length-2,Math.round(index)));
+  const lo=Math.max(1,center-radius),hi=Math.min(length-2,center+radius);
+  let best=center,bestAmp=Math.abs(data[center]||0);
+  for(let i=lo;i<=hi;i++){
+    const crossing=data[i]===0||data[i]*data[i+1]<=0;
+    if(!crossing)continue;
+    const amp=Math.abs(data[i]);
+    if(amp<bestAmp){best=i;bestAmp=amp}
+  }
+  return best;
+}
+
+function seamCost(buffer:AudioBuffer,start:number,end:number){
+  const window=Math.max(64,Math.floor(buffer.sampleRate*.10));
+  const points=96,step=Math.max(1,Math.floor(window/points));
+  let total=0;
+  for(let ch=0;ch<buffer.numberOfChannels;ch++){
+    const data=buffer.getChannelData(ch);
+    let dot=0,a2=0,b2=0;
+    for(let i=0;i<points;i++){
+      const offset=i*step;
+      const a=data[Math.min(data.length-1,start+offset)]||0;
+      const b=data[Math.min(data.length-1,end+offset)]||0;
+      dot+=a*b;a2+=a*a;b2+=b*b;
+    }
+    const corr=(a2>1e-12&&b2>1e-12)?dot/Math.sqrt(a2*b2):0;
+    const rmsA=Math.sqrt(a2/points),rmsB=Math.sqrt(b2/points);
+    const rmsCost=Math.abs(Math.log((rmsA+1e-8)/(rmsB+1e-8)));
+    const edgeCost=Math.min(1,Math.abs((data[start]||0)-(data[end]||0))/.05);
+    const slopeA=(data[Math.min(data.length-1,start+1)]||0)-(data[start]||0);
+    const slopeB=(data[Math.min(data.length-1,end+1)]||0)-(data[end]||0);
+    const slopeCost=Math.min(1,Math.abs(slopeA-slopeB)/.02);
+    total+=(1-Math.max(-1,Math.min(1,corr)))*.68+rmsCost*.18+edgeCost*.08+slopeCost*.06;
+  }
+  return total/Math.max(1,buffer.numberOfChannels);
+}
+
 function loopBounds(buffer:AudioBuffer){
   const length=buffer.length,channels=buffer.numberOfChannels;
   let peak=0;
@@ -43,6 +84,42 @@ function loopBounds(buffer:AudioBuffer){
   return {start:first/buffer.sampleRate,end:last/buffer.sampleRate};
 }
 
+function compactLoopBounds(buffer:AudioBuffer){
+  const active=loopBounds(buffer);
+  const duration=active.end-active.start;
+  if(duration<=14)return active;
+
+  const rate=buffer.sampleRate;
+  const safeStart=active.start+2;
+  const safeEnd=active.end-2;
+  const target=10;
+  const baseStart=Math.min(
+    safeEnd-target-1,
+    Math.max(safeStart,active.start+Math.min(15,duration*.25))
+  );
+  const zeroRadius=Math.max(24,Math.floor(rate*.004));
+  let best={start:baseStart,end:baseStart+target,cost:Number.POSITIVE_INFINITY};
+
+  for(let startOffset=-1;startOffset<=1.0001;startOffset+=.25){
+    const startIndex=zeroCrossNear(buffer,(baseStart+startOffset)*rate,zeroRadius);
+    const start=startIndex/rate;
+    if(start<safeStart||start>safeEnd-9)continue;
+
+    for(let candidateDuration=9;candidateDuration<=11.0001;candidateDuration+=.025){
+      const endIndex=zeroCrossNear(buffer,(start+candidateDuration)*rate,zeroRadius);
+      const end=endIndex/rate;
+      if(end>safeEnd||end-start<8.8)continue;
+      const cost=
+        seamCost(buffer,startIndex,endIndex)+
+        Math.abs((end-start)-target)*.035;
+      if(cost<best.cost)best={start,end,cost};
+    }
+  }
+
+  if(!Number.isFinite(best.cost))return active;
+  return {start:best.start,end:best.end};
+}
+
 function createHallImpulse(ctx:AudioContext){
   const duration=3.8,length=Math.floor(ctx.sampleRate*duration),buffer=ctx.createBuffer(2,length,ctx.sampleRate);
   for(let ch=0;ch<2;ch++){
@@ -60,6 +137,7 @@ export default function Tanpura(){
   const [key,setKey]=useState('C');
   const [volume,setVolume]=useState(.6);
   const [reverb,setReverb]=useState(.48);
+  const [loopMode,setLoopMode]=useState<'compact'|'original'>(WEB_COMPACT_LOOP_PREVIEW?'compact':'original');
   const [playing,setPlaying]=useState(false);
   const [status,setStatus]=useState('Ready');
   const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),wetRef=useRef<GainNode|null>(null),sourceRef=useRef<AudioBufferSourceNode|null>(null),timerRef=useRef<ReturnType<typeof setInterval>|null>(null),nodesRef=useRef<AudioScheduledSourceNode[]>([]);
@@ -110,13 +188,17 @@ export default function Tanpura(){
       let buffer=cacheRef.current.get(url);
       if(!buffer){const response=await fetch(url);if(!response.ok)throw new Error('sample unavailable');buffer=await ctx.decodeAudioData(await response.arrayBuffer());cacheRef.current.set(url,buffer)}
       if(token!==tokenRef.current)return;
-      const input=outputChain(ctx),source=ctx.createBufferSource(),bounds=loopBounds(buffer);
+      const input=outputChain(ctx),source=ctx.createBufferSource();
+      const compact=WEB_COMPACT_LOOP_PREVIEW&&loopMode==='compact';
+      const bounds=compact?compactLoopBounds(buffer):loopBounds(buffer);
+      const loopSeconds=Math.max(.1,bounds.end-bounds.start);
       masterRef.current!.gain.setValueAtTime(0,ctx.currentTime);masterRef.current!.gain.linearRampToValueAtTime(volume*1.55,ctx.currentTime+.055);
       source.buffer=buffer;source.loop=true;source.loopStart=bounds.start;source.loopEnd=bounds.end;source.connect(input);source.start(ctx.currentTime+.015,bounds.start);
-      sourceRef.current=source;setPlaying(true);setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · Gapless Hall`);
+      sourceRef.current=source;setPlaying(true);
+      setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · ${compact?`Compact ${loopSeconds.toFixed(1)}s preview`:`Original ${loopSeconds.toFixed(0)}s`} · Gapless Hall`);
     }catch{if(token===tokenRef.current)await synth()}
   }
-  useEffect(()=>{if(playing)void start()},[pattern,key]);
+  useEffect(()=>{if(playing)void start()},[pattern,key,loopMode]);
 
   return <>
     <div className="page-head"><div><p className="eyebrow">Continuous drone</p><h1>Tanpura</h1><p>Choose Sa and a drone pattern.</p></div><div className="badge">12 keys · SA PA / SA MA</div></div>
@@ -127,6 +209,7 @@ export default function Tanpura(){
         <div className="section">
           <div className="control"><div className="control-label"><span>Drone pattern</span></div><div className="seg two"><button className={pattern==='sa-pa'?'active':''} onClick={()=>setPattern('sa-pa')}>सा पा · SA PA</button><button className={pattern==='sa-ma'?'active':''} onClick={()=>setPattern('sa-ma')}>सा मा · SA MA</button></div></div>
           <div className="control"><div className="control-label"><span>Sa / Key</span></div><div className="key-grid">{KEYS.map(k=><button key={k} className={key===k?'active':''} onClick={()=>setKey(k)}>{k}</button>)}</div></div>
+          {WEB_COMPACT_LOOP_PREVIEW&&<div className="control"><div className="control-label"><span>Web loop preview</span><span>{loopMode==='compact'?'~10 sec':'Original'}</span></div><div className="seg two"><button className={loopMode==='compact'?'active':''} onClick={()=>setLoopMode('compact')}>Compact ~10s</button><button className={loopMode==='original'?'active':''} onClick={()=>setLoopMode('original')}>Original 60s</button></div></div>}
           <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(v*1.55,ctxRef.current.currentTime,.02)}}/></div>
           <div className="control"><div className="control-label"><span>Reverb</span><span>{Math.round(reverb*100)}%</span></div><input className="range" type="range" min="0" max="100" value={reverb*100} onChange={e=>{const v=+e.target.value/100;setReverb(v);if(wetRef.current&&ctxRef.current)wetRef.current.gain.setTargetAtTime(v*.95,ctxRef.current.currentTime,.035)}}/></div>
           <button className={`primary ${playing?'danger':''}`} onClick={playing?()=>stop():start}>{playing?'Stop':'Play'}</button>

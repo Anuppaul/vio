@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { readFile, writeFile, rename, rm, stat } from 'node:fs/promises';
+import { writeFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 const FFMPEG=process.env.VIO_FFMPEG||'ffmpeg';
@@ -59,10 +59,8 @@ function decodeFloat(path){
   }
   const bytes=result.stdout;
   if(!Buffer.isBuffer(bytes)||bytes.length<4)throw new Error(`Decoded audio is empty: ${path}`);
-  const aligned=bytes.byteOffset%4===0
-    ?new Float32Array(bytes.buffer,bytes.byteOffset,Math.floor(bytes.byteLength/4))
-    :new Float32Array(Buffer.from(bytes).buffer,0,Math.floor(bytes.byteLength/4));
-  return aligned;
+  const raw=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+  return new Float32Array(raw);
 }
 
 function sampleAt(samples,channels,frame,channel){

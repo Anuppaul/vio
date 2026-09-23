@@ -156,7 +156,7 @@ export default function Instrument(){
   function setVoiceExpression(voice:Voice,point:{x:number;y:number;offset:number;frequency:number},immediate=false){
     const ctx=ctxRef.current;
     if(!ctx)return;
-    const now=ctx.currentTime,slide=immediate?.002:.018;
+    const now=ctx.currentTime,slide=immediate ? .002 : .018;
     voice.offset=point.offset;
     voice.oscA.frequency.setTargetAtTime(point.frequency,now,slide);
     voice.oscB.frequency.setTargetAtTime(point.frequency*2,now,slide);

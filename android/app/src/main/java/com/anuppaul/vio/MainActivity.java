@@ -5,14 +5,12 @@ import android.view.WindowManager;
 import android.webkit.PermissionRequest;
 import android.net.Uri;
 import androidx.activity.OnBackPressedCallback;
-import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        SplashScreen.installSplashScreen(this);
         registerPlugin(NativePitchPlugin.class);
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

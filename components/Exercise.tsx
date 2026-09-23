@@ -305,9 +305,14 @@ const FLAT_KEYS_BY_COUNT=['F','Bb','Eb','Ab','Db','Gb','Cb'];
 const SHARP_KEYS_BY_COUNT=['G','D','A','E','B','Fs','Cs'];
 
 function KeySignatureMark({type,count}:{type:''|'#'|'b';count:number}){
- if(!count)return <span className="mt-key-signature-mark">♮</span>;
+ if(!count)return <span className="mt-key-signature-mark mt-key-signature-empty">♮</span>;
  const symbol=type==='b'?'♭':'♯';
- return <span className="mt-key-signature-mark" aria-hidden="true">{Array.from({length:count},(_,i)=><span key={i}>{symbol}</span>)}</span>
+ const tops=type==='b'
+  ?[3,13,6,16,9,19,12]
+  :[2,12,5,15,8,18,11];
+ return <span className={`mt-key-signature-mark ${type==='b'?'flat':'sharp'}`} aria-hidden="true">
+  {Array.from({length:count},(_,i)=><span key={i} style={{left:`${i*9}px`,top:`${tops[i]}px`}}>{symbol}</span>)}
+ </span>
 }
 
 function KeySignatureButton({keyId,selected,onToggle,wide=false}:{keyId:string;selected:string[];onToggle:(keyId:string)=>void;wide?:boolean}){

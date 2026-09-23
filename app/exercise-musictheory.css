@@ -626,3 +626,46 @@
 @media(max-width:650px){
   .mt-key-signature-pair{gap:5px}
 }
+
+
+/* Stagger accidentals like conventional key-signature engraving. */
+.mt-key-signature-mark{
+  position:relative;
+  width:68px;
+  min-width:68px;
+  height:38px;
+  min-height:38px;
+  display:block;
+  overflow:visible;
+  letter-spacing:0;
+  font-family:Georgia,"Times New Roman",serif;
+}
+.mt-key-signature-mark>span{
+  position:absolute;
+  display:block;
+  color:#000;
+  font-size:27px;
+  line-height:1;
+  font-weight:700;
+}
+.mt-key-signature-mark.flat>span{
+  font-size:30px;
+}
+.mt-key-signature-empty{
+  display:grid;
+  place-items:center;
+  font-size:25px;
+  color:#000;
+}
+@media(max-width:650px){
+  .mt-key-signature-mark{
+    width:62px;
+    min-width:62px;
+  }
+  .mt-key-signature-mark>span{
+    font-size:25px;
+  }
+  .mt-key-signature-mark.flat>span{
+    font-size:28px;
+  }
+}

@@ -24,7 +24,7 @@ type Voice={
 type ActiveTouch={pointerId:number;x:number;y:number;offset:number;frequency:number};
 
 const RANGE_START=-12;
-const RANGE_STEPS=24;
+const RANGE_STEPS=36;
 const C4=261.625565;
 
 const SCALES:{id:ScaleId;label:string;degrees:number[]}[]=[
@@ -268,7 +268,7 @@ export default function Instrument(){
 
   return <section className="card instrument-card">
     <div className="card-head">
-      <div><h2>Expressive Instrument</h2><span>Multi-touch pitch surface</span></div>
+      <div><h2>Expressive Instrument</h2><span>3-octave · multi-touch pitch surface</span></div>
       <div className="pill"><i className="dot-live"/>{touches.length?`${touches.length} touch${touches.length>1?'es':''}`:'Ready'}</div>
     </div>
 

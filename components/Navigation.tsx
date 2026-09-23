@@ -21,14 +21,6 @@ function offlineNavigate(event: MouseEvent<HTMLAnchorElement>, href: string){
   }
 }
 
-function nativeNavigate(event: MouseEvent<HTMLAnchorElement>, href: string){
-  event.preventDefault();
-  if(typeof document==='undefined')return;
-  if(document.documentElement.classList.contains('vio-page-leaving'))return;
-  document.documentElement.classList.add('vio-page-leaving');
-  window.setTimeout(()=>window.location.assign(href),115);
-}
-
 export default function Navigation() {
   const rawPathname = usePathname();
   const pathname = rawPathname.replace(/\/index\.html$/, '/').replace(/\.html$/, '');
@@ -38,7 +30,7 @@ export default function Navigation() {
   </>;
   return (
     <nav className="suite-nav" aria-label="VIO tools">
-      {nativeBuild ? <a className="brand" href="/index.html" aria-label="VIO home" onClick={event=>nativeNavigate(event,'/index.html')}>{brand}</a> :
+      {nativeBuild ? <a className="brand" href="/index.html" aria-label="VIO home">{brand}</a> :
         <Link className="brand" href="/" aria-label="VIO home" onClick={event=>offlineNavigate(event,'/')}>{brand}</Link>}
       <div className="nav-items">
         {items.map(item => {
@@ -47,7 +39,7 @@ export default function Navigation() {
           // Explicit local HTML documents avoid Capacitor's SPA index fallback
           // and do not need a Next server or a service worker in airplane mode.
           return nativeBuild ?
-            <a key={item.href} href={item.href==='/'?'/index.html':`${item.href}.html`} className={active?'active':''} title={item.label} onClick={event=>nativeNavigate(event,item.href==='/'?'/index.html':`${item.href}.html`)}>{content}</a> :
+            <a key={item.href} href={item.href==='/'?'/index.html':`${item.href}.html`} className={active?'active':''} title={item.label}>{content}</a> :
             <Link key={item.href} href={item.href} className={active?'active':''} title={item.label} onClick={event=>offlineNavigate(event,item.href)}>{content}</Link>;
         })}
       </div>

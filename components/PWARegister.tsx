@@ -1,11 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
+
+type NativeUiPlugin={
+  configureInsets():Promise<void>;
+};
+
+const NativeUi=registerPlugin<NativeUiPlugin>('NativePitch');
 
 export default function PWARegister(){
   const [installPrompt,setInstallPrompt]=useState<InstallPromptEvent|null>(null);
@@ -14,7 +21,10 @@ export default function PWARegister(){
   useEffect(()=>{
     // Native assets already ship inside the APK. Do not create a second,
     // potentially stale PWA cache or show an install button inside Android.
-    if(process.env.NEXT_PUBLIC_VIO_NATIVE === '1')return;
+    if(process.env.NEXT_PUBLIC_VIO_NATIVE === '1'){
+      if(Capacitor.isNativePlatform())void NativeUi.configureInsets().catch(()=>{});
+      return;
+    }
     if('serviceWorker' in navigator&&window.isSecureContext){
       navigator.serviceWorker.register('/sw.js',{scope:'/'}).then(registration=>{
         registration.update().catch(()=>{});

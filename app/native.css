@@ -1,9 +1,11 @@
 /* Native-only insets; browser/PWA layout remains unchanged. */
 html.vio-native {
-  --vio-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
-  --vio-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
-  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
-  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --vio-top: var(--vio-native-top, env(safe-area-inset-top, 0px));
+  --vio-bottom: var(--vio-native-bottom, env(safe-area-inset-bottom, 0px));
+  --vio-left: var(--vio-native-left, env(safe-area-inset-left, 0px));
+  --vio-right: var(--vio-native-right, env(safe-area-inset-right, 0px));
+  padding-left: var(--vio-left);
+  padding-right: var(--vio-right);
 }
 
 .vio-native body {
@@ -12,10 +14,9 @@ html.vio-native {
 }
 
 /*
- * Native app-bar behavior:
- * - sticky at the WebView top with no blank safe-area gap
- * - the nav background itself absorbs the status-bar inset
- * - controls remain below system icons when edge-to-edge is active
+ * The Android WebView is forced edge-to-edge by NativePitch.configureInsets().
+ * The app-bar background starts at the physical top edge; only its controls
+ * are inset below status-bar/cutout content.
  */
 .vio-native .suite-nav {
   position: sticky;
@@ -30,13 +31,11 @@ html.vio-native {
 @media (max-width: 650px) {
   .vio-native .suite-nav {
     top: 0;
-    width: 100%;
-    margin: 0 0 10px;
+    width: calc(100% - 12px);
+    margin: 0 6px 10px;
     min-height: calc(54px + var(--vio-top));
     padding: calc(6px + var(--vio-top)) 6px 6px;
     border-top: 0;
-    border-left: 0;
-    border-right: 0;
     border-radius: 0 0 16px 16px;
   }
 }

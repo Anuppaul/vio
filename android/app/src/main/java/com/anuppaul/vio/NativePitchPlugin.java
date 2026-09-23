@@ -12,6 +12,13 @@ import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
+import android.view.Window;
+
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -164,6 +171,60 @@ public class NativePitchPlugin extends Plugin {
     @PluginMethod
     public void diagnostics(PluginCall call) {
         call.resolve(captureInfo());
+    }
+
+    @PluginMethod
+    public void configureInsets(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                Window window = getActivity().getWindow();
+                View decor = window.getDecorView();
+
+                // Capacitor 8 pads the decor view on older WebView versions.
+                // VIO owns its native app-bar inset instead so the bar background
+                // can start at the physical top edge without a blank strip.
+                WindowCompat.setDecorFitsSystemWindows(window, false);
+                ViewCompat.setOnApplyWindowInsetsListener(decor, (view, insets) -> {
+                    Insets bars = insets.getInsets(
+                        WindowInsetsCompat.Type.systemBars()
+                            | WindowInsetsCompat.Type.displayCutout()
+                    );
+                    view.setPadding(0, 0, 0, 0);
+                    injectNativeInsets(bars);
+                    return insets;
+                });
+                ViewCompat.requestApplyInsets(decor);
+                call.resolve();
+            } catch (Exception error) {
+                call.reject("Unable to configure native system insets.", error);
+            }
+        });
+    }
+
+    private void injectNativeInsets(Insets bars) {
+        float density = getActivity().getResources().getDisplayMetrics().density;
+        int top = Math.max(0, Math.round(bars.top / density));
+        int right = Math.max(0, Math.round(bars.right / density));
+        int bottom = Math.max(0, Math.round(bars.bottom / density));
+        int left = Math.max(0, Math.round(bars.left / density));
+
+        String script = String.format(
+            java.util.Locale.US,
+            "document.documentElement.style.setProperty('--vio-native-top','%dpx');"
+                + "document.documentElement.style.setProperty('--vio-native-right','%dpx');"
+                + "document.documentElement.style.setProperty('--vio-native-bottom','%dpx');"
+                + "document.documentElement.style.setProperty('--vio-native-left','%dpx');",
+            top,
+            right,
+            bottom,
+            left
+        );
+
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().post(() ->
+                getBridge().getWebView().evaluateJavascript(script, null)
+            );
+        }
     }
 
     @Override

@@ -73,6 +73,7 @@ export default function ScalePractice(){
   const[status,setStatus]=useState('Start the microphone, sing Sa, then set it as your reference.');
   const[hasSaVoice,setHasSaVoice]=useState(false);
   const[playingOffset,setPlayingOffset]=useState<number|null>(null);
+  const[language,setLanguage]=useState<UiLanguage>('bn');
 
   const ctxRef=useRef<AudioContext|null>(null),analyserRef=useRef<AnalyserNode|null>(null),sourceRef=useRef<MediaStreamAudioSourceNode|null>(null),streamRef=useRef<MediaStream|null>(null);
   const processorRef=useRef<ScriptProcessorNode|null>(null),workletRef=useRef<AudioWorkletNode|null>(null),silentGainRef=useRef<GainNode|null>(null),playbackSourceRef=useRef<AudioBufferSourceNode|null>(null);
@@ -82,6 +83,16 @@ export default function ScalePractice(){
 
   if(!detectorRef.current){const detector=PitchDetector.forFloat32Array(BUFFER_SIZE);detector.minVolumeAbsolute=0;detectorRef.current=detector}
   useEffect(()=>{saFrequencyRef.current=saFrequency},[saFrequency]);
+  useEffect(()=>{
+    try{
+      const saved=localStorage.getItem('vio-scale-language');
+      if(saved==='bn'||saved==='hi'||saved==='en')setLanguage(saved);
+    }catch{}
+  },[]);
+  function chooseLanguage(value:UiLanguage){
+    setLanguage(value);
+    try{localStorage.setItem('vio-scale-language',value)}catch{}
+  }
 
   const current=frequency&&saFrequency?relativePitch(frequency,saFrequency):null;
   const cents=current?.cents??null;
@@ -166,7 +177,7 @@ export default function ScalePractice(){
   function resetSa(){stopReference();saFrequencyRef.current=null;setSaFrequency(null);saVoiceRef.current=null;saVoiceRateRef.current=0;setHasSaVoice(false);clearSaReadiness();setStatus('Sa cleared · sing and hold Sa; natural variation up to ±12 cents is allowed')}
   async function playSwara(offset:number,kind:Saptak){
     if(!saFrequency)return;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx)return;ctxRef.current=ctx;await resumeBrowserAudio(ctx);stopReference();
-    const target=saFrequency*Math.pow(2,offset/12),label=swaraLabel(mod(offset,12),kind),voice=saVoiceRef.current,voiceRate=saVoiceRateRef.current;
+    const target=saFrequency*Math.pow(2,offset/12),label=swaraLabel(mod(offset,12),language),voice=saVoiceRef.current,voiceRate=saVoiceRateRef.current;
     setPlayingOffset(offset);setStatus(`Reference · ${label} · ${target.toFixed(2)} Hz${voice?' · your Sa voice':' · clean tone'}`);
     if(voice&&voiceRate>0){
       const audioBuffer=ctx.createBuffer(1,voice.length,voiceRate),channel=audioBuffer.getChannelData(0);for(let i=0;i<voice.length;i++)channel[i]=voice[i];const source=ctx.createBufferSource(),gain=ctx.createGain(),rate=Math.pow(2,offset/12),duration=audioBuffer.duration/rate,fade=Math.min(.025,duration*.12),now=ctx.currentTime;
@@ -177,7 +188,14 @@ export default function ScalePractice(){
   useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);stopReference();try{if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();if(workletRef.current)workletRef.current.port.onmessage=null;workletRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
 
   function scaleRow(kind:Saptak,offsets:number[]){
-    return <div className={`saptak-card ${kind}`}><div className="saptak-title"><b>{saptakName(kind)}</b><span>{saFrequency?'Tap any swara to hear reference':kind==='mandra'?'Underline = Mandra':kind==='taar'?'র্ prefix = Taar':'Your Sa starts here'}</span></div><div className="swara-grid">{offsets.map(offset=>{const degree=mod(offset,12),label=swaraLabel(degree,kind),target=saFrequency?saFrequency*Math.pow(2,offset/12):null,active=current?.offset===offset,playing=playingOffset===offset;return <button type="button" key={offset} className={`swara-cell ${active?'active':''} ${playing?'reference-playing':''}`} disabled={!saFrequency} onClick={()=>void playSwara(offset,kind)} aria-label={target?`Play ${label} reference at ${target.toFixed(1)} hertz`:`${label}, set Sa first`}><b className={kind==='mandra'?'mandra-mark':''}>{label}</b><small>{target?`${playing?'♪ ':''}${target.toFixed(1)} Hz`:'—'}</small></button>})}</div></div>;
+    const subtitle=saFrequency
+      ?'Tap any swara to hear reference'
+      :kind==='mandra'
+        ?'Lower octave'
+        :kind==='taar'
+          ?'Upper octave'
+          :'Your Sa starts here';
+    return <div className={`saptak-card ${kind}`}><div className="saptak-title"><b>{saptakName(kind,language)}</b><span>{subtitle}</span></div><div className="swara-grid">{offsets.map(offset=>{const degree=mod(offset,12),label=swaraLabel(degree,language),target=saFrequency?saFrequency*Math.pow(2,offset/12):null,active=current?.offset===offset,playing=playingOffset===offset;return <button type="button" key={offset} className={`swara-cell ${active?'active':''} ${playing?'reference-playing':''}`} disabled={!saFrequency} onClick={()=>void playSwara(offset,kind)} aria-label={target?`Play ${label} reference at ${target.toFixed(1)} hertz`:`${label}, set Sa first`}><b className={kind==='mandra'?'mandra-mark':kind==='taar'?'taar-mark':''}>{label}</b><small>{target?`${playing?'♪ ':''}${target.toFixed(1)} Hz`:'—'}</small></button>})}</div></div>;
   }
 
   const saReady=!saFrequency&&saReadyFrequency!==null;
@@ -191,7 +209,7 @@ export default function ScalePractice(){
           <div className="control-label"><span>Raw microphone input</span><span>{running?`${micLevel}%`:'0%'}</span></div><div className="signal"><i style={{width:`${micLevel}%`}}/></div>
           <div className="scale-gauge-wrap">
             <svg className="gauge" viewBox="0 0 720 360" aria-label="Swara pitch deviation"><path className="gauge-base" d={arcPath(262,-74,74)}/><path className="gauge-good" d={arcPath(262,-7,7)}/>{current&&<><line className="needle" x1="360" y1="330" x2="360" y2="103" style={{transform:`rotate(${angle}deg)`,stroke:color}}/><circle className="needle-cap" cx="360" cy="330" r="12" style={{fill:color}}/></>}</svg>
-            <div className="scale-readout">{!saFrequency?<><div className="scale-prompt">সা</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'Sing your Sa'}</div>{saReady?<div className="sa-ready"><i/>Sa detected · ready to set</div>:<div className="hint">Hold Sa steadily; 5 of 7 samples may vary within ±12 cents</div>}</>:current?<><div className={`scale-swara ${current.saptak==='mandra'?'mandra-mark':''}`} style={{color}}>{current.label}</div><div className="scale-saptak-name">{saptakName(current.saptak)}</div><div className="frequency">Actual {frequency?.toFixed(2)} Hz · Target {current.target.toFixed(2)} Hz · {current.cents>=0?'+':''}{current.cents.toFixed(1)} cents</div><div className="hint">{inTune?'সঠিক সুর':current.cents<0?`${Math.abs(current.cents).toFixed(1)} cents নিচে`:`${current.cents.toFixed(1)} cents উপরে`}</div></>:<><div className="scale-prompt">—</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'}</div><div className="hint">Outside Mandra–Madhya–Taar practice range</div></>}</div>
+            <div className="scale-readout">{!saFrequency?<><div className="scale-prompt">{swaraLabel(0,language)}</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:language==='bn'?'আপনার সা গাইুন':language==='hi'?'अपना सा गाइए':'Sing your Sa'}</div>{saReady?<div className="sa-ready"><i/>Sa detected · ready to set</div>:<div className="hint">{language==='bn'?'সা স্থির রাখুন; ৭টির মধ্যে ৫টি নমুনা ±১২ cents-এর মধ্যে থাকুক':language==='hi'?'सा को स्थिर रखें; 7 में से 5 नमूने ±12 cents के भीतर हों':'Hold Sa steadily; 5 of 7 samples may vary within ±12 cents'}</div>}</>:current?<><div className={`scale-swara ${current.saptak==='mandra'?'mandra-mark':current.saptak==='taar'?'taar-mark':''}`} style={{color}}>{swaraLabel(current.degree,language)}</div><div className="scale-saptak-name">{saptakName(current.saptak,language)}</div><div className="frequency">Actual {frequency?.toFixed(2)} Hz · Target {current.target.toFixed(2)} Hz · {current.cents>=0?'+':''}{current.cents.toFixed(1)} cents</div><div className="hint">{inTune?(language==='bn'?'সঠিক সুর':language==='hi'?'सही सुर':'In tune'):current.cents<0?`${Math.abs(current.cents).toFixed(1)} cents ${language==='bn'?'নিচে':language==='hi'?'नीचे':'low'}`:`${current.cents.toFixed(1)} cents ${language==='bn'?'উপরে':language==='hi'?'ऊपर':'high'}`}</div></>:<><div className="scale-prompt">—</div><div className="frequency">{frequency?`${frequency.toFixed(2)} Hz`:'-- Hz'}</div><div className="hint">{language==='bn'?'মন্দ্র–মধ্য–তার অনুশীলন সীমার বাইরে':language==='hi'?'मंद्र–मध्य–तार अभ्यास सीमा से बाहर':'Outside Mandra–Madhya–Taar practice range'}</div></>}</div>
           </div>
           {saFrequency&&<div className="swara-play-hint">♪ Tap any swara below to hear {hasSaVoice?'your recorded Sa voice pitch-shifted to that swara':'its reference pitch'}</div>}
           <div className="saptak-stack">{scaleRow('mandra',SAPTAK_OFFSETS.mandra)}{scaleRow('madhya',SAPTAK_OFFSETS.madhya)}{scaleRow('taar',SAPTAK_OFFSETS.taar)}</div>
@@ -199,7 +217,8 @@ export default function ScalePractice(){
         <aside className="side scale-practice-side">
           <div className="control"><div className="control-label"><span>Step 1 · Microphone</span></div><button className={`primary ${running?'danger':''}`} onClick={running?stop:start}>{running?'Stop microphone':'Start microphone'}</button></div>
           <div className="control"><div className="control-label"><span>Step 2 · Set your Sa</span><span>{saReady?`${saReadyFrequency?.toFixed(2)} Hz`:frequency?`${frequency.toFixed(2)} Hz`:'No pitch'}</span></div>{!saFrequency&&<div className={`sa-ready-row ${saReady?'ready':''}`}><i/><span>{saReady?'Sa detected · ready to set':'Hold Sa steady · ±12 cents allowed'}</span></div>}<button className={`primary ${saReady?'sa-ready-button':''}`} disabled={!canSetSa} onClick={setSa}>{saFrequency?'Set current pitch as new Sa':'Set current pitch as Sa'}</button>{saFrequency&&<button className="soft-btn scale-reset" onClick={resetSa}>Clear Sa</button>}</div>
-          <div className="control"><div className="control-label"><span>Your tonic</span></div><div className="sa-reference"><b>{saFrequency?'সা':'—'}</b><span>{saFrequency?`${saFrequency.toFixed(2)} Hz${hasSaVoice?' · recorded voice ready':''}`:'Sing Sa first'}</span></div></div>
+          <div className="control"><div className="control-label"><span>Display language</span></div><select value={language} onChange={e=>chooseLanguage(e.target.value as UiLanguage)}>{LANGUAGE_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+          <div className="control"><div className="control-label"><span>Your tonic</span></div><div className="sa-reference"><b>{saFrequency?swaraLabel(0,language):'—'}</b><span>{saFrequency?`${saFrequency.toFixed(2)} Hz${hasSaVoice?' · recorded voice ready':''}`:'Sing Sa first'}</span></div></div>
           <div className="control"><div className="status">{status}</div></div>
         </aside>
       </div>

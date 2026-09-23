@@ -762,13 +762,24 @@
 
 /* Match the standard VIO tool canvas (Tanpura / Metronome). */
 body:has(.exercise-page){
-  background:#fff !important;
+  background:
+    radial-gradient(circle at 8% 8%,rgba(216,208,255,.42),transparent 30%),
+    radial-gradient(circle at 92% 15%,rgba(255,213,230,.4),transparent 28%),
+    radial-gradient(circle at 75% 92%,rgba(202,242,232,.34),transparent 30%),
+    #f8f9fd !important;
 }
 .exercise-page{
   width:min(1100px,calc(100% - 28px)) !important;
   max-width:1100px !important;
   margin-left:auto !important;
   margin-right:auto !important;
+}
+.exercise-page .exercise-app.mt-note-identification{
+  border:1px solid rgba(225,226,238,.95) !important;
+  border-radius:24px !important;
+  background:var(--panel) !important;
+  box-shadow:var(--shadow) !important;
+  backdrop-filter:blur(16px);
 }
 @media(max-width:650px){
   .exercise-page{
@@ -777,13 +788,7 @@ body:has(.exercise-page){
     margin-left:auto !important;
     margin-right:auto !important;
   }
-}
-
-
-/* Exercise outer shell must stay white; the inner practice card provides its own surface. */
-.exercise-page .exercise-app.mt-note-identification{
-  background:#fff !important;
-}
-.exercise-page .exercise-work{
-  background:#fff;
+  .exercise-page .exercise-app.mt-note-identification{
+    border-radius:19px !important;
+  }
 }

@@ -11,6 +11,7 @@ import './exercise-musictheory.css';
 import './scale-practice.css';
 import './instrument.css';
 import './native.css';
+import './contrast.css';
 
 export const metadata: Metadata = {
   title: { default: 'VIO', template: '%s · VIO' },

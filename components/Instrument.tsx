@@ -83,6 +83,7 @@ export default function Instrument(){
   const masterRef=useRef<GainNode|null>(null);
   const limiterRef=useRef<DynamicsCompressorNode|null>(null);
   const voicesRef=useRef(new Map<number,Voice>());
+  const pendingPointersRef=useRef(new Set<number>());
   const liveRef=useRef({scale,scaleLock,tonicHz,vibrato,volume,sound});
 
   const scaleDef=useMemo(()=>SCALES.find(item=>item.id===scale)||SCALES[0],[scale]);
@@ -168,14 +169,16 @@ export default function Instrument(){
   }
 
   async function startVoice(event:ReactPointerEvent<HTMLDivElement>){
-    if(voicesRef.current.has(event.pointerId))return;
+    if(voicesRef.current.has(event.pointerId)||pendingPointersRef.current.has(event.pointerId))return;
     event.preventDefault();
     const point=mapPointer(event);
     if(!point)return;
+    pendingPointersRef.current.add(event.pointerId);
+    try{surfaceRef.current?.setPointerCapture(event.pointerId)}catch{}
     try{
       const ctx=await ensureAudio(),master=masterRef.current;
-      if(!master)return;
-      surfaceRef.current?.setPointerCapture(event.pointerId);
+      if(!pendingPointersRef.current.has(event.pointerId)||!master)return;
+      pendingPointersRef.current.delete(event.pointerId);
       const p=preset(liveRef.current.sound);
       const oscA=ctx.createOscillator(),oscB=ctx.createOscillator();
       const mixA=ctx.createGain(),mixB=ctx.createGain(),filter=ctx.createBiquadFilter(),amp=ctx.createGain();
@@ -196,7 +199,10 @@ export default function Instrument(){
       setVoiceExpression(voice,point,true);
       setTouches(current=>[...current.filter(t=>t.pointerId!==event.pointerId),{pointerId:event.pointerId,...point}]);
       setStatus(`${noteLabel(point.offset,language)} · ${point.frequency.toFixed(1)} Hz`);
-    }catch(error){setStatus(error instanceof Error?error.message:'Unable to start audio')}
+    }catch(error){
+      pendingPointersRef.current.delete(event.pointerId);
+      setStatus(error instanceof Error?error.message:'Unable to start audio');
+    }
   }
 
   function moveVoice(event:ReactPointerEvent<HTMLDivElement>){
@@ -211,8 +217,12 @@ export default function Instrument(){
   }
 
   function stopVoice(pointerId:number){
+    pendingPointersRef.current.delete(pointerId);
     const voice=voicesRef.current.get(pointerId),ctx=ctxRef.current;
-    if(!voice||!ctx)return;
+    if(!voice||!ctx){
+      setTouches(current=>current.filter(t=>t.pointerId!==pointerId));
+      return;
+    }
     voicesRef.current.delete(pointerId);
     const p=preset(liveRef.current.sound),now=ctx.currentTime;
     try{

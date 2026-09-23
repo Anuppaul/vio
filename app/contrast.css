@@ -1,0 +1,28 @@
+/* Final typography contrast pass. Keep VIO surfaces soft; keep text readable. */
+:root{--muted:#5b6779}
+.card-head span,
+.control-label,
+.status,
+.muted,
+.player-card small,
+.string-heads span,
+.hint,
+.target-chip,
+.summary>div,
+.report-grid span,
+.saptak-title span,
+.swara-cell small,
+.scale-saptak-name,
+.sa-reference span,
+.staff-range-help,
+.settings-help,
+.mt-setting-value,
+.drawer-head p,
+.practice-head,
+.instrument-axis,
+.instrument-readout small{
+  color:#556176;
+}
+.nav-items a{color:#526074}
+.control-label{font-weight:900}
+.status,.hint{font-weight:780}

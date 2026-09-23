@@ -142,7 +142,7 @@ function migrateSettings(value:unknown):Settings{
 
 export default function Exercise(){
  const [settings,setSettings]=useState<Settings>(DEFAULTS),[draft,setDraft]=useState<Settings>(DEFAULTS),[question,setQuestion]=useState<Question|null>(null),[wrong,setWrong]=useState(false),[wrongAnswers,setWrongAnswers]=useState<string[]>([]),[resolved,setResolved]=useState(false);
- const [correct,setCorrect]=useState(0),[questions,setQuestions]=useState(0),[streak,setStreak]=useState(0),[best,setBest]=useState(0),[started,setStarted]=useState(Date.now()),[now,setNow]=useState(Date.now()),[ended,setEnded]=useState(false),[settingsOpen,setSettingsOpen]=useState(false),[settingsPane,setSettingsPane]=useState<SettingsPane>('main'),[reportOpen,setReportOpen]=useState(false),[status,setStatus]=useState('What note is this?');
+ const [correct,setCorrect]=useState(0),[questions,setQuestions]=useState(0),[,setStreak]=useState(0),[best,setBest]=useState(0),[started,setStarted]=useState(Date.now()),[now,setNow]=useState(Date.now()),[ended,setEnded]=useState(false),[settingsOpen,setSettingsOpen]=useState(false),[settingsPane,setSettingsPane]=useState<SettingsPane>('main'),[reportOpen,setReportOpen]=useState(false),[status,setStatus]=useState('What note is this?');
  const lastId=useRef(''),autoTimer=useRef<ReturnType<typeof setTimeout>|null>(null),audioRef=useRef<HTMLAudioElement|null>(null),ctxRef=useRef<AudioContext|null>(null),sharpHeld=useRef(false),flatHeld=useRef(false);
  useEffect(()=>{try{const saved=localStorage.getItem('vio-exercise-settings');if(saved){const s=migrateSettings(JSON.parse(saved));setSettings(s);setDraft(s)}}catch{}},[]);
  useEffect(()=>{const id=setInterval(()=>setNow(Date.now()),250);return()=>clearInterval(id)},[]);
@@ -222,7 +222,6 @@ export default function Exercise(){
  const ledger:number[]=[];if(question&&question.step<0)for(let s=-2;s>=question.step-(question.step%2!==0?1:0);s-=2)ledger.push(s);if(question&&question.step>8)for(let s=10;s<=question.step+(question.step%2!==0?1:0);s+=2)ledger.push(s);const viewTop=Math.min(0,y-48),viewBottom=Math.max(290,y+48),viewHeight=viewBottom-viewTop;
  const currentSource=question?.sourceClef||settings.clefs[0]||'treble',currentRange=settings.ranges[currentSource],rangeText=`${midiName(currentRange.min)}–${midiName(currentRange.max)}`;
  const helperSteps=settings.positions==='lines'?[0,2,4,6,8]:settings.positions==='spaces'?[1,3,5,7]:[0,1,2,3,4,5,6,7,8];
- const challengeProgress=settings.challengeMode?(settings.questionLimit>0?`${Math.min(questions,settings.questionLimit)}/${settings.questionLimit}`:settings.timeLimitMinutes>0?`${fmt(remaining)} remaining`:'Unlimited challenge'):'Unlimited practice';
  const stemDown=!!question&&question.step>=4,stemX=stemDown?x-13:x+13,stemEnd=stemDown?y+38:y-38,paneClef=settingsPane.startsWith('range:')?settingsPane.slice(6) as Clef:null;
  const questionClefLabel=question?.sourceClef==='grand'?`Grand Staff · ${CLEFS[question.clef].label}`:(question?CLEFS[question.sourceClef].label:CLEFS[currentSource].label);
 

@@ -582,15 +582,6 @@ export default function SoundTuner(){
   }
 
   async function startNativePitch(session:number){
-    const current=await NativePitch.checkPermissions();
-    if(session!==captureSessionRef.current)return;
-    let microphone=current?.microphone;
-    if(microphone!=='granted'){
-      const requested=await NativePitch.requestPermissions({permissions:['microphone']});
-      if(session!==captureSessionRef.current)return;
-      microphone=requested?.microphone;
-    }
-    if(microphone!=='granted')throw new Error('microphone permission denied');
     trackerRef.current.reset();needleFilterRef.current.reset();
     const listener=await NativePitch.addListener('pitch',sample=>{
       applyTrackedPitch(

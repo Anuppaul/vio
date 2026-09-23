@@ -1,21 +1,31 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
+# VIO release shrinking rules.
 #
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Keep only the small surfaces that are resolved reflectively or through JNI.
+# Everything else remains eligible for R8 shrinking/optimization.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Capacitor discovers plugin metadata and methods from runtime annotations.
+-keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations,AnnotationDefault
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# VIO's custom Capacitor plugin is registered explicitly, but its annotated
+# methods are invoked reflectively by Capacitor.
+-keep class com.anuppaul.vio.NativePitchPlugin extends com.getcapacitor.Plugin {
+    @com.getcapacitor.PluginMethod <methods>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# JNI exports use the Java class/method names in their native symbol names.
+# Do not obfuscate or remove this bridge.
+-keep class com.anuppaul.vio.NativeOboeCapture {
+    *;
+}
+
+# Android launches MainActivity by manifest class name.
+-keep class com.anuppaul.vio.MainActivity {
+    public <init>();
+    public void onCreate(android.os.Bundle);
+}
+
+# Preserve Capacitor plugin annotation metadata on any bundled plugin class
+# without broadly disabling shrinking for the Capacitor runtime.
+-keep,allowoptimization,allowshrinking @com.getcapacitor.annotation.CapacitorPlugin class * {
+    @com.getcapacitor.PluginMethod <methods>;
+}

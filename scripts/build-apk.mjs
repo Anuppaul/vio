@@ -16,6 +16,10 @@ assert.ok(sdk,'Set ANDROID_HOME to your Android SDK (API 36 and Build Tools 36).
 run(process.execPath,['scripts/export-android.mjs']);
 run(process.execPath,['scripts/sync-android.mjs']);
 const variant=signed?'release':'debug';
+const abiFilters=(process.env.VIO_ANDROID_ABIS||'')
+  .split(',')
+  .map(value=>value.trim())
+  .filter(Boolean);
 const gradlew=process.platform==='win32'?'gradlew.bat':'./gradlew';
 run(gradlew,['--no-daemon','--max-workers=2',`assemble${signed?'Release':'Debug'}`,'lintDebug','testDebugUnitTest'],{cwd:'android'});
 
@@ -35,6 +39,24 @@ const bytes=await readFile(join('release',filename));
 assert.ok(bytes.length<95*1024*1024,'APK too large to store safely in GitHub; use a Release asset.');
 const checksum=createHash('sha256').update(bytes).digest('hex');
 await writeFile(join('release',`${filename}.sha256`),`${checksum}  ${filename}\n`);
-const details={appId:config.appId,version:pkg.version,versionCode:Number(process.env.VIO_VERSION_CODE||1),variant,sourceCommit:process.env.GITHUB_SHA||null,file:filename,bytes:(await stat(join('release',filename))).size,sha256:checksum,capacitor:pkg.dependencies['@capacitor/core'],builtAt:new Date().toISOString(),bundledOffline:true,signing:signed?'user-provided release key':'Android development key; not for Play Store'};
+const details={
+  appId:config.appId,
+  version:pkg.version,
+  versionCode:Number(process.env.VIO_VERSION_CODE||1),
+  variant,
+  sourceCommit:process.env.GITHUB_SHA||null,
+  file:filename,
+  bytes:(await stat(join('release',filename))).size,
+  sha256:checksum,
+  capacitor:pkg.dependencies['@capacitor/core'],
+  builtAt:new Date().toISOString(),
+  bundledOffline:true,
+  signing:signed?'user-provided release key':'Android development key; not for Play Store',
+  minified:signed,
+  shrinkResources:signed,
+  abis:abiFilters.length?abiFilters:['universal']
+};
 await writeFile(`release/build-${variant}.json`,JSON.stringify(details,null,2)+'\n');
 console.log(`APK verified and copied to ${resolve('release',filename)}`);
+if(abiFilters.length)console.log(`Android ABI filter: ${abiFilters.join(', ')}`);
+if(signed)console.log('Release shrinking: R8 minify + resource shrink enabled');

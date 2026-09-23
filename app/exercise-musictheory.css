@@ -363,3 +363,267 @@
     animation:none;
   }
 }
+
+
+/* Full-screen exercise route -------------------------------------------------
+ * The global VIO suite chrome is intentionally removed on /exercise.
+ * The exercise owns the viewport, matching dedicated practice-tool behavior.
+ */
+body:has(.exercise-page){
+  margin:0;
+  padding-bottom:0;
+  background:#cfcfd0;
+}
+body:has(.exercise-page) .suite-nav,
+body:has(.exercise-page) .pwa-install{
+  display:none !important;
+}
+.exercise-page{
+  width:100%;
+  max-width:none;
+  min-height:100dvh;
+  margin:0;
+  background:#cfcfd0;
+}
+.exercise-page .exercise-app.mt-note-identification{
+  min-height:100dvh;
+  border:0;
+  border-radius:0;
+  background:#cfcfd0;
+  box-shadow:none;
+}
+.exercise-page .exercise-top{
+  position:sticky;
+  top:0;
+  z-index:70;
+  width:100%;
+  min-height:42px;
+  padding:0 96px;
+  border-bottom:1px solid #303338;
+  background:linear-gradient(#4f5358,#3f4348);
+  box-shadow:0 1px 2px rgba(0,0,0,.18);
+}
+.exercise-page .exercise-top h1{
+  font-size:13px;
+  font-weight:500;
+  letter-spacing:0;
+}
+.exercise-home{
+  position:absolute;
+  left:8px;
+  top:5px;
+  width:32px;
+  height:32px;
+  display:grid;
+  place-items:center;
+  border-radius:4px;
+  color:#f5f6f7;
+  text-decoration:none;
+  font-size:20px;
+  line-height:1;
+}
+.exercise-home:hover{
+  background:rgba(255,255,255,.08);
+}
+.exercise-page .top-actions{
+  top:5px;
+  right:7px;
+  gap:2px;
+}
+.exercise-page .top-actions button{
+  width:32px;
+  height:32px;
+  padding:0;
+  border:0;
+  border-radius:4px;
+  background:transparent;
+  color:#f0f1f2;
+  font-size:16px;
+  font-weight:500;
+}
+.exercise-page .top-actions button:hover{
+  background:rgba(255,255,255,.08);
+}
+.exercise-page .exercise-work{
+  width:min(640px,calc(100% - 28px));
+  margin:0 auto;
+  padding:24px 0 36px;
+}
+.exercise-page .practice{
+  border:1px solid #bfc1c4;
+  border-radius:5px;
+  background:#fff;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);
+}
+.exercise-page .practice-head{
+  min-height:32px;
+  padding:3px 7px 3px 10px;
+  background:#f8f8f8;
+  color:#8a8d90;
+  border-bottom:1px solid #dedfe1;
+}
+.exercise-page .staff-stage{
+  min-height:260px;
+  padding:10px 4px 0;
+}
+.exercise-page .staff-stage svg{
+  width:100%;
+  max-width:610px;
+}
+.exercise-page .question-status{
+  min-height:28px;
+  padding:0 8px 8px;
+  font-size:11px;
+}
+.exercise-page .music-theory-answers{
+  gap:4px;
+  padding:10px 10px 9px;
+  background:#f1f1f2;
+}
+.exercise-page .music-theory-answers button{
+  height:36px;
+  border-radius:4px;
+  font-size:10px;
+}
+.exercise-page .exercise-scoreline{
+  position:relative;
+  min-height:30px;
+  padding:5px 82px 5px 8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-top:1px solid #dedfe1;
+  border-bottom:0;
+  background:#f1f1f2;
+  color:#686b6e;
+  font-size:10px;
+  line-height:1.2;
+}
+.exercise-score-text{
+  text-align:center;
+  font-weight:500;
+}
+.exercise-score-text b{
+  font-weight:600;
+}
+.exercise-score-text span{
+  color:#777a7d;
+}
+.exercise-page .exercise-scoreline .exercise-time{
+  position:absolute;
+  right:10px;
+  top:7px;
+  font-size:9px;
+  color:#797c7f;
+}
+.exercise-page .exercise-actions{
+  gap:5px;
+  padding:5px 10px 11px;
+  background:#f1f1f2;
+}
+.exercise-page .exercise-actions button{
+  height:34px;
+  border-radius:17px;
+  font-size:9px;
+}
+.exercise-page .drawer-backdrop,
+.exercise-page .report-modal{
+  z-index:120;
+}
+
+@media (min-width:900px){
+  .exercise-page .exercise-work{
+    padding-top:32px;
+  }
+}
+
+@media (max-width:650px){
+  body:has(.exercise-page){
+    padding-bottom:0;
+  }
+  .exercise-page{
+    width:100%;
+    min-height:100dvh;
+    margin:0;
+  }
+  .exercise-page .exercise-app.mt-note-identification{
+    min-height:100dvh;
+    border-radius:0;
+  }
+  .exercise-page .exercise-top{
+    min-height:42px;
+    padding:0 82px;
+    justify-content:center;
+  }
+  .exercise-page .exercise-top h1{
+    font-size:12px;
+  }
+  .exercise-home{
+    left:5px;
+    top:5px;
+  }
+  .exercise-page .top-actions{
+    right:4px;
+  }
+  .exercise-page .exercise-work{
+    width:100%;
+    padding:8px 6px 14px;
+  }
+  .exercise-page .practice{
+    width:100%;
+    border-radius:4px;
+  }
+  .exercise-page .practice-head{
+    min-height:31px;
+    padding-left:7px;
+  }
+  .exercise-page .staff-stage{
+    min-height:190px;
+    padding:5px 0 0;
+  }
+  .exercise-page .music-theory-answers{
+    gap:3px;
+    padding:7px 5px 6px;
+  }
+  .exercise-page .music-theory-answers button{
+    height:40px;
+    font-size:10px;
+  }
+  .exercise-page .exercise-scoreline{
+    min-height:29px;
+    padding:4px 64px 4px 6px;
+    font-size:9px;
+  }
+  .exercise-page .exercise-scoreline .exercise-time{
+    right:6px;
+    top:7px;
+    font-size:8px;
+  }
+  .exercise-page .exercise-actions{
+    gap:4px;
+    padding:4px 5px 7px;
+  }
+  .exercise-page .exercise-actions button{
+    height:38px;
+    border-radius:7px;
+  }
+}
+
+@media (max-width:360px){
+  .exercise-page .exercise-top{
+    padding:0 74px;
+  }
+  .exercise-page .top-actions button,
+  .exercise-home{
+    width:30px;
+    height:30px;
+  }
+  .exercise-page .music-theory-answers{
+    gap:2px;
+    padding-left:4px;
+    padding-right:4px;
+  }
+  .exercise-page .music-theory-answers button{
+    font-size:9px;
+  }
+}

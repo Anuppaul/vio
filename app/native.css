@@ -60,3 +60,14 @@ html.vio-native {
   .vio-native body { animation: none; }
   .vio-native.vio-page-leaving body { transition: none; transform: none; }
 }
+
+
+/* /exercise is a standalone native practice screen, so its own toolbar owns
+ * the status-bar inset when the global VIO navigation is hidden. */
+.vio-native body:has(.exercise-page){
+  padding-bottom:var(--vio-bottom);
+}
+.vio-native .exercise-page .exercise-top{
+  min-height:calc(42px + var(--vio-top));
+  padding-top:var(--vio-top);
+}

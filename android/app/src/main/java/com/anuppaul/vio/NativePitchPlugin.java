@@ -43,10 +43,12 @@ public class NativePitchPlugin extends Plugin {
     private static final double TARGET_HOP_SECONDS = 0.0213333333;
     private static final int CHUNK_SIZE = 512;
     private static final int MPM_UPDATE_HOPS = 4;
+    private static final int LOW_MPM_UPDATE_HOPS = 2;
     private static final int LONG_LOW_UPDATE_HOPS = 2;
     private static final int LONG_HIGH_UPDATE_HOPS = 3;
     private static final double[] FAST_HANN = createHann(FAST_ANALYSIS_SIZE);
     private static final double[] SHORT_HANN = createHann(SHORT_ANALYSIS_SIZE);
+    private static final double[] LONG_HANN = createHann(ANALYSIS_SIZE);
     private static final double MIN_FREQUENCY = 20.0;
     private static final double MAX_FREQUENCY = 5000.0;
     private static final double MIN_SUSTAINED_CONFIDENCE = 0.64;
@@ -369,9 +371,18 @@ public class NativePitchPlugin extends Plugin {
         NativeYinDetector transientDetector = new NativeYinDetector(sampleRate, SHORT_ANALYSIS_SIZE);
         NativeYinDetector fastDetector = new NativeYinDetector(sampleRate, FAST_ANALYSIS_SIZE);
         NativeMpmDetector mpmDetector = new NativeMpmDetector(sampleRate, SHORT_ANALYSIS_SIZE, 70.0, MAX_FREQUENCY);
+        NativeMpmDetector lowMpmDetector = new NativeMpmDetector(
+            sampleRate,
+            ANALYSIS_SIZE,
+            120.0,
+            350.0,
+            85.0
+        );
         PitchResult mpmPitch = null;
+        PitchResult lowMpmPitch = null;
         PitchResult sustainedPitch = null;
         int mpmHops = 0;
+        int lowMpmHops = 0;
         int sustainedHops = 0;
 
         int write = 0;
@@ -450,6 +461,14 @@ public class NativePitchPlugin extends Plugin {
                 }
             }
 
+            if (haveLong) {
+                lowMpmHops++;
+                if (lowMpmHops >= LOW_MPM_UPDATE_HOPS) {
+                    lowMpmHops = 0;
+                    lowMpmPitch = lowMpmDetector.detect(frame);
+                }
+            }
+
             float[] onsetFrame = haveLong ? frame : (haveShort ? shortFrame : fastFrame);
             int onsetSize = onsetFrame.length;
             int recentSize = Math.min(1024, onsetSize / 2);
@@ -498,7 +517,17 @@ public class NativePitchPlugin extends Plugin {
                 mpmForFrame = null;
             }
             pitch = mergeMpmConsensus(pitch, mpmForFrame);
-            pitch = validateHarmonicFundamental(pitch, haveShort ? shortFrame : fastFrame);
+            pitch = mergeLowFrequencyConsensus(
+                pitch,
+                lowMpmPitch,
+                sustainedForFrame,
+                haveLong ? frame : null
+            );
+            float[] harmonicFrame =
+                pitch != null && pitch.frequency < 350.0 && haveLong
+                    ? frame
+                    : (haveShort ? shortFrame : fastFrame);
+            pitch = validateHarmonicFundamental(pitch, harmonicFrame);
             if (
                 pitch != null &&
                 pitch.frequency < 80.0 &&
@@ -726,6 +755,110 @@ public class NativePitchPlugin extends Plugin {
         return primary;
     }
 
+    private PitchResult mergeLowFrequencyConsensus(
+        PitchResult primary,
+        PitchResult lowMpm,
+        PitchResult sustained,
+        float[] longFrame
+    ) {
+        if (
+            lowMpm == null ||
+            longFrame == null ||
+            lowMpm.frequency < 120.0 ||
+            lowMpm.frequency > 350.0
+        ) {
+            return primary;
+        }
+
+        boolean yinAgrees =
+            sustained != null &&
+            pitchCentsApart(sustained.frequency, lowMpm.frequency) <= 45.0;
+        double lowProfile = harmonicProfileScore(longFrame, lowMpm.frequency);
+
+        if (primary == null) {
+            if (lowMpm.confidence >= 0.62 && (yinAgrees || lowProfile >= 0.24)) {
+                double confidence = lowMpm.confidence;
+                if (yinAgrees) confidence += 0.13;
+                confidence += Math.min(0.09, lowProfile * 0.18);
+                return new PitchResult(
+                    lowMpm.frequency,
+                    Math.min(1.0, Math.max(0.66, confidence)),
+                    "sustained"
+                );
+            }
+            return null;
+        }
+
+        double direct = pitchCentsApart(primary.frequency, lowMpm.frequency);
+        if (direct <= 38.0) {
+            double frequency = Math.sqrt(primary.frequency * lowMpm.frequency);
+            double confidence = Math.max(primary.confidence, lowMpm.confidence) + 0.10;
+            if (yinAgrees) confidence += 0.08;
+            confidence += Math.min(0.06, lowProfile * 0.12);
+            return new PitchResult(
+                frequency,
+                Math.min(1.0, Math.max(0.68, confidence)),
+                primary.mode
+            );
+        }
+
+        double lower = Math.min(primary.frequency, lowMpm.frequency);
+        double higher = Math.max(primary.frequency, lowMpm.frequency);
+        double ratio = higher / lower;
+        int harmonic = (int) Math.round(ratio);
+
+        if (harmonic >= 2 && harmonic <= 4) {
+            double harmonicError = Math.abs(
+                1200.0 * (Math.log(ratio / harmonic) / Math.log(2.0))
+            );
+            if (harmonicError <= 45.0) {
+                PitchResult lowerPitch =
+                    primary.frequency <= lowMpm.frequency ? primary : lowMpm;
+                PitchResult higherPitch = lowerPitch == primary ? lowMpm : primary;
+
+                if (lowerPitch == lowMpm) {
+                    double higherProfile = harmonicProfileScore(longFrame, higherPitch.frequency);
+                    boolean harmonicEvidence =
+                        lowProfile >= Math.max(0.18, higherProfile * 0.88);
+                    boolean confidenceEvidence =
+                        lowMpm.confidence >= higherPitch.confidence * 0.64;
+
+                    if ((yinAgrees || harmonicEvidence) && confidenceEvidence) {
+                        double confidence =
+                            Math.max(lowMpm.confidence, yinAgrees ? 0.84 : 0.70);
+                        confidence += Math.min(0.08, lowProfile * 0.14);
+                        return new PitchResult(
+                            lowMpm.frequency,
+                            Math.min(1.0, confidence),
+                            "sustained"
+                        );
+                    }
+                }
+            }
+        }
+
+        if (
+            primary.frequency >= 120.0 &&
+            primary.frequency <= 350.0 &&
+            lowMpm.confidence >= 0.70
+        ) {
+            double primaryProfile = harmonicProfileScore(longFrame, primary.frequency);
+            if (
+                (yinAgrees && lowProfile >= primaryProfile * 0.82) ||
+                lowProfile >= primaryProfile + 0.10
+            ) {
+                double confidence = lowMpm.confidence + (yinAgrees ? 0.12 : 0.04);
+                return new PitchResult(
+                    lowMpm.frequency,
+                    Math.min(1.0, confidence),
+                    "sustained"
+                );
+            }
+        }
+
+        return primary;
+    }
+
     private PitchResult validateHarmonicFundamental(PitchResult pitch, float[] frame) {
         if (pitch == null || frame == null || frame.length < 512) return pitch;
 
@@ -781,7 +914,10 @@ public class NativePitchPlugin extends Plugin {
             if (target >= nyquist * 0.94) break;
 
             double resolution = sampleRate / (double) frame.length;
-            double delta = Math.max(resolution * 2.5, target * 0.018);
+            boolean longLowProfile = frame.length == ANALYSIS_SIZE && frequency < 350.0;
+            double delta = longLowProfile
+                ? Math.max(resolution * 1.35, target * 0.012)
+                : Math.max(resolution * 2.5, target * 0.018);
             double tone = goertzelPower(frame, target);
             double left = target - delta > 1.0 ? goertzelPower(frame, target - delta) : 0.0;
             double right = target + delta < nyquist ? goertzelPower(frame, target + delta) : 0.0;
@@ -850,7 +986,9 @@ public class NativePitchPlugin extends Plugin {
         double coefficient = 2.0 * Math.cos(omega);
         double previous = 0.0;
         double previous2 = 0.0;
-        double[] window = frame.length == SHORT_ANALYSIS_SIZE ? SHORT_HANN : FAST_HANN;
+        double[] window = frame.length == ANALYSIS_SIZE
+            ? LONG_HANN
+            : (frame.length == SHORT_ANALYSIS_SIZE ? SHORT_HANN : FAST_HANN);
 
         for (int i = 0; i < frame.length; i++) {
             double value = frame[i] * window[i];
@@ -968,11 +1106,24 @@ public class NativePitchPlugin extends Plugin {
         private final int minTau;
         private final int maxTau;
 
+        private final double highPassHz;
+
         NativeMpmDetector(int sampleRate, int inputSize, double minFrequency, double maxFrequency) {
+            this(sampleRate, inputSize, minFrequency, maxFrequency, 0.0);
+        }
+
+        NativeMpmDetector(
+            int sampleRate,
+            int inputSize,
+            double minFrequency,
+            double maxFrequency,
+            double highPassHz
+        ) {
             this.downsample = sampleRate <= 32000 ? 1 : 2;
             this.rate = sampleRate / (double) downsample;
             this.minFrequency = minFrequency;
             this.maxFrequency = Math.min(maxFrequency, rate * 0.45);
+            this.highPassHz = Math.max(0.0, highPassHz);
             int size = inputSize / downsample;
             this.samples = new float[size];
             this.prefixEnergy = new double[size + 1];
@@ -990,6 +1141,27 @@ public class NativePitchPlugin extends Plugin {
                 int base = i * downsample;
                 for (int j = 0; j < downsample; j++) value += input[base + j];
                 samples[i] = (float) (value / downsample);
+            }
+
+            if (highPassHz > 0.0 && samples.length > 1) {
+                double rc = 1.0 / (2.0 * Math.PI * highPassHz);
+                double dt = 1.0 / rate;
+                double alpha = rc / (rc + dt);
+                double previousInput = samples[0];
+                double previousOutput = 0.0;
+                samples[0] = 0.0f;
+
+                for (int i = 1; i < samples.length; i++) {
+                    double currentInput = samples[i];
+                    double output =
+                        alpha * (previousOutput + currentInput - previousInput);
+                    samples[i] = (float) output;
+                    previousInput = currentInput;
+                    previousOutput = output;
+                }
+            }
+
+            for (int i = 0; i < samples.length; i++) {
                 mean += samples[i];
             }
             mean /= samples.length;

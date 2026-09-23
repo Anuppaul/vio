@@ -9,7 +9,6 @@ import './ear-mobile.css';
 import './exercise-range.css';
 import './exercise-musictheory.css';
 import './scale-practice.css';
-import './instrument.css';
 import './native.css';
 import './contrast.css';
 

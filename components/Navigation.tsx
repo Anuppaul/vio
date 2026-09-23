@@ -2,20 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { MouseEvent } from 'react';
 
 const nativeBuild = process.env.NEXT_PUBLIC_VIO_NATIVE === '1';
-type NativeUiPlugin={setOrientation(options:{mode:'unspecified'}):Promise<void>};
-const NativeUi=registerPlugin<NativeUiPlugin>('NativePitch');
 const items = [
   { href: '/', label: 'Ear Tuner', icon: '♪' },
   { href: '/sound-tuner', label: 'Sound Tuner', icon: '◌' },
   { href: '/scale-practice', label: 'Scale Practice', icon: 'সা' },
   { href: '/tanpura', label: 'Tanpura', icon: 'ॐ' },
   { href: '/exercise', label: 'Exercise', icon: '𝄞' },
-  { href: '/metronome', label: 'Metronome', icon: '●' },
-  { href: '/instrument', label: 'Instrument', icon: '≈' }
+  { href: '/metronome', label: 'Metronome', icon: '●' }
 ];
 
 function offlineNavigate(event: MouseEvent<HTMLAnchorElement>, href: string){
@@ -30,7 +26,6 @@ function nativeNavigate(event: MouseEvent<HTMLAnchorElement>, href: string){
   if(typeof document==='undefined')return;
   if(document.documentElement.classList.contains('vio-page-leaving'))return;
   document.documentElement.classList.add('vio-page-leaving');
-  if(Capacitor.isNativePlatform())void NativeUi.setOrientation({mode:'unspecified'}).catch(()=>{});
   window.setTimeout(()=>window.location.assign(href),115);
 }
 

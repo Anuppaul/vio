@@ -2,7 +2,6 @@ package com.anuppaul.vio;
 
 import android.Manifest;
 import android.content.Context;
-import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -174,28 +173,6 @@ public class NativePitchPlugin extends Plugin {
     @PluginMethod
     public void diagnostics(PluginCall call) {
         call.resolve(captureInfo());
-    }
-
-    @PluginMethod
-    public void setOrientation(PluginCall call) {
-        String mode = call.getString("mode", "unspecified");
-        final int requested;
-        if ("landscape".equals(mode)) {
-            requested = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
-        } else if ("portrait".equals(mode)) {
-            requested = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
-        } else {
-            requested = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
-        }
-
-        getActivity().runOnUiThread(() -> {
-            try {
-                getActivity().setRequestedOrientation(requested);
-                call.resolve();
-            } catch (Exception error) {
-                call.reject("Unable to change screen orientation.", error);
-            }
-        });
     }
 
     @PluginMethod

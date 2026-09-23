@@ -172,9 +172,9 @@ export default function ScalePractice(){
     const chosen=saFrequency?frequency:saReadyFrequency;if(!chosen)return;const ctx=ctxRef.current;
     const voice=(saFrequency&&ctx?recentVoiceSample(ctx.sampleRate):candidateVoiceRef.current)||(ctx?recentVoiceSample(ctx.sampleRate):null);
     if(voice&&ctx){saVoiceRef.current=voice;saVoiceRateRef.current=ctx.sampleRate;setHasSaVoice(true)}else{saVoiceRef.current=null;saVoiceRateRef.current=0;setHasSaVoice(false)}
-    stopReference();saFrequencyRef.current=chosen;setSaFrequency(chosen);clearSaReadiness();try{localStorage.setItem('vio-scale-sa-hz',String(chosen))}catch{}setStatus(`Sa set at ${chosen.toFixed(2)} Hz${voice?' · voice reference saved · tap any swara to hear it':' · tap any swara to hear a reference tone'}`)
+    stopReference();saFrequencyRef.current=chosen;setSaFrequency(chosen);clearSaReadiness();setStatus(`Sa set at ${chosen.toFixed(2)} Hz${voice?' · voice reference saved · tap any swara to hear it':' · tap any swara to hear a reference tone'}`)
   }
-  function resetSa(){stopReference();saFrequencyRef.current=null;setSaFrequency(null);saVoiceRef.current=null;saVoiceRateRef.current=0;setHasSaVoice(false);clearSaReadiness();try{localStorage.removeItem('vio-scale-sa-hz')}catch{}setStatus('Sa cleared · sing and hold Sa; natural variation up to ±12 cents is allowed')}
+  function resetSa(){stopReference();saFrequencyRef.current=null;setSaFrequency(null);saVoiceRef.current=null;saVoiceRateRef.current=0;setHasSaVoice(false);clearSaReadiness();setStatus('Sa cleared · sing and hold Sa; natural variation up to ±12 cents is allowed')}
   async function playSwara(offset:number,kind:Saptak){
     if(!saFrequency)return;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx)return;ctxRef.current=ctx;await resumeBrowserAudio(ctx);stopReference();
     const target=saFrequency*Math.pow(2,offset/12),label=swaraLabel(mod(offset,12),language),voice=saVoiceRef.current,voiceRate=saVoiceRateRef.current;

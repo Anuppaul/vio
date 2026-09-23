@@ -18,9 +18,8 @@
 .settings-help,
 .mt-setting-value,
 .drawer-head p,
-.practice-head,
-.instrument-axis,
-.instrument-readout small{
+.practice-head
+{
   color:#556176;
 }
 .nav-items a{color:#526074}

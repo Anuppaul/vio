@@ -5,6 +5,7 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import ExerciseClefPreview, { EXTRA_CLEF_CONFIG, type ExerciseClefKey } from '@/components/ExerciseClefPreview';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 
+const EXERCISE_NATIVE=process.env.NEXT_PUBLIC_VIO_NATIVE==='1';
 const LETTERS=['C','D','E','F','G','A','B'];
 const SEMITONES:Record<string,number>={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 const CLEFS={
@@ -228,8 +229,17 @@ export default function Exercise(){
  const paneDone=settingsPane!=='main'?<div className="mt-pane-footer"><button className="primary" onClick={()=>setSettingsPane('main')}>Done</button></div>:null;
  return <section className="card exercise-app mt-note-identification">
   <header className="exercise-top">
+    <a
+      className="exercise-home"
+      href={EXERCISE_NATIVE?'/index.html':'/'}
+      aria-label="Back to VIO"
+      title="Back to VIO"
+    >⌂</a>
     <h1>Note Identification</h1>
-    <div className="top-actions"><button onClick={()=>setReportOpen(true)}>Report</button><button onClick={openSettings}>Settings</button></div>
+    <div className="top-actions">
+      <button className="exercise-report-button" onClick={()=>setReportOpen(true)} aria-label="Progress report" title="Progress report">◎</button>
+      <button className="exercise-settings-button" onClick={openSettings} aria-label="Settings" title="Settings">⚙</button>
+    </div>
   </header>
   <div className="exercise-scoreline" aria-label="Exercise progress">
     <span className="exercise-time">{timeLimitMs?fmt(remaining):fmt(elapsed)}</span>

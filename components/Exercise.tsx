@@ -205,8 +205,7 @@ export default function Exercise(){
  function toggleFilter(token:string){setDraft(d=>{const on=d.noteFilterValues.includes(token);if(on&&d.noteFilterValues.length===1)return d;return{...d,noteFilterValues:on?d.noteFilterValues.filter(x=>x!==token):[...d.noteFilterValues,token]}})}
  function setDraftRange(clef:Clef,min:number,max:number){setDraft(d=>({...d,ranges:{...d.ranges,[clef]:{min,max}}}))}
 
- const visibleAnswerTokens=useMemo(()=>{if(settings.noteFilter)return NOTE_TOKENS.filter(t=>settings.noteFilterValues.includes(t));if(settings.accidentals)return[...NOTE_TOKENS];const allowed=new Set<string>(LETTERS);for(const k of settings.keys){for(const [l,a] of Object.entries(KEYS[k]?.acc||{}))allowed.add(l+a)}return NOTE_TOKENS.filter(t=>allowed.has(t))},[settings.noteFilter,settings.noteFilterValues,settings.accidentals,settings.keys]);
- const answerRows=useMemo(()=>['#','','b'].map(acc=>({acc,tokens:visibleAnswerTokens.filter(t=>tokenParts(t).acc===acc)})).filter(r=>r.tokens.length),[visibleAnswerTokens]);
+ const answerRows=useMemo(()=>['#','','b'].map(acc=>({acc,tokens:NOTE_TOKENS.filter(t=>tokenParts(t).acc===acc)})),[]);
 
  useEffect(()=>{
   const down=(e:KeyboardEvent)=>{
@@ -255,7 +254,7 @@ export default function Exercise(){
    {settingsPane==='clefs'&&<SettingGroup label="Clef"><ClefSelector selected={draft.clefs[0]||'treble'} onSelect={toggleClef}/></SettingGroup>}
    {paneClef&&<SettingGroup label={`${CLEFS[paneClef].short} Range`}><StaffRangePicker clef={paneClef} low={draft.ranges[paneClef].min} high={draft.ranges[paneClef].max} onChange={(min,max)=>setDraftRange(paneClef,min,max)}/></SettingGroup>}
    {settingsPane==='positions'&&<SettingGroup label="Positions"><div className="seg three"><button className={draft.positions==='all'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'all'}))}>Lines and Spaces</button><button className={draft.positions==='lines'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'lines'}))}>Lines Only</button><button className={draft.positions==='spaces'?'active':''} onClick={()=>setDraft(d=>({...d,positions:'spaces'}))}>Spaces Only</button></div></SettingGroup>}
-   {settingsPane==='keys'&&<SettingGroup label="Key Signatures"><div className="key-signature-grid">{KEY_ORDER.map(k=><button key={k} className={draft.keys.includes(k)?'active':''} onClick={()=>toggleKey(k)}><b>{KEYS[k].count?`${KEYS[k].count}${KEYS[k].type==='b'?'♭':'♯'}`:'None'}</b><small>{KEYS[k].label}</small></button>)}</div></SettingGroup>}
+   {settingsPane==='keys'&&<SettingGroup label="Key Signatures"><KeySignatureSelector selected={draft.keys} onToggle={toggleKey}/></SettingGroup>}
    {settingsPane==='note-values'&&<SettingGroup label="Note Values"><div className="note-values-grid">{NOTE_VALUES.map(item=><button key={item.value} className={draft.noteValues.includes(item.value)?'active':''} onClick={()=>toggleNoteValue(item.value)}><b>{item.symbol}</b><span>{item.label}</span></button>)}</div></SettingGroup>}
    {settingsPane==='note-names'&&<SettingGroup label="Note Names"><select value={draft.noteNames} onChange={e=>setDraft(d=>({...d,noteNames:e.target.value as NoteNameMode}))}>{NOTE_NAME_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingGroup>}
    {settingsPane==='note-filter'&&<SettingGroup label="Note Filter"><div className="note-filter-grid">{['#','','b'].map(acc=><div key={acc||'n'} className="note-filter-row"><span>{acc==='#'?'Sharps':acc==='b'?'Flats':'Naturals'}</span><div>{NOTE_TOKENS.filter(t=>tokenParts(t).acc===acc).map(t=><button key={t} className={draft.noteFilterValues.includes(t)?'active':''} onClick={()=>toggleFilter(t)}>{t[0]}{accidental(acc)}</button>)}</div></div>)}</div><p className="settings-help">At least one note must stay selected.</p></SettingGroup>}
@@ -303,4 +302,41 @@ function GrandStaffRangePicker({low,high,onChange}:{low:number;high:number;onCha
  const renderHandle=(which:RangeHandle,note:{letter:string;octave:number;midi:number;index:number},yPos:number)=>{const xPos=noteX(which),label=which==='low'?'From':'To';return <g key={which} className={`staff-range-handle ${which}`} tabIndex={0} role="slider" aria-label={`${label} ${midiName(note.midi)}. Drag note up or down.`} aria-valuetext={midiName(note.midi)} onPointerDown={e=>start(which,e)} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();bump(which,1)}else if(e.key==='ArrowDown'){e.preventDefault();bump(which,-1)}}}>{ledgerYs(note.index).map((ly,i)=><line key={i} x1={xPos-29} y1={ly} x2={xPos+29} y2={ly} className="staff-range-ledger"/>)}<ellipse cx={xPos} cy={yPos} rx="15" ry="10" transform={`rotate(-13 ${xPos} ${yPos})`} className="staff-range-head"/><line x1={xPos+13} y1={yPos-2} x2={xPos+13} y2={yPos-37} className="staff-range-stem"/><g transform={`translate(${xPos-39} ${which==='low'?Math.min(394,yPos+18):Math.max(18,yPos-48)})`}><rect width="78" height="24" rx="12" className="staff-range-label-bg"/><text x="39" y="16" textAnchor="middle" className="staff-range-label-text">{label} {midiName(note.midi)}</text></g></g>};
  return <div className="staff-range-picker"><div className="staff-range-readout"><span><small>From</small><b>{midiName(low)}</b></span><i>→</i><span><small>To</small><b>{midiName(high)}</b></span></div><div className="staff-range-practice"><div className="staff-range-caption"><b>Grand Staff</b><span>Drag the two notes across both staves</span></div><svg ref={svgRef} viewBox="0 0 620 420" aria-label={`Grand Staff range ${midiName(low)} to ${midiName(high)}`}><rect x="20" y="18" width="580" height="384" rx="18" className="staff-range-sheet"/><rect x="302" y={Math.min(lowY,highY)} width="166" height={Math.max(4,Math.abs(lowY-highY))} rx="18" className="staff-range-selection"/>{[0,1,2,3,4].map(i=><line key={`t${i}`} x1="58" y1={trebleBottom-i*2*stepY} x2="566" y2={trebleBottom-i*2*stepY} className="staff-range-line"/>)}{[0,1,2,3,4].map(i=><line key={`b${i}`} x1="58" y1={bassBottom-i*2*stepY} x2="566" y2={bassBottom-i*2*stepY} className="staff-range-line"/>)}<text x="112" y={trebleBottom+3} fontSize="82" textAnchor="middle" className="staff-range-clef">𝄞</text><text x="112" y={bassBottom-20} fontSize="62" textAnchor="middle" className="staff-range-clef">𝄢</text>{renderHandle('low',lowNote,lowY)}{renderHandle('high',highNote,highY)}</svg></div><p className="staff-range-help">Grand Staff practice uses both treble and bass clefs. Available audio: C2–C7.</p></div>
 }
+const FLAT_KEYS_BY_COUNT=['F','Bb','Eb','Ab','Db','Gb','Cb'];
+const SHARP_KEYS_BY_COUNT=['G','D','A','E','B','Fs','Cs'];
+
+function KeySignatureMark({type,count}:{type:''|'#'|'b';count:number}){
+ if(!count)return <span className="mt-key-signature-mark">♮</span>;
+ const symbol=type==='b'?'♭':'♯';
+ return <span className="mt-key-signature-mark" aria-hidden="true">{Array.from({length:count},(_,i)=><span key={i}>{symbol}</span>)}</span>
+}
+
+function KeySignatureButton({keyId,selected,onToggle,wide=false}:{keyId:string;selected:string[];onToggle:(keyId:string)=>void;wide?:boolean}){
+ const keyInfo=KEYS[keyId]||KEYS.C;
+ const label=!keyInfo.count?'No Key Signature':`${keyInfo.count} ${keyInfo.type==='b'?(keyInfo.count===1?'Flat':'Flats'):(keyInfo.count===1?'Sharp':'Sharps')}`;
+ return <button
+  type="button"
+  className={`${selected.includes(keyId)?'active':''} ${wide?'mt-key-signature-none':''}`}
+  aria-pressed={selected.includes(keyId)}
+  aria-label={label}
+  onClick={()=>onToggle(keyId)}
+ >
+  <KeySignatureMark type={(keyInfo.type||'') as ''|'#'|'b'} count={keyInfo.count}/>
+  <span className="mt-key-signature-meta"><b>{label}</b><small>{keyInfo.label} major</small></span>
+ </button>
+}
+
+function KeySignatureSelector({selected,onToggle}:{selected:string[];onToggle:(keyId:string)=>void}){
+ return <div className="key-signature-grid mt-key-signatures" role="group" aria-label="Key signatures">
+  <KeySignatureButton keyId="C" selected={selected} onToggle={onToggle} wide/>
+  {Array.from({length:7},(_,index)=>{
+   const count=index+1,flat=FLAT_KEYS_BY_COUNT[index],sharp=SHARP_KEYS_BY_COUNT[index];
+   return <div className="mt-key-signature-pair" key={count}>
+    <KeySignatureButton keyId={flat} selected={selected} onToggle={onToggle}/>
+    <KeySignatureButton keyId={sharp} selected={selected} onToggle={onToggle}/>
+   </div>
+  })}
+ </div>
+}
+
 function SettingGroup({label,children}:{label:string;children:ReactNode}){return <div className="settings-group"><label>{label}</label>{children}</div>}

@@ -2,11 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 
 type ScaleId='chromatic'|'major'|'minor'|'bhairav'|'kafi';
 type SoundId='geo'|'violin'|'bowed'|'warm'|'glass';
 type UiLanguage='bn'|'hi'|'en';
+
+type NativeUiPlugin={
+  setOrientation(options:{mode:'landscape'|'portrait'|'unspecified'}):Promise<void>;
+};
+
+const NativeUi=registerPlugin<NativeUiPlugin>('NativePitch');
+
+type LockableScreenOrientation=ScreenOrientation&{
+  lock?:(orientation:'landscape')=>Promise<void>;
+};
 
 type Voice={
   pointerId:number;
@@ -107,6 +118,18 @@ export default function Instrument(){
       if(lang==='bn'||lang==='hi'||lang==='en')setLanguage(lang);
     }catch{}
   },[]);
+
+  useEffect(()=>{
+    if(!Capacitor.isNativePlatform())return;
+    void NativeUi.setOrientation({mode:'landscape'}).catch(()=>{});
+    const restore=()=>{void NativeUi.setOrientation({mode:'unspecified'}).catch(()=>{})};
+    window.addEventListener('pagehide',restore);
+    return()=>{
+      window.removeEventListener('pagehide',restore);
+      restore();
+    };
+  },[]);
+
   useEffect(()=>()=>{
     for(const voice of voicesRef.current.values()){
       try{voice.amp.gain.cancelScheduledValues(0);voice.amp.gain.value=0;voice.oscA.stop();voice.oscB.stop();voice.lfo.stop();voice.noise?.stop()}catch{}
@@ -118,6 +141,30 @@ export default function Instrument(){
   function chooseLanguage(next:UiLanguage){
     setLanguage(next);
     try{localStorage.setItem('vio-instrument-language',next)}catch{}
+  }
+
+  async function requestLandscape(){
+    if(Capacitor.isNativePlatform()){
+      try{
+        await NativeUi.setOrientation({mode:'landscape'});
+        setStatus('Landscape performance mode');
+      }catch{
+        setStatus('Rotate your device to landscape');
+      }
+      return;
+    }
+
+    const orientation=typeof screen!=='undefined'
+      ?screen.orientation as LockableScreenOrientation
+      :null;
+    if(orientation?.lock){
+      try{
+        await orientation.lock('landscape');
+        setStatus('Landscape performance mode');
+        return;
+      }catch{}
+    }
+    setStatus('Rotate your phone to landscape for the widest playing surface');
   }
 
   async function ensureAudio(){
@@ -326,7 +373,10 @@ export default function Instrument(){
   return <section className="card instrument-card">
     <div className="card-head">
       <div><h2>Expressive Instrument</h2><span>3-octave · multi-touch pitch surface</span></div>
-      <div className="pill"><i className="dot-live"/>{touches.length?`${touches.length} touch${touches.length>1?'es':''}`:'Ready'}</div>
+      <div className="instrument-head-actions">
+        <button className="soft-btn instrument-landscape" type="button" onClick={()=>void requestLandscape()}>↻ Landscape</button>
+        <div className="pill"><i className="dot-live"/>{touches.length?`${touches.length} touch${touches.length>1?'es':''}`:'Ready'}</div>
+      </div>
     </div>
 
     <div className="instrument-controls">
@@ -367,6 +417,7 @@ export default function Instrument(){
         <small>← glide / bend · ↑ brighter & louder · multi-touch supported</small>
       </div>
 
+      <div className="instrument-rotate-hint">↻ Rotate to landscape for the full 3-octave surface</div>
       <div
         ref={surfaceRef}
         className="instrument-surface"

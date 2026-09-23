@@ -35,6 +35,8 @@ const RELEASE_MS = 240;
 const ATTACK_CONFIRM_MS = 85;
 const BACKGROUND_LEARN_FRAMES = 12;
 const BACKGROUND_TOLERANCE_CENTS = 42;
+const QUIET_TRANSIENT_CLARITY = 0.70;
+const QUIET_SUSTAINED_CLARITY = 0.84;
 
 export function detectorRangeForSampleRate(
   sampleRate:number,
@@ -394,7 +396,7 @@ export class PitchTracker {
 
   accept(observation: PitchObservation): PitchTrackResult {
     const { frequency, clarity, rms, mode, now } = observation;
-    const minimumClarity = mode === 'transient' ? 0.58 : 0.66;
+    const minimumClarity = mode === 'transient' ? 0.56 : 0.64;
 
     if (this.noiseFloor <= 0 && rms > 0) this.noiseFloor = Math.max(MIN_RMS, rms);
     const floor = Math.max(this.noiseFloor, MIN_RMS);
@@ -413,6 +415,7 @@ export class PitchTracker {
     }
 
     const energyRise = snrRatio >= 1.18;
+    let quietMusical = false;
     const matchesBackground =
       this.backgroundFrequency > 0 &&
       centsApart(this.backgroundFrequency, frequency) <= BACKGROUND_TOLERANCE_CENTS;
@@ -429,7 +432,18 @@ export class PitchTracker {
         this.quietCandidateFrames = 1;
       }
 
-      if (this.quietCandidateFrames >= BACKGROUND_LEARN_FRAMES) {
+      quietMusical =
+        (
+          mode === 'transient' &&
+          clarity >= QUIET_TRANSIENT_CLARITY &&
+          this.quietCandidateFrames >= 2
+        ) ||
+        (
+          clarity >= QUIET_SUSTAINED_CLARITY &&
+          this.quietCandidateFrames >= 4
+        );
+
+      if (this.quietCandidateFrames >= BACKGROUND_LEARN_FRAMES && !quietMusical) {
         this.backgroundFrequency = this.quietCandidate;
         this.backgroundRms = this.backgroundRms > 0
           ? this.backgroundRms * .8 + rms * .2
@@ -438,7 +452,7 @@ export class PitchTracker {
         return this.holdOrRelease(now, 'candidate');
       }
 
-      if (!strongPeriodic || this.quietCandidateFrames < 4) {
+      if (!strongPeriodic && !quietMusical) {
         return { frequency: null, confidence: clarity, held: false, state: 'candidate' };
       }
     } else {
@@ -456,7 +470,7 @@ export class PitchTracker {
       return { frequency: null, confidence: clarity, held: false, state: 'idle' };
     }
 
-    if (!energyRise && !strongPeriodic && !this.locked) {
+    if (!energyRise && !strongPeriodic && !quietMusical && !this.locked) {
       return { frequency: null, confidence: clarity, held: false, state: 'candidate' };
     }
 
@@ -505,7 +519,7 @@ export class PitchTracker {
 
     pushCluster(this.switchHistory, frequency, SWITCH_TOLERANCE_CENTS, 5);
     const harmonicConflict = harmonicNear(this.locked, frequency);
-    const requiredFrames = harmonicConflict ? (confidence >= 0.94 ? 3 : 4) : 2;
+    const requiredFrames = harmonicConflict ? (confidence >= 0.95 ? 4 : 6) : 2;
 
     if (this.switchHistory.length >= requiredFrames) {
       this.locked = medianLog(this.switchHistory);

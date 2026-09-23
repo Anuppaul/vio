@@ -21,6 +21,92 @@ function asciiCandidates(midi:number){
   return [...new Set(names)].map(n=>`/assets/ear/${encodeURIComponent(n)}.mp3`);
 }
 
+type SampleLoop={buffer:AudioBuffer;start:number;end:number};
+
+function activeSampleBounds(buffer:AudioBuffer){
+  const data=buffer.getChannelData(0),rate=buffer.sampleRate,length=data.length;
+  let peak=0;
+  for(let i=0;i<length;i++)peak=Math.max(peak,Math.abs(data[i]));
+  if(peak<1e-5)return {start:0,end:buffer.duration};
+
+  const window=Math.max(32,Math.floor(rate*.008));
+  const threshold=Math.max(.00025,peak*.012);
+  const windowRms=(from:number)=>{
+    const to=Math.min(length,from+window);
+    let sum=0;
+    for(let i=from;i<to;i++)sum+=data[i]*data[i];
+    return Math.sqrt(sum/Math.max(1,to-from));
+  };
+
+  let first=0,last=length;
+  for(let i=0;i<length-window;i+=window){
+    if(windowRms(i)>=threshold){first=i;break}
+  }
+  for(let i=Math.max(0,length-window);i>first;i-=window){
+    if(windowRms(i)>=threshold){last=Math.min(length,i+window);break}
+  }
+
+  return {
+    start:Math.max(0,(first-Math.floor(rate*.01))/rate),
+    end:Math.min(buffer.duration,(last+Math.floor(rate*.01))/rate)
+  };
+}
+
+function nearestZeroCrossing(
+  buffer:AudioBuffer,
+  target:number,
+  radius:number,
+  direction?:number
+){
+  const data=buffer.getChannelData(0),length=data.length;
+  const center=Math.max(1,Math.min(length-2,Math.round(target)));
+  const lo=Math.max(1,center-radius),hi=Math.min(length-2,center+radius);
+  let best=center,bestScore=Number.POSITIVE_INFINITY;
+  for(let i=lo;i<=hi;i++){
+    const up=data[i]<=0&&data[i+1]>0,down=data[i]>=0&&data[i+1]<0;
+    if(!up&&!down)continue;
+    const crossingDirection=up?1:-1;
+    if(direction!==undefined&&crossingDirection!==direction)continue;
+    const distance=Math.abs(i-center)/Math.max(1,radius);
+    const amplitude=Math.abs(data[i])+Math.abs(data[i+1]);
+    const score=amplitude+distance*.002;
+    if(score<bestScore){best=i;bestScore=score}
+  }
+  return best;
+}
+
+function gaplessLoopBounds(buffer:AudioBuffer,midi:number){
+  const rate=buffer.sampleRate,active=activeSampleBounds(buffer);
+  const activeDuration=active.end-active.start;
+  if(activeDuration<.45)return active;
+
+  const attackSkip=Math.min(.32,activeDuration*.18);
+  const tailSkip=Math.min(.22,activeDuration*.12);
+  const safeStart=active.start+attackSkip;
+  const safeEnd=active.end-tailSkip;
+  if(safeEnd-safeStart<.35)return active;
+
+  const period=rate/midiFrequency(midi);
+  const startRadius=Math.max(Math.floor(rate*.01),Math.ceil(period));
+  const startIndex=nearestZeroCrossing(buffer,safeStart*rate,startRadius);
+  const data=buffer.getChannelData(0);
+  const startDirection=data[startIndex]<=0&&data[startIndex+1]>0?1:-1;
+
+  const available=Math.max(period*4,safeEnd*rate-startIndex);
+  const cycles=Math.max(4,Math.floor(available/period));
+  const idealEnd=startIndex+cycles*period;
+  const endRadius=Math.max(Math.ceil(period*.65),Math.floor(rate*.012));
+  let endIndex=nearestZeroCrossing(buffer,idealEnd,endRadius,startDirection);
+
+  const minimumLoop=Math.floor(rate*.30);
+  if(endIndex-startIndex<minimumLoop){
+    endIndex=nearestZeroCrossing(buffer,safeEnd*rate,endRadius,startDirection);
+  }
+  if(endIndex<=startIndex+minimumLoop||endIndex>=buffer.length-1)return active;
+
+  return {start:startIndex/rate,end:endIndex/rate};
+}
+
 export default function EarTuner(){
   const [notes,setNotes]=useState([55,62,69,76]);
   const [tone,setTone]=useState<'natural'|'beep'>('natural');
@@ -29,18 +115,21 @@ export default function EarTuner(){
   const [volume,setVolume]=useState(.7);
   const [active,setActive]=useState(-1);
   const [status,setStatus]=useState('Ready');
-  const audioRef=useRef<HTMLAudioElement|null>(null);
   const ctxRef=useRef<AudioContext|null>(null);
   const oscRef=useRef<OscillatorNode|null>(null);
   const gainRef=useRef<GainNode|null>(null);
+  const sampleSourceRef=useRef<AudioBufferSourceNode|null>(null);
+  const sampleGainRef=useRef<GainNode|null>(null);
+  const sampleCacheRef=useRef(new Map<string,SampleLoop>());
   const tokenRef=useRef(0);
 
   const preset=useMemo(()=>Object.entries(presets).find(([,v])=>v.every((n,i)=>n===notes[i]))?.[0]||'', [notes]);
 
   function stop(update=true){
     tokenRef.current++;
-    if(audioRef.current){audioRef.current.pause();audioRef.current.src='';audioRef.current=null}
+    try{sampleSourceRef.current?.stop()}catch{}
     try{oscRef.current?.stop()}catch{}
+    sampleSourceRef.current=null;sampleGainRef.current=null;
     oscRef.current=null;gainRef.current=null;setActive(-1);if(update)setStatus('Stopped');
   }
   useEffect(()=>()=>stop(false),[]);
@@ -52,15 +141,52 @@ export default function EarTuner(){
     if(!loop)setTimeout(()=>{if(oscRef.current===osc)stop(false)},1800);
   }
 
-  function playSample(midi:number,index:number){
-    stop(false);const token=tokenRef.current;const urls=asciiCandidates(midi);let i=0;
-    const attempt=()=>{
+  async function playSample(midi:number,index:number){
+    stop(false);
+    const token=tokenRef.current,urls=asciiCandidates(midi);
+    const ctx=ctxRef.current||createBrowserAudioContext();
+    if(!ctx){setStatus('Web Audio unavailable');return}
+    ctxRef.current=ctx;
+    await resumeBrowserAudio(ctx);
+
+    for(const url of urls){
       if(token!==tokenRef.current)return;
-      if(i>=urls.length){beep(midi,index);setStatus(`${displayName(midi,flats)} · oscillator fallback`);return}
-      const audio=new Audio(urls[i]);audio.loop=loop;audio.volume=volume;audioRef.current=audio;
-      audio.onended=()=>{if(!loop){setActive(-1);setStatus('Ready')}};
-      audio.play().then(()=>{setActive(index);setStatus(`${displayName(midi,flats)} · natural sample`)}).catch(()=>{i++;attempt()});
-    };attempt();
+      try{
+        let sample=sampleCacheRef.current.get(url);
+        if(!sample){
+          const response=await fetch(url);
+          if(!response.ok)continue;
+          const buffer=await ctx.decodeAudioData(await response.arrayBuffer());
+          const bounds=gaplessLoopBounds(buffer,midi);
+          sample={buffer,start:bounds.start,end:bounds.end};
+          sampleCacheRef.current.set(url,sample);
+        }
+        if(token!==tokenRef.current)return;
+
+        const source=ctx.createBufferSource(),gain=ctx.createGain();
+        source.buffer=sample.buffer;
+        source.loopStart=sample.start;
+        source.loopEnd=sample.end;
+        source.loop=loop;
+        gain.gain.value=volume;
+        source.connect(gain).connect(ctx.destination);
+        sampleSourceRef.current=source;
+        sampleGainRef.current=gain;
+        source.onended=()=>{
+          if(sampleSourceRef.current!==source)return;
+          sampleSourceRef.current=null;sampleGainRef.current=null;
+          setActive(-1);setStatus('Ready');
+        };
+        source.start();
+        setActive(index);
+        setStatus(`${displayName(midi,flats)} · natural sample${loop?' · seamless loop':''}`);
+        return;
+      }catch{}
+    }
+
+    if(token!==tokenRef.current)return;
+    await beep(midi,index);
+    setStatus(`${displayName(midi,flats)} · oscillator fallback`);
   }
   function playMidi(midi:number,index:number){
     if(tone==='natural')playSample(midi,index);
@@ -86,8 +212,8 @@ export default function EarTuner(){
           <div className="control"><div className="control-label"><span>Tuning</span></div><select value={preset} onChange={e=>{if(e.target.value)setNotes([...presets[e.target.value]])}}><option value="">Custom</option><option value="standard">Standard · G D A E</option><option value="aeae">Cross · A E A E</option><option value="adae">Cross · A D A E</option><option value="pasapasa">Cross · G C G C · পা সা পা সা</option></select></div>
           <div className="control"><div className="control-label"><span>Tone</span></div><div className="seg two"><button className={tone==='natural'?'active':''} onClick={()=>setTone('natural')}>Natural</button><button className={tone==='beep'?'active':''} onClick={()=>setTone('beep')}>Beep</button></div></div>
           <div className="control"><div className="control-label"><span>Notation</span></div><div className="seg two"><button className={!flats?'active':''} onClick={()=>setFlats(false)}>Sharps ♯</button><button className={flats?'active':''} onClick={()=>setFlats(true)}>Flats ♭</button></div></div>
-          <div className="control"><div className="control-label"><span>Repeat</span></div><div className="seg two"><button className={loop?'active':''} onClick={()=>setLoop(true)}>Loop</button><button className={!loop?'active':''} onClick={()=>setLoop(false)}>Once</button></div></div>
-          <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(audioRef.current)audioRef.current.volume=v;if(gainRef.current)gainRef.current.gain.value=v*.5}}/></div>
+          <div className="control"><div className="control-label"><span>Repeat</span></div><div className="seg two"><button className={loop?'active':''} onClick={()=>{setLoop(true);if(sampleSourceRef.current)sampleSourceRef.current.loop=true}}>Loop</button><button className={!loop?'active':''} onClick={()=>{setLoop(false);if(sampleSourceRef.current)sampleSourceRef.current.loop=false}}>Once</button></div></div>
+          <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(sampleGainRef.current)sampleGainRef.current.gain.value=v;if(gainRef.current)gainRef.current.gain.value=v*.5}}/></div>
           <button className="primary danger" onClick={()=>stop()}>Stop sound</button>
         </aside>
       </div>

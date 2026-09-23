@@ -110,10 +110,24 @@ public class NativePitchPlugin extends Plugin {
     @PluginMethod
     public void start(PluginCall call) {
         if (microphonePermissionState() != PermissionState.GRANTED) {
+            requestPermissionForAlias("microphone", call, "startPermissionCallback");
+            return;
+        }
+
+        startCapture(call);
+    }
+
+    @PermissionCallback
+    public void startPermissionCallback(PluginCall call) {
+        if (microphonePermissionState() != PermissionState.GRANTED) {
             call.reject("Microphone permission is required.");
             return;
         }
 
+        startCapture(call);
+    }
+
+    private void startCapture(PluginCall call) {
         synchronized (captureLock) {
             if (running.get()) {
                 call.resolve(captureInfo());

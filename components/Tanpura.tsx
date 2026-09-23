@@ -197,7 +197,6 @@ export default function Tanpura(){
   useEffect(()=>{if(playing)void start()},[pattern,key]);
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Continuous drone</p><h1>Tanpura</h1><p>Choose Sa and a drone pattern.</p></div><div className="badge">12 keys · SA PA / SA MA</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Tanpura Drone</h2></div><span>{status}</span></div>
       <div className="tanpura-layout">

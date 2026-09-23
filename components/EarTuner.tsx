@@ -74,7 +74,6 @@ export default function EarTuner(){
   }
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Reference tuner</p><h1>Ear Tuner</h1><p>Choose a note for each string and match the reference tone.</p></div><div className="badge">G · D · A · E</div></div>
     <section className="card">
       <div className="card-head"><div><h2>String reference</h2></div><span>{status}</span></div>
       <div className="grid-2">

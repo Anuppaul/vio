@@ -773,7 +773,6 @@ export default function SoundTuner(){
   const inTune=cents!==null&&Math.abs(cents)<=3;
   const color=cents===null?'#94a3b8':inTune?'#0d9488':cents<0?'#d97706':'#dc2626';
   return <>
-    <div className="page-head"><div><p className="eyebrow">Universal live pitch</p><h1>Sound Tuner</h1><p>Harmonic-aware real-time pitch detection with confidence gating, dropout hold and adaptive needle smoothing for stable instrument tuning.</p></div><div className="badge">Detect → validate → track</div></div>
     <section className="card">
       <div className="card-head"><div><h2>Live pitch</h2></div><div className="pill"><i className="dot-live"/>{running?'Listening':starting?'Starting':'Ready'}</div></div>
       <div className="grid-2">

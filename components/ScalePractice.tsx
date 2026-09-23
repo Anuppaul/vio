@@ -164,7 +164,6 @@ export default function ScalePractice(){
   const canSetSa=saFrequency?frequency!==null:saReady;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Indian classical ear training</p><h1>Scale Practice</h1><p>Sing your own Sa first. That exact pitch becomes the tonic, and the full Mandra, Madhya and Taar saptak are generated relative to it.</p></div><div className="badge">Your Sa → relative swara → cents</div></div>
     <section className="card scale-practice-card">
       <div className="card-head"><div><h2>Relative Sa tuner</h2><span>{saFrequency?`Sa · ${saFrequency.toFixed(2)} Hz${hasSaVoice?' · voice saved':''}`:'Sa not set yet'}</span></div><div className="pill"><i className="dot-live"/>{running?'Listening':'Ready'}</div></div>
       <div className="scale-practice-layout">

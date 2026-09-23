@@ -15,6 +15,15 @@ const result = spawnSync(process.execPath, ['node_modules/next/dist/bin/next', '
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 
+// The repository keeps the original 60-second Tanpura masters.
+// Android bundles only the approved compact ~10-second loops.
+const compactTanpura = spawnSync(process.execPath, ['scripts/compact-tanpura-android.mjs'], {
+  stdio: 'inherit',
+  env: process.env
+});
+if (compactTanpura.error) throw compactTanpura.error;
+if (compactTanpura.status !== 0) process.exit(compactTanpura.status ?? 1);
+
 const routes = ['index', 'sound-tuner', 'scale-practice', 'tanpura', 'exercise', 'metronome'];
 for (const route of routes) {
   const html = await readFile(resolve('out', `${route}.html`), 'utf8');

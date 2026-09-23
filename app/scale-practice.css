@@ -5,3 +5,10 @@
 @media(max-width:900px){.scale-practice-layout{grid-template-columns:1fr}.scale-practice-side{border-left:0;border-top:1px solid #ececf3}.swara-grid{grid-template-columns:repeat(6,minmax(0,1fr))}.swara-cell:nth-child(6n){border-right:0}.swara-cell:nth-child(-n+6){border-bottom:1px solid #f0f1f5}}
 @media(max-width:650px){.scale-practice-main,.scale-practice-side{padding:10px}.scale-gauge-wrap{aspect-ratio:2/1}.scale-prompt,.scale-swara{font-size:46px}.saptak-title{padding:8px}.saptak-title span{display:none}.swara-cell{padding:9px 2px}.swara-cell b{font-size:14px}.swara-cell small{font-size:6.5px}.swara-play-hint{font-size:8px}}
 @media(max-width:380px){.swara-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.swara-cell:nth-child(6n){border-right:1px solid #f0f1f5}.swara-cell:nth-child(-n+6){border-bottom:0}.swara-cell:nth-child(4n){border-right:0}.swara-cell{border-bottom:1px solid #f0f1f5}.swara-cell:nth-last-child(-n+4){border-bottom:0}}
+
+
+/* Keep octave dots legible across Bengali, Devanagari and Latin swara labels. */
+.swara-cell b.mandra-mark{padding-bottom:5px}
+.swara-cell b.taar-mark{padding-top:5px}
+.scale-swara.mandra-mark{padding-bottom:.12em}
+.scale-swara.taar-mark{padding-top:.12em}

@@ -1,4 +1,4 @@
-/* Native-only insets; the browser/PWA layout is intentionally unchanged. */
+/* Native-only insets; browser/PWA layout remains unchanged. */
 html.vio-native {
   --vio-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
   --vio-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
@@ -6,27 +6,37 @@ html.vio-native {
   padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
 }
 
-/*
- * Android/Capacitor already renders edge-to-edge. Keep the page flush to the
- * viewport and let the sticky navigation own the top safe-area exactly once.
- * Previously body padding + nav top both used --vio-top, creating a large
- * double gap above the top bar on physical Android devices.
- */
 .vio-native body {
   padding-top: 0;
   padding-bottom: calc(28px + var(--vio-bottom));
 }
 
+/*
+ * Native app-bar behavior:
+ * - sticky at the WebView top with no blank safe-area gap
+ * - the nav background itself absorbs the status-bar inset
+ * - controls remain below system icons when edge-to-edge is active
+ */
 .vio-native .suite-nav {
-  top: max(4px, var(--vio-top));
+  position: sticky;
+  top: 0;
   margin-top: 0;
+  min-height: calc(58px + var(--vio-top));
+  height: auto;
+  padding-top: calc(7px + var(--vio-top));
+  padding-bottom: 7px;
 }
 
-/* Mobile native navigation should sit like a normal Android app bar: just
- * below the status bar, without the browser/PWA outer top margin. */
 @media (max-width: 650px) {
   .vio-native .suite-nav {
-    top: max(2px, var(--vio-top));
-    margin: 0 6px 10px;
+    top: 0;
+    width: 100%;
+    margin: 0 0 10px;
+    min-height: calc(54px + var(--vio-top));
+    padding: calc(6px + var(--vio-top)) 6px 6px;
+    border-top: 0;
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0 0 16px 16px;
   }
 }

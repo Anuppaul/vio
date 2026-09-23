@@ -234,6 +234,12 @@ export default function Exercise(){
       href={EXERCISE_NATIVE?'/index.html':'/'}
       aria-label="Back to VIO"
       title="Back to VIO"
+      onClick={event=>{
+        if(!EXERCISE_NATIVE)return;
+        event.preventDefault();
+        document.documentElement.classList.add('vio-page-leaving');
+        window.setTimeout(()=>window.location.assign('/index.html'),115);
+      }}
     >⌂</a>
     <h1>Note Identification</h1>
     <div className="top-actions">

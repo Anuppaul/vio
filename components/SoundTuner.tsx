@@ -42,6 +42,7 @@ const WORKLET_MAX_FRAME_AGE_S=.18;
 const WORKLET_STARTUP_WATCHDOG_MS=650;
 
 type NativePermissionState='prompt'|'prompt-with-rationale'|'granted'|'denied';
+type NativePermissionResult={microphone?:NativePermissionState}|undefined;
 type NativePitchSample={frequency:number;rms:number;confidence:number;sampleRate:number;source:string;mode?:PitchMode};
 type NativePitchError={message:string};
 type NativePitchStartInfo={
@@ -56,8 +57,8 @@ type NativePitchStartInfo={
   oboeFallbackErrorCode?:number;
 };
 type NativePitchPlugin={
-  checkPermissions():Promise<{microphone?:NativePermissionState}>;
-  requestPermissions(options:{permissions:string[]}):Promise<{microphone?:NativePermissionState}>;
+  checkPermissions():Promise<NativePermissionResult>;
+  requestPermissions(options:{permissions:string[]}):Promise<NativePermissionResult>;
   start():Promise<NativePitchStartInfo>;
   stop():Promise<void>;
   diagnostics():Promise<NativePitchStartInfo>;
@@ -583,11 +584,11 @@ export default function SoundTuner(){
   async function startNativePitch(session:number){
     const current=await NativePitch.checkPermissions();
     if(session!==captureSessionRef.current)return;
-    let microphone=current.microphone;
+    let microphone=current?.microphone;
     if(microphone!=='granted'){
       const requested=await NativePitch.requestPermissions({permissions:['microphone']});
       if(session!==captureSessionRef.current)return;
-      microphone=requested.microphone;
+      microphone=requested?.microphone;
     }
     if(microphone!=='granted')throw new Error('microphone permission denied');
     trackerRef.current.reset();needleFilterRef.current.reset();

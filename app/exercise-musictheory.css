@@ -669,3 +669,92 @@
     font-size:28px;
   }
 }
+
+
+/* Practice-head actions: Hear, Progress, Settings in one compact cluster. */
+.exercise-page .practice-head{
+  min-height:44px;
+  padding:6px 8px 6px 12px;
+}
+.practice-tools{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex:0 0 auto;
+}
+.exercise-page .practice-tools .soft-btn{
+  min-height:32px;
+  height:32px;
+  border:1px solid #e1e3eb;
+  border-radius:9px;
+  background:#faf9ff;
+  color:#6559c7;
+  font-size:10px;
+  font-weight:850;
+  box-shadow:none;
+}
+.exercise-page .practice-tools .soft-btn:hover{
+  border-color:#d1c9ff;
+  background:#f3f0ff;
+  color:#5146bc;
+}
+.exercise-page .practice-hear{
+  min-width:62px;
+  padding:0 10px;
+}
+.exercise-page .practice-icon-btn{
+  width:32px;
+  min-width:32px;
+  padding:0;
+  font-size:15px !important;
+  line-height:1;
+}
+.exercise-page .practice-head>span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+@media(max-width:650px){
+  .exercise-page .practice-head{
+    min-height:42px;
+    padding:5px 6px 5px 8px;
+    gap:6px;
+  }
+  .exercise-page .practice-head>span{
+    max-width:none;
+    flex:1 1 auto;
+  }
+  .practice-tools{
+    gap:3px;
+  }
+  .exercise-page .practice-tools .soft-btn{
+    min-height:32px;
+    height:32px;
+  }
+  .exercise-page .practice-hear{
+    min-width:54px;
+    padding:0 7px;
+    font-size:9px !important;
+  }
+  .exercise-page .practice-icon-btn{
+    width:32px;
+    min-width:32px;
+    font-size:14px !important;
+  }
+}
+
+@media(max-width:380px){
+  .exercise-page .practice-head>span{
+    font-size:7px;
+  }
+  .exercise-page .practice-hear{
+    min-width:50px;
+    padding:0 5px;
+  }
+  .exercise-page .practice-icon-btn{
+    width:30px;
+    min-width:30px;
+  }
+}

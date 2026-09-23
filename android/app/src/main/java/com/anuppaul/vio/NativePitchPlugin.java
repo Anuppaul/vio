@@ -191,7 +191,15 @@ public class NativePitchPlugin extends Plugin {
                         WindowInsetsCompat.Type.systemBars()
                             | WindowInsetsCompat.Type.displayCutout()
                     );
-                    view.setPadding(0, 0, 0, 0);
+                    Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+                    boolean keyboardVisible =
+                        insets.isVisible(WindowInsetsCompat.Type.ime());
+                    view.setPadding(
+                        0,
+                        0,
+                        0,
+                        keyboardVisible ? ime.bottom : 0
+                    );
                     injectNativeInsets(bars);
                     return insets;
                 });

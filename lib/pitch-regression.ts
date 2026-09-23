@@ -103,6 +103,7 @@ export function syntheticSine(frequency:number,amplitude=.8,length=FRAME_SIZE){
 export function buildSyntheticPitchCases():SyntheticPitchCase[]{
   const noise=syntheticNoise(FRAME_SIZE);
   const hum50=syntheticSine(50,.8);
+  const hum100=syntheticSine(100,.72);
   return [
     {
       name:'A4 pure sine',
@@ -130,6 +131,26 @@ export function buildSyntheticPitchCases():SyntheticPitchCase[]{
         vibratoCents:22,
         vibratoHz:5.4
       })
+    },
+    {
+      name:'G3 with fan hum and broadband noise',
+      expectedHz:195.9977,
+      maxCents:28,
+      samples:mixSynthetic(
+        new Float32Array(FRAME_SIZE),
+        [
+          {
+            samples:syntheticHarmonicTone(
+              195.9977,
+              [.52,1,.74,.50,.34,.23,.16]
+            ),
+            gain:.62
+          },
+          {samples:hum50,gain:.28},
+          {samples:hum100,gain:.20},
+          {samples:noise,gain:.16}
+        ]
+      )
     },
     {
       name:'E5 octave trap strong second harmonic',

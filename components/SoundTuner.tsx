@@ -581,7 +581,26 @@ export default function SoundTuner(){
     setStatus(`${recovered?'Recovered':'Listening'} · ${nativeInfo.source} · ${nativeInfo.sampleRate} Hz${burst}${fallback}`);
   }
 
+  async function ensureNativeMicrophonePermission(session:number){
+    const current=await NativePitch.checkPermissions().catch(()=>undefined);
+    if(session!==captureSessionRef.current)return false;
+    if(current?.microphone==='granted')return true;
+
+    // The Capacitor WebView permission path is already proven by Scale Practice.
+    // Use it only to obtain Android RECORD_AUDIO permission, then immediately
+    // release the temporary browser stream before native Oboe/AudioRecord starts.
+    const permissionStream=await requestRawMicrophone();
+    permissionStream.getTracks().forEach(track=>track.stop());
+    if(session!==captureSessionRef.current)return false;
+
+    const confirmed=await NativePitch.checkPermissions().catch(()=>undefined);
+    if(confirmed?.microphone==='denied')throw new Error('microphone permission denied');
+    return true;
+  }
+
   async function startNativePitch(session:number){
+    const permitted=await ensureNativeMicrophonePermission(session);
+    if(!permitted)return;
     trackerRef.current.reset();needleFilterRef.current.reset();
     const listener=await NativePitch.addListener('pitch',sample=>{
       applyTrackedPitch(

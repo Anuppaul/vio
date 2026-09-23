@@ -365,265 +365,210 @@
 }
 
 
-/* Full-screen exercise route -------------------------------------------------
- * The global VIO suite chrome is intentionally removed on /exercise.
- * The exercise owns the viewport, matching dedicated practice-tool behavior.
- */
-body:has(.exercise-page){
-  margin:0;
-  padding-bottom:0;
-  background:#cfcfd0;
+/* High-contrast notation + larger complete note pad */
+.exercise-page .staff-stage svg line,
+.exercise-page .staff-stage svg path{
+  stroke:#000 !important;
 }
-body:has(.exercise-page) .suite-nav,
-body:has(.exercise-page) .pwa-install{
-  display:none !important;
+.exercise-page .staff-stage svg text{
+  fill:#000 !important;
 }
-.exercise-page{
-  width:100%;
-  max-width:none;
-  min-height:100dvh;
-  margin:0;
-  background:#cfcfd0;
+.exercise-page .staff-stage svg ellipse{
+  stroke:#000 !important;
 }
-.exercise-page .exercise-app.mt-note-identification{
-  min-height:100dvh;
-  border:0;
-  border-radius:0;
-  background:#cfcfd0;
-  box-shadow:none;
-}
-.exercise-page .exercise-top{
-  position:sticky;
-  top:0;
-  z-index:70;
-  width:100%;
-  min-height:42px;
-  padding:0 96px;
-  border-bottom:1px solid #303338;
-  background:linear-gradient(#4f5358,#3f4348);
-  box-shadow:0 1px 2px rgba(0,0,0,.18);
-}
-.exercise-page .exercise-top h1{
-  font-size:13px;
-  font-weight:500;
-  letter-spacing:0;
-}
-.exercise-home{
-  position:absolute;
-  left:8px;
-  top:5px;
-  width:32px;
-  height:32px;
-  display:grid;
-  place-items:center;
-  border-radius:4px;
-  color:#f5f6f7;
-  text-decoration:none;
-  font-size:20px;
-  line-height:1;
-}
-.exercise-home:hover{
-  background:rgba(255,255,255,.08);
-}
-.exercise-page .top-actions{
-  top:5px;
-  right:7px;
-  gap:2px;
-}
-.exercise-page .top-actions button{
-  width:32px;
-  height:32px;
-  padding:0;
-  border:0;
-  border-radius:4px;
-  background:transparent;
-  color:#f0f1f2;
-  font-size:16px;
-  font-weight:500;
-}
-.exercise-page .top-actions button:hover{
-  background:rgba(255,255,255,.08);
-}
-.exercise-page .exercise-work{
-  width:min(640px,calc(100% - 28px));
-  margin:0 auto;
-  padding:24px 0 36px;
-}
-.exercise-page .practice{
-  border:1px solid #bfc1c4;
-  border-radius:5px;
-  background:#fff;
-  box-shadow:0 1px 4px rgba(0,0,0,.08);
-}
-.exercise-page .practice-head{
-  min-height:32px;
-  padding:3px 7px 3px 10px;
-  background:#f8f8f8;
-  color:#8a8d90;
-  border-bottom:1px solid #dedfe1;
-}
-.exercise-page .staff-stage{
-  min-height:260px;
-  padding:10px 4px 0;
-}
-.exercise-page .staff-stage svg{
-  width:100%;
-  max-width:610px;
+.exercise-page .staff-stage svg ellipse[fill="#172437"]{
+  fill:#000 !important;
 }
 .exercise-page .question-status{
-  min-height:28px;
-  padding:0 8px 8px;
-  font-size:11px;
+  color:#111827;
+}
+.exercise-page .practice-head{
+  color:#475569;
 }
 .exercise-page .music-theory-answers{
-  gap:4px;
-  padding:10px 10px 9px;
-  background:#f1f1f2;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+  gap:7px;
+  padding:14px;
 }
 .exercise-page .music-theory-answers button{
-  height:36px;
-  border-radius:4px;
-  font-size:10px;
+  min-height:54px;
+  height:54px;
+  border-radius:11px;
+  border-color:#d6d9e3;
+  background:linear-gradient(180deg,#fff,#f8f9fc);
+  color:#111827;
+  font-size:14px;
+  font-weight:800;
+  box-shadow:0 3px 9px rgba(45,51,80,.055);
+}
+.exercise-page .music-theory-answers button:hover:not(:disabled){
+  border-color:#c8c2fb;
+  background:#f7f5ff;
+  color:#5146bc;
+}
+.exercise-page .music-theory-answers button.correct{
+  border-color:#62b899;
+  background:#64cdb6;
+  color:#0b2b21;
+}
+.exercise-page .music-theory-answers button.wrong{
+  border-color:#df789d;
+  background:#ee8eb7;
+  color:#4a1024;
 }
 .exercise-page .exercise-scoreline{
+  min-height:34px;
+  background:#fbfbfe;
+  border-top:1px solid #e8eaf1;
+  color:#4b5565;
+}
+.exercise-page .exercise-score-text{
+  font-size:11px;
+  font-weight:700;
+}
+.exercise-page .exercise-actions{
+  background:#fbfbfe;
+}
+.exercise-page .exercise-actions button{
+  border-radius:10px;
+  background:#fff;
+  color:#4e596d;
+}
+.exercise-page .exercise-actions button:last-child{
+  background:linear-gradient(135deg,#8578f4,#6d60df);
+  border-color:#7569e6;
+  color:#fff;
+}
+
+/* Compact icon header retained from the fullscreen iteration */
+.exercise-home{
+  width:34px;
+  height:34px;
+  display:grid;
+  place-items:center;
+  border:1px solid #dfe3eb;
+  border-radius:10px;
+  background:#fff;
+  color:#596579;
+  text-decoration:none;
+  font-size:18px;
+}
+.exercise-page .exercise-top{
   position:relative;
-  min-height:30px;
-  padding:5px 82px 5px 8px;
+}
+.exercise-page .exercise-top>h1{
+  flex:1;
+}
+.exercise-page .top-actions button{
+  width:36px;
+  min-width:36px;
+  padding:0;
+  font-size:16px;
+}
+
+/* Music-theory-style paired key-signature selector, in VIO colors */
+.key-signature-grid.mt-key-signatures{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px;
+}
+.mt-key-signature-none{
+  grid-column:1/-1;
+}
+.key-signature-grid.mt-key-signatures button{
+  min-height:58px;
+  display:grid;
+  grid-template-columns:minmax(54px,1fr) auto;
+  align-items:center;
+  gap:10px;
+  padding:7px 11px;
+  border:1px solid #dfe3eb;
+  border-radius:11px;
+  background:#fff;
+  color:#2f3a4d;
+  text-align:left;
+}
+.key-signature-grid.mt-key-signatures button.active{
+  border-color:#c9c1ff;
+  background:linear-gradient(135deg,#f1eeff,#fff4f9);
+  color:#5146bc;
+  box-shadow:inset 0 0 0 1px #e3ddff;
+}
+.mt-key-signature-mark{
   display:flex;
   align-items:center;
   justify-content:center;
-  border-top:1px solid #dedfe1;
-  border-bottom:0;
-  background:#f1f1f2;
-  color:#686b6e;
+  min-height:37px;
+  color:#050505;
+  font:700 28px/1 Georgia,"Times New Roman",serif;
+  letter-spacing:-5px;
+  white-space:nowrap;
+}
+.mt-key-signature-none .mt-key-signature-mark{
+  letter-spacing:0;
+  font-size:24px;
+}
+.mt-key-signature-meta{
+  display:grid;
+  justify-items:end;
+  gap:2px;
+  min-width:58px;
+}
+.mt-key-signature-meta b{
+  color:inherit;
   font-size:10px;
-  line-height:1.2;
+  font-weight:900;
 }
-.exercise-score-text{
-  text-align:center;
-  font-weight:500;
-}
-.exercise-score-text b{
-  font-weight:600;
-}
-.exercise-score-text span{
-  color:#777a7d;
-}
-.exercise-page .exercise-scoreline .exercise-time{
-  position:absolute;
-  right:10px;
-  top:7px;
-  font-size:9px;
-  color:#797c7f;
-}
-.exercise-page .exercise-actions{
-  gap:5px;
-  padding:5px 10px 11px;
-  background:#f1f1f2;
-}
-.exercise-page .exercise-actions button{
-  height:34px;
-  border-radius:17px;
-  font-size:9px;
-}
-.exercise-page .drawer-backdrop,
-.exercise-page .report-modal{
-  z-index:120;
+.mt-key-signature-meta small{
+  color:#8a94a5;
+  font-size:8px;
+  font-weight:750;
 }
 
-@media (min-width:900px){
-  .exercise-page .exercise-work{
-    padding-top:32px;
-  }
-}
-
-@media (max-width:650px){
-  body:has(.exercise-page){
-    padding-bottom:0;
-  }
-  .exercise-page{
-    width:100%;
-    min-height:100dvh;
-    margin:0;
-  }
-  .exercise-page .exercise-app.mt-note-identification{
-    min-height:100dvh;
-    border-radius:0;
-  }
-  .exercise-page .exercise-top{
-    min-height:42px;
-    padding:0 82px;
-    justify-content:center;
-  }
-  .exercise-page .exercise-top h1{
-    font-size:12px;
-  }
-  .exercise-home{
-    left:5px;
-    top:5px;
-  }
-  .exercise-page .top-actions{
-    right:4px;
-  }
-  .exercise-page .exercise-work{
-    width:100%;
-    padding:8px 6px 14px;
-  }
-  .exercise-page .practice{
-    width:100%;
-    border-radius:4px;
-  }
-  .exercise-page .practice-head{
-    min-height:31px;
-    padding-left:7px;
-  }
-  .exercise-page .staff-stage{
-    min-height:190px;
-    padding:5px 0 0;
-  }
+@media(max-width:650px){
   .exercise-page .music-theory-answers{
-    gap:3px;
-    padding:7px 5px 6px;
+    grid-template-columns:repeat(7,minmax(0,1fr));
+    gap:4px;
+    padding:10px 6px;
   }
   .exercise-page .music-theory-answers button{
-    height:40px;
-    font-size:10px;
+    min-height:48px;
+    height:48px;
+    padding:0;
+    font-size:11px;
+    border-radius:9px;
   }
-  .exercise-page .exercise-scoreline{
-    min-height:29px;
-    padding:4px 64px 4px 6px;
-    font-size:9px;
+  .key-signature-grid.mt-key-signatures{
+    gap:5px;
   }
-  .exercise-page .exercise-scoreline .exercise-time{
-    right:6px;
-    top:7px;
-    font-size:8px;
+  .key-signature-grid.mt-key-signatures button{
+    min-height:54px;
+    padding:6px 8px;
+    grid-template-columns:minmax(44px,1fr) auto;
   }
-  .exercise-page .exercise-actions{
-    gap:4px;
-    padding:4px 5px 7px;
+  .mt-key-signature-mark{
+    font-size:24px;
   }
-  .exercise-page .exercise-actions button{
-    height:38px;
-    border-radius:7px;
+  .mt-key-signature-meta{
+    min-width:46px;
   }
 }
 
-@media (max-width:360px){
-  .exercise-page .exercise-top{
-    padding:0 74px;
-  }
-  .exercise-page .top-actions button,
-  .exercise-home{
-    width:30px;
-    height:30px;
-  }
+@media(max-width:380px){
   .exercise-page .music-theory-answers{
-    gap:2px;
+    gap:3px;
     padding-left:4px;
     padding-right:4px;
   }
   .exercise-page .music-theory-answers button{
-    font-size:9px;
+    font-size:10px;
+  }
+  .key-signature-grid.mt-key-signatures button{
+    grid-template-columns:1fr;
+    justify-items:center;
+    text-align:center;
+  }
+  .mt-key-signature-meta{
+    justify-items:center;
   }
 }

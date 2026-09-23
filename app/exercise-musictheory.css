@@ -572,3 +572,57 @@
     justify-items:center;
   }
 }
+
+
+/* Restore VIO's softer color language while keeping notation high-contrast. */
+.exercise-page .exercise-top{
+  border-bottom:1px solid #ececf3;
+  background:linear-gradient(135deg,#fff,#fbfaff);
+}
+.exercise-page .exercise-top h1{
+  color:#273249;
+  font-weight:800;
+}
+.exercise-page .exercise-home,
+.exercise-page .top-actions button{
+  border:1px solid #e1e3eb;
+  background:#faf9ff;
+  color:#6559c7;
+}
+.exercise-page .exercise-home:hover,
+.exercise-page .top-actions button:hover{
+  border-color:#d1c9ff;
+  background:#f3f0ff;
+  color:#5146bc;
+}
+.exercise-page .practice{
+  border-color:#e0e3eb;
+  box-shadow:0 10px 26px rgba(56,61,100,.055);
+}
+.exercise-page .practice-head{
+  background:#fbfbfe;
+  border-bottom-color:#eceef4;
+}
+.exercise-page .staff-stage,
+.exercise-page .question-status{
+  background:#fff;
+}
+.exercise-page .music-theory-answers,
+.exercise-page .exercise-scoreline,
+.exercise-page .exercise-actions{
+  background:#fbfbfe;
+}
+.mt-key-signature-pair{
+  grid-column:1/-1;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px;
+}
+.mt-key-signature-mark span{
+  display:inline-block;
+  color:#000;
+}
+
+@media(max-width:650px){
+  .mt-key-signature-pair{gap:5px}
+}

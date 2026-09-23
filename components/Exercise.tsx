@@ -26,7 +26,6 @@ const LEGACY_RANGES={easy:{min:0,max:8},standard:{min:-2,max:10},extended:{min:-
 const KEYS:Record<string,{label:string;type:string;count:number;acc:Record<string,string>}>= {
  C:{label:'C',type:'',count:0,acc:{}},G:{label:'G',type:'#',count:1,acc:{F:'#'}},D:{label:'D',type:'#',count:2,acc:{F:'#',C:'#'}},A:{label:'A',type:'#',count:3,acc:{F:'#',C:'#',G:'#'}},E:{label:'E',type:'#',count:4,acc:{F:'#',C:'#',G:'#',D:'#'}},B:{label:'B',type:'#',count:5,acc:{F:'#',C:'#',G:'#',D:'#',A:'#'}},Fs:{label:'F♯',type:'#',count:6,acc:{F:'#',C:'#',G:'#',D:'#',A:'#',E:'#'}},Cs:{label:'C♯',type:'#',count:7,acc:{F:'#',C:'#',G:'#',D:'#',A:'#',E:'#',B:'#'}},F:{label:'F',type:'b',count:1,acc:{B:'b'}},Bb:{label:'B♭',type:'b',count:2,acc:{B:'b',E:'b'}},Eb:{label:'E♭',type:'b',count:3,acc:{B:'b',E:'b',A:'b'}},Ab:{label:'A♭',type:'b',count:4,acc:{B:'b',E:'b',A:'b',D:'b'}},Db:{label:'D♭',type:'b',count:5,acc:{B:'b',E:'b',A:'b',D:'b',G:'b'}},Gb:{label:'G♭',type:'b',count:6,acc:{B:'b',E:'b',A:'b',D:'b',G:'b',C:'b'}},Cb:{label:'C♭',type:'b',count:7,acc:{B:'b',E:'b',A:'b',D:'b',G:'b',C:'b',F:'b'}}
 };
-const KEY_ORDER=['C','G','D','A','E','B','Fs','Cs','F','Bb','Eb','Ab','Db','Gb','Cb'];
 const KEY_STEPS:Record<StaffClef,Record<string,number[]>>={
  treble:{'#':[8,5,9,6,3,7,4],b:[4,7,3,6,2,5,1]},
  bass:{'#':[6,3,7,4,1,5,2],b:[2,5,1,4,0,3,-1]},

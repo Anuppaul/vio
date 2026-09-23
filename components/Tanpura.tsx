@@ -6,8 +6,6 @@ import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-aud
 const KEYS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 function keyFreq(key:string){return 130.81278265*Math.pow(2,KEYS.indexOf(key)/12)}
 
-const WEB_COMPACT_LOOP_PREVIEW=process.env.NEXT_PUBLIC_VIO_NATIVE!=='1';
-
 function zeroCrossNear(buffer:AudioBuffer,index:number,radius:number){
   const data=buffer.getChannelData(0),length=buffer.length;
   const center=Math.max(1,Math.min(length-2,Math.round(index)));
@@ -137,7 +135,6 @@ export default function Tanpura(){
   const [key,setKey]=useState('C');
   const [volume,setVolume]=useState(.6);
   const [reverb,setReverb]=useState(.48);
-  const [loopMode,setLoopMode]=useState<'compact'|'original'>(WEB_COMPACT_LOOP_PREVIEW?'compact':'original');
   const [playing,setPlaying]=useState(false);
   const [status,setStatus]=useState('Ready');
   const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),wetRef=useRef<GainNode|null>(null),sourceRef=useRef<AudioBufferSourceNode|null>(null),timerRef=useRef<ReturnType<typeof setInterval>|null>(null),nodesRef=useRef<AudioScheduledSourceNode[]>([]);
@@ -189,16 +186,15 @@ export default function Tanpura(){
       if(!buffer){const response=await fetch(url);if(!response.ok)throw new Error('sample unavailable');buffer=await ctx.decodeAudioData(await response.arrayBuffer());cacheRef.current.set(url,buffer)}
       if(token!==tokenRef.current)return;
       const input=outputChain(ctx),source=ctx.createBufferSource();
-      const compact=WEB_COMPACT_LOOP_PREVIEW&&loopMode==='compact';
-      const bounds=compact?compactLoopBounds(buffer):loopBounds(buffer);
+      const bounds=compactLoopBounds(buffer);
       const loopSeconds=Math.max(.1,bounds.end-bounds.start);
       masterRef.current!.gain.setValueAtTime(0,ctx.currentTime);masterRef.current!.gain.linearRampToValueAtTime(volume*1.55,ctx.currentTime+.055);
       source.buffer=buffer;source.loop=true;source.loopStart=bounds.start;source.loopEnd=bounds.end;source.connect(input);source.start(ctx.currentTime+.015,bounds.start);
       sourceRef.current=source;setPlaying(true);
-      setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · ${compact?`Compact ${loopSeconds.toFixed(1)}s preview`:`Original ${loopSeconds.toFixed(0)}s`} · Gapless Hall`);
+      setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · Compact ${loopSeconds.toFixed(1)}s · Gapless Hall`);
     }catch{if(token===tokenRef.current)await synth()}
   }
-  useEffect(()=>{if(playing)void start()},[pattern,key,loopMode]);
+  useEffect(()=>{if(playing)void start()},[pattern,key]);
 
   return <>
     <div className="page-head"><div><p className="eyebrow">Continuous drone</p><h1>Tanpura</h1><p>Choose Sa and a drone pattern.</p></div><div className="badge">12 keys · SA PA / SA MA</div></div>
@@ -209,7 +205,6 @@ export default function Tanpura(){
         <div className="section">
           <div className="control"><div className="control-label"><span>Drone pattern</span></div><div className="seg two"><button className={pattern==='sa-pa'?'active':''} onClick={()=>setPattern('sa-pa')}>सा पा · SA PA</button><button className={pattern==='sa-ma'?'active':''} onClick={()=>setPattern('sa-ma')}>सा मा · SA MA</button></div></div>
           <div className="control"><div className="control-label"><span>Sa / Key</span></div><div className="key-grid">{KEYS.map(k=><button key={k} className={key===k?'active':''} onClick={()=>setKey(k)}>{k}</button>)}</div></div>
-          {WEB_COMPACT_LOOP_PREVIEW&&<div className="control"><div className="control-label"><span>Web loop preview</span><span>{loopMode==='compact'?'~10 sec':'Original'}</span></div><div className="seg two"><button className={loopMode==='compact'?'active':''} onClick={()=>setLoopMode('compact')}>Compact ~10s</button><button className={loopMode==='original'?'active':''} onClick={()=>setLoopMode('original')}>Original 60s</button></div></div>}
           <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(v*1.55,ctxRef.current.currentTime,.02)}}/></div>
           <div className="control"><div className="control-label"><span>Reverb</span><span>{Math.round(reverb*100)}%</span></div><input className="range" type="range" min="0" max="100" value={reverb*100} onChange={e=>{const v=+e.target.value/100;setReverb(v);if(wetRef.current&&ctxRef.current)wetRef.current.gain.setTargetAtTime(v*.95,ctxRef.current.currentTime,.035)}}/></div>
           <button className={`primary ${playing?'danger':''}`} onClick={playing?()=>stop():start}>{playing?'Stop':'Play'}</button>

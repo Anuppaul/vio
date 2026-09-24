@@ -118,41 +118,21 @@ function compactLoopBounds(buffer:AudioBuffer){
   return {start:best.start,end:best.end};
 }
 
-function createHallImpulse(ctx:AudioContext){
-  const duration=3.8,length=Math.floor(ctx.sampleRate*duration),buffer=ctx.createBuffer(2,length,ctx.sampleRate);
-  for(let ch=0;ch<2;ch++){
-    const data=buffer.getChannelData(ch);
-    for(let i=0;i<length;i++){
-      const t=i/length,decay=Math.pow(1-t,2.7),flutter=.84+.16*Math.sin(i*(ch?0.017:0.013));
-      data[i]=(Math.random()*2-1)*decay*flutter;
-    }
-  }
-  return buffer;
-}
-
 export default function Tanpura(){
   const [pattern,setPattern]=useState<'sa-pa'|'sa-ma'>('sa-pa');
   const [key,setKey]=useState('C');
   const [volume,setVolume]=useState(.6);
-  const [reverb,setReverb]=useState(.28);
   const [playing,setPlaying]=useState(false);
   const [status,setStatus]=useState('Ready');
-  const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),wetRef=useRef<GainNode|null>(null),sourceRef=useRef<AudioBufferSourceNode|null>(null),timerRef=useRef<ReturnType<typeof setInterval>|null>(null),nodesRef=useRef<AudioScheduledSourceNode[]>([]);
-  const cacheRef=useRef(new Map<string,AudioBuffer>()),impulseRef=useRef<AudioBuffer|null>(null),tokenRef=useRef(0);
+  const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),sourceRef=useRef<AudioBufferSourceNode|null>(null),timerRef=useRef<ReturnType<typeof setInterval>|null>(null),nodesRef=useRef<AudioScheduledSourceNode[]>([]);
+  const cacheRef=useRef(new Map<string,AudioBuffer>()),tokenRef=useRef(0);
 
   function outputChain(ctx:AudioContext){
-    const input=ctx.createGain(),dry=ctx.createGain(),preDelay=ctx.createDelay(.08),convolver=ctx.createConvolver(),wet=ctx.createGain(),master=ctx.createGain();
+    const input=ctx.createGain(),master=ctx.createGain();
     input.gain.value=1;
-    dry.gain.value=1;
-    preDelay.delayTime.value=.022;
-    if(!impulseRef.current)impulseRef.current=createHallImpulse(ctx);
-    convolver.buffer=impulseRef.current;convolver.normalize=true;
-    wet.gain.value=reverb*.35;
     master.gain.value=volume*.85;
-    input.connect(dry).connect(master);
-    input.connect(preDelay).connect(convolver).connect(wet).connect(master);
-    master.connect(ctx.destination);
-    masterRef.current=master;wetRef.current=wet;
+    input.connect(master).connect(ctx.destination);
+    masterRef.current=master;
     return input;
   }
 
@@ -170,7 +150,7 @@ export default function Tanpura(){
     const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sawtooth';osc.frequency.value=freq;gain.gain.setValueAtTime(.0001,when);gain.gain.exponentialRampToValueAtTime(amp,when+.015);gain.gain.exponentialRampToValueAtTime(.0001,when+2.7);osc.connect(gain).connect(dest);osc.start(when);osc.stop(when+2.8);nodesRef.current.push(osc)
   }
   async function synth(){
-    const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback · Hall');setPlaying(true)
+    const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback');setPlaying(true)
   }
   async function start(){
     stop(false);const token=tokenRef.current;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){await synth();return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
@@ -186,7 +166,7 @@ export default function Tanpura(){
       masterRef.current!.gain.setValueAtTime(0,ctx.currentTime);masterRef.current!.gain.linearRampToValueAtTime(volume*.85,ctx.currentTime+.055);
       source.buffer=buffer;source.loop=true;source.loopStart=bounds.start;source.loopEnd=bounds.end;source.connect(input);source.start(ctx.currentTime+.015,bounds.start);
       sourceRef.current=source;setPlaying(true);
-      setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · Compact ${loopSeconds.toFixed(1)}s · Raw + Reverb`);
+      setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · Compact ${loopSeconds.toFixed(1)}s · Raw MP3`);
     }catch{if(token===tokenRef.current)await synth()}
   }
   useEffect(()=>{if(playing)void start()},[pattern,key]);
@@ -200,7 +180,6 @@ export default function Tanpura(){
           <div className="control"><div className="control-label"><span>Drone pattern</span></div><div className="seg two"><button className={pattern==='sa-pa'?'active':''} onClick={()=>setPattern('sa-pa')}>सा पा · SA PA</button><button className={pattern==='sa-ma'?'active':''} onClick={()=>setPattern('sa-ma')}>सा मा · SA MA</button></div></div>
           <div className="control"><div className="control-label"><span>Sa / Key</span></div><div className="key-grid">{KEYS.map(k=><button key={k} className={key===k?'active':''} onClick={()=>setKey(k)}>{k}</button>)}</div></div>
           <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(v*.85,ctxRef.current.currentTime,.02)}}/></div>
-          <div className="control"><div className="control-label"><span>Reverb</span><span>{Math.round(reverb*100)}%</span></div><input className="range" type="range" min="0" max="100" value={reverb*100} onChange={e=>{const v=+e.target.value/100;setReverb(v);if(wetRef.current&&ctxRef.current)wetRef.current.gain.setTargetAtTime(v*.35,ctxRef.current.currentTime,.035)}}/></div>
           <button className={`primary ${playing?'danger':''}`} onClick={playing?()=>stop():start}>{playing?'Stop':'Play'}</button>
         </div>
       </div>

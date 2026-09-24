@@ -142,7 +142,7 @@ export default function Tanpura(){
     if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null}
     nodesRef.current.forEach(n=>{try{n.stop()}catch{}});nodesRef.current=[];
     if(masterRef.current&&ctxRef.current){try{masterRef.current.gain.cancelScheduledValues(ctxRef.current.currentTime);masterRef.current.gain.setTargetAtTime(0,ctxRef.current.currentTime,.018)}catch{}}
-    masterRef.current=null;wetRef.current=null;setPlaying(false);if(update)setStatus('Stopped');
+    masterRef.current=null;setPlaying(false);if(update)setStatus('Stopped');
   }
   useEffect(()=>()=>stop(false),[]);
 

@@ -192,7 +192,8 @@ export default function SoundTuner(){
     }catch{
       const ctx=ctxRef.current||createBrowserAudioContext();
       if(!ctx){setStatus('Web Audio unavailable');return}
-      ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+      ctxRef.current=ctx;
+      try{await resumeBrowserAudio(ctx)}catch(error){setStatus(error instanceof Error?error.message:'Audio output unavailable');return}
       const osc=ctx.createOscillator(),gain=ctx.createGain();
       osc.frequency.value=midiFrequency(midi,a4);osc.type='sine';gain.gain.value=.13;
       osc.connect(gain).connect(ctx.destination);osc.start();

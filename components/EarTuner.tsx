@@ -135,7 +135,8 @@ export default function EarTuner(){
   useEffect(()=>()=>stop(false),[]);
 
   async function beep(midi:number,index:number){
-    const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+    const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;
+    try{await resumeBrowserAudio(ctx)}catch(error){setStatus(error instanceof Error?error.message:'Audio output unavailable');return}
     const osc=ctx.createOscillator(),gain=ctx.createGain();
     osc.type='sine';osc.frequency.value=midiFrequency(midi);gain.gain.value=volume*.5;osc.connect(gain).connect(ctx.destination);osc.start();oscRef.current=osc;gainRef.current=gain;setActive(index);setStatus(`${displayName(midi,flats)} · ${midiFrequency(midi).toFixed(2)} Hz`);
     if(!loop)setTimeout(()=>{if(oscRef.current===osc)stop(false)},1800);
@@ -147,7 +148,7 @@ export default function EarTuner(){
     const ctx=ctxRef.current||createBrowserAudioContext();
     if(!ctx){setStatus('Web Audio unavailable');return}
     ctxRef.current=ctx;
-    await resumeBrowserAudio(ctx);
+    try{await resumeBrowserAudio(ctx)}catch(error){setStatus(error instanceof Error?error.message:'Audio output unavailable');return}
 
     for(const url of urls){
       if(token!==tokenRef.current)return;

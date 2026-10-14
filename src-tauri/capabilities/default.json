@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Minimum capabilities required for the main VIO window",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

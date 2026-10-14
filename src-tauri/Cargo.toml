@@ -13,4 +13,4 @@ tauri = "=2.12.3"
 
 # Linux WebKitGTK media capture is disabled by default.
 [target.'cfg(target_os = "linux")'.dependencies]
-webkit2gtk = "=2.0.2"
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }

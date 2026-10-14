@@ -57,7 +57,7 @@ for(const directory of ['ear','exercise','metronome','tanpura']){
   }
 }
 assert.ok(wav>=69,'Missing expected WAV samples');
-assert.ok(mp3>=59,'Missing expected MP3 samples');
+assert.ok(mp3>=58,'Missing expected MP3 samples (34 ear + 24 tanpura)');
 console.log(JSON.stringify({
   status:'PASS: offline source/asset checks',
   tauri:pkg.devDependencies['@tauri-apps/cli'],

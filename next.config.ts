@@ -2,7 +2,8 @@ import type { NextConfig } from 'next';
 
 // Only the Android build is static. Keep the hosted web/PWA build unchanged.
 const androidBuild = process.env.VIO_ANDROID_BUILD === '1';
-const nextConfig: NextConfig = androidBuild ? {
+const desktopBuild = process.env.VIO_DESKTOP_BUILD === '1';
+const nextConfig: NextConfig = (androidBuild || desktopBuild) ? {
   output: 'export',
   trailingSlash: false,
   images: { unoptimized: true }

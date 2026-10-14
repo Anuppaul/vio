@@ -195,7 +195,7 @@ export default function ScalePractice(){
   }
   function resetSa(){stopReference();saFrequencyRef.current=null;setSaFrequency(null);saVoiceRef.current=null;saVoiceRateRef.current=0;setHasSaVoice(false);clearSaReadiness();setStatus('Sa cleared · sing and hold Sa; natural variation up to ±12 cents is allowed')}
   async function playSwara(offset:number,kind:Saptak){
-    if(!saFrequency)return;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx)return;ctxRef.current=ctx;await resumeBrowserAudio(ctx);stopReference();
+    if(!saFrequency)return;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;try{await resumeBrowserAudio(ctx)}catch(error){setStatus(error instanceof Error?error.message:'Audio output unavailable');return}stopReference();
     const target=saFrequency*Math.pow(2,offset/12),label=swaraLabel(mod(offset,12),language),voice=saVoiceRef.current,voiceRate=saVoiceRateRef.current;
     setPlayingOffset(offset);setStatus(`Reference · ${label} · ${target.toFixed(2)} Hz${voice?' · your Sa voice':' · clean tone'}`);
     if(voice&&voiceRate>0){

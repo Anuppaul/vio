@@ -2,8 +2,30 @@
 
 use tauri::webview::{PermissionKind, PermissionResponse};
 
+#[cfg(target_os = "linux")]
+use tauri::Manager;
+#[cfg(target_os = "linux")]
+use webkit2gtk::{SettingsExt, WebViewExt};
+
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+            // WebKitGTK defaults media-stream to disabled. The permission handler
+            // cannot make microphone capture work until this is enabled.
+            #[cfg(target_os = "linux")]
+            {
+                let window = app.get_webview_window("main").ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "VIO main window missing")
+                })?;
+                window.with_webview(|view| {
+                    if let Some(settings) = view.inner().settings() {
+                        settings.set_enable_media_stream(true);
+                        settings.set_enable_webrtc(true);
+                    }
+                })?;
+            }
+            Ok(())
+        })
         // WebKitGTK denies microphone permission requests by default.
         // Only the application's own main webview may request audio capture.
         // The user explicitly initiates capture with Start tuning / Start microphone.

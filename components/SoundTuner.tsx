@@ -91,6 +91,7 @@ export default function SoundTuner(){
 
   const ctxRef=useRef<AudioContext|null>(null);
   const analyserRef=useRef<AnalyserNode|null>(null);
+  const analyserSinkRef=useRef<GainNode|null>(null);
   const shortAnalyserRef=useRef<AnalyserNode|null>(null);
   const fastAnalyserRef=useRef<AnalyserNode|null>(null);
   const workletCaptureRef=useRef<TunerWorkletCapture|null>(null);
@@ -481,12 +482,14 @@ export default function SoundTuner(){
       analyserRef.current?.disconnect();
       shortAnalyserRef.current?.disconnect();
       fastAnalyserRef.current?.disconnect();
+      analyserSinkRef.current?.disconnect();
     }catch{}
     if(stopTracks)streamRef.current?.getTracks().forEach(track=>track.stop());
     sourceRef.current=null;
     analyserRef.current=null;
     shortAnalyserRef.current=null;
     fastAnalyserRef.current=null;
+    analyserSinkRef.current=null;
     streamRef.current=null;
     longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
   }
@@ -662,16 +665,14 @@ export default function SoundTuner(){
       return;
     }
     try{
-      const stream=await requestRawMicrophone();
-      if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
+      // Resume on the actual Start click, before microphone permission prompts
+      // consume the transient activation needed by Linux WebKitGTK.
       const ctx=ctxRef.current||createBrowserAudioContext();
-      if(!ctx){
-        stream.getTracks().forEach(track=>track.stop());
-        startingRef.current=false;setStarting(false);
-        setStatus('Web Audio unavailable');
-        return;
-      }
-      ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+      if(!ctx)throw new Error('Web Audio unavailable');
+      ctxRef.current=ctx;
+      await resumeBrowserAudio(ctx);
+      if(session!==captureSessionRef.current)return;
+      const stream=await requestRawMicrophone();
       if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
       if(ctx.state!=='running')throw new Error('Browser audio is suspended');
       attachWebAudioContextLifecycle(ctx);
@@ -702,10 +703,17 @@ export default function SoundTuner(){
 
       const source=ctx.createMediaStreamSource(stream);
       const analyser=ctx.createAnalyser(),shortAnalyser=ctx.createAnalyser(),fastAnalyser=ctx.createAnalyser();
+      // Without a sink, some WebKitGTK versions stop pulling analyser frames
+      // when AudioWorklet falls back. Zero gain avoids speaker/mic feedback.
+      const analyserSink=ctx.createGain();
+      analyserSink.gain.value=0;
       for(const [node,size] of [[analyser,BUFFER_SIZE],[shortAnalyser,SHORT_BUFFER_SIZE],[fastAnalyser,FAST_BUFFER_SIZE]] as const){
         node.fftSize=size;node.smoothingTimeConstant=0;node.minDecibels=-100;node.maxDecibels=-10;
         source.connect(node);
+        node.connect(analyserSink);
       }
+      analyserSink.connect(ctx.destination);
+      analyserSinkRef.current=analyserSink;
       streamRef.current=stream;sourceRef.current=source;
       attachWebMicrophoneLifecycle(stream.getAudioTracks()[0]);
       analyserRef.current=analyser;shortAnalyserRef.current=shortAnalyser;fastAnalyserRef.current=fastAnalyser;

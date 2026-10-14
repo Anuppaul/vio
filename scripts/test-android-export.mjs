@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { chromium } from 'playwright';
 
+const desktopSmoke=process.env.VIO_DESKTOP_SMOKE==='1';
 const root=resolve('out');
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.webmanifest':'application/manifest+json','.png':'image/png','.wav':'audio/wav','.mp3':'audio/mpeg','.txt':'text/plain'};
 const server=createServer(async(req,res)=>{
@@ -68,7 +69,7 @@ try{
   assert.equal(await page.evaluate(async()=> (await navigator.serviceWorker.getRegistrations()).length),0,'Native export must not register a service worker');
   await page.screenshot({path:'release/test-results/scale-practice-mobile.png'});
   assert.deepEqual(errors,[],'Uncaught browser errors');assert.deepEqual(external,[],'External network dependencies');assert.deepEqual(missing,[],'Missing bundled assets');
-  const report={passed:true,checks:['six local HTML routes','390px mobile layout','tempo preset and start/stop','real bundled tanpura decoding','raw 440Hz microphone -> A4','Sa setup and swara reference playback','no native service worker','no external network dependencies','no page errors or missing assets'],limitations:['Synthetic browser microphone, not a physical Android microphone','Android airplane mode and background audio require on-device acceptance']};
-  await writeFile('release/test-results/web-smoke.json',JSON.stringify(report,null,2)+'\n');
-  console.log('Android static export browser smoke tests PASS');
+  const report={platform:desktopSmoke?'desktop':'android',passed:true,checks:['six local HTML routes','390px mobile layout','tempo preset and start/stop','real bundled tanpura decoding','raw 440Hz microphone -> A4','Sa setup and swara reference playback','no native service worker','no external network dependencies','no page errors or missing assets'],limitations:desktopSmoke?['Chromium synthetic microphone only, not Tauri WebView2 or WebKitGTK','Physical-device microphone, permissions, audio routing and install/offline acceptance are required']:['Synthetic browser microphone, not a physical Android microphone','Android airplane mode and background audio require on-device acceptance']};
+  await writeFile('release/test-results/${desktopSmoke?'desktop-web-smoke':'web-smoke'}.json',JSON.stringify(report,null,2)+'\n');
+  console.log(`${desktopSmoke?'Desktop':'Android'} static export Chromium smoke tests PASS`);
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}

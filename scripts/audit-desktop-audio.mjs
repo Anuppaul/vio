@@ -24,7 +24,7 @@ assert.match(native,/set_enable_media_stream\(true\)/);
 assert.match(native,/set_enable_webrtc\(true\)/);
 assert.match(native,/PermissionKind::Microphone/);
 assert.match(native,/PermissionKind::Camera \| PermissionKind::DisplayCapture => PermissionResponse::Deny/);
-assert.match(cargo,/webkit2gtk = "=2\.0\.2"/);
+assert.match(cargo,/webkit2gtk = \{ version = "=2\.0\.2", features = \["v2_38"\] \}/);
 assert.match(cargoLock,/name = "webkit2gtk"\nversion = "2\.0\.2"/);
 assert.equal(lock.packages['node_modules/@tauri-apps/cli']?.version,'2.12.2');
 assert.equal(pkg.scripts['build:desktop:web'],'node scripts/export-desktop.mjs');

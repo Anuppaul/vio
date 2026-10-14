@@ -1,6 +1,6 @@
 [package]
 name = "vio"
-version = "1.0.0"
+version = "1.0.1"
 description = "VIO violin practice suite"
 edition = "2021"
 build = "build.rs"

@@ -16,6 +16,7 @@ sudo apt update
 sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
 npm install
 npm run build:desktop:web
+npx tauri icon app/icon.png
 npx tauri build --bundles deb
 ```
 
@@ -23,6 +24,7 @@ On Windows, install Rust (MSVC toolchain), Visual Studio C++ build tools, and We
 
 ```powershell
 npm install
+npx tauri icon app/icon.png
 npx tauri build --bundles nsis
 ```
 

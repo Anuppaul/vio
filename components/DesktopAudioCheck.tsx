@@ -72,7 +72,7 @@ export default function DesktopAudioCheck(){
       muted.gain.value=0;
       source.connect(analyser);analyser.connect(muted);muted.connect(ctx.destination);
       const samples=new Float32Array(4096),detector=PitchDetector.forFloat32Array(4096);
-      let frame=0,peak=0,valid=0,frequency=0;
+      let frame=0,peak=0,valid=0,frequency=0,a4Frames=0;
       let stopped=false;
       const track=stream.getAudioTracks()[0];
       const settings=track?.getSettings();
@@ -85,7 +85,7 @@ export default function DesktopAudioCheck(){
         liveStream.getTracks().forEach(t=>t.stop());
         try{source.disconnect();analyser.disconnect();muted.disconnect()}catch{}
         const detail=`Peak level ${Math.round(peak*100)}%, pitch ${frequency?frequency.toFixed(1)+' Hz':'not detected'}, Web Audio ${rate} Hz, microphone track ${settings?.sampleRate??'unknown'} Hz.`;
-        record('Microphone',frequency>0?'PASS':valid>0?'INFO':'FAIL',frequency>0?'Pitch detected. '+detail:valid>0?'Microphone captured sound, but no reliable note detected. '+detail:'No usable microphone samples. '+detail);
+        record('Microphone',a4Frames>=3?'PASS':valid>0?'INFO':'FAIL',a4Frames>=3?'Stable A4-like input detected. '+detail:valid>0?'Microphone captured sound, but did not reliably detect the requested 440 Hz A4. '+detail:'No usable microphone samples. '+detail);
         micStopRef.current=null;
         setCheckingMic(false);
       };
@@ -100,14 +100,14 @@ export default function DesktopAudioCheck(){
         setMicLevel(level);
         if(rms>.004){
           const [hz,clarity]=detector.findPitch(samples,ctx.sampleRate);
-          if(hz>0&&clarity>.6)frequency=hz;
+          if(hz>0&&clarity>.6){frequency=hz;if(Math.abs(1200*Math.log2(hz/440))<=50)a4Frames++;}
         }
         if(performance.now()>=end){finish();return}
         frame=requestAnimationFrame(sampleFrame);
       };
       micStopRef.current=finish;
       setCheckingMic(true);
-      record('Microphone','INFO','Recording no audio files. Make a sustained note for 6 seconds; only live pitch/level are measured.');
+      record('Microphone','INFO','Recording no audio files. Play or sing A4 (440 Hz) for 6 seconds. PASS requires repeatable A4 frames; only live pitch/level are measured.');
       frame=requestAnimationFrame(sampleFrame);
       stream=null;
     }catch(e){

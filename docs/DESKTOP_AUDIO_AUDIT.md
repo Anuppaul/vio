@@ -4,7 +4,9 @@
 
 This patch is source-level remediation of installed Linux WebKitGTK audio:
 - Microphone permission alone is insufficient: enable WebKitGTK's media-stream
-  and WebRTC settings on VIO's local window in Tauri setup.
+  and WebRTC settings on VIO's local window in Tauri setup. The Rust
+  `webkit2gtk` dependency pins 2.0.2 with feature `v2_38` because the
+  WebRTC setting is feature-gated; an unfeatured import does not compile.
 - Preserve microphone-only permission for VIO's bundled origin. Camera and screen
   capture remain denied; do **not** disable WebView security.
 - Keep Sound Tuner / Scale Practice analyzers attached to a zero-gain output node
@@ -15,7 +17,8 @@ This patch is source-level remediation of installed Linux WebKitGTK audio:
   decode, using the existing synthesized click.
 - Surface playback errors in Ear Tuner, Tanpura, Sound Tuner references and
   Exercise. Cap Exercise wait-for-audio so practice does not freeze.
-- Require WebKitGTK and GStreamer runtime libraries in the Ubuntu .deb.
+- Explicitly enable WebKitGTK HTML media + WebAudio and require WebKitGTK / GStreamer
+  runtime libraries in the Ubuntu .deb.
 
 **No GitHub Actions have been run to verify this change.** The desktop workflow
 has ONLY `workflow_dispatch` and must remain manual-only until the owner
@@ -29,7 +32,7 @@ On Ubuntu 24.04, with the full checked-out source:
 ```bash
 git switch feature/tauri2-desktop
 git pull --ff-only
-node scripts/audit-desktop-audio.mjs
+npm run audit:desktop:audio
 npm ci
 npm run desktop:icons
 npm run build:desktop:web

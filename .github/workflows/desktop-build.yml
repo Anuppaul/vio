@@ -48,6 +48,8 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
       - name: Install Node dependencies
         run: npm install --no-audit --no-fund
+      - name: Generate VIO platform icons
+        run: npx tauri icon app/icon.png
       - name: Build installer
         run: npx tauri build --bundles ${{ matrix.target }}
       - name: Upload desktop installer

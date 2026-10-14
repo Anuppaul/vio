@@ -170,10 +170,31 @@ export default function Exercise(){
   if(!q)return;if(audioRef.current){audioRef.current.pause();audioRef.current=null}
   const audio=new Audio(`/assets/exercise/midi-${q.midi}.wav`);audio.volume=.72;audioRef.current=audio;
   try{
-   if(waitForEnd){await new Promise<void>((resolve,reject)=>{let done=false;const finish=()=>{if(done)return;done=true;resolve()};audio.onended=finish;audio.onerror=()=>{if(done)return;done=true;reject(new Error('audio failed'))};audio.play().catch(reject)})}
+   if(waitForEnd){await new Promise<void>((resolve,reject)=>{
+    let done=false;
+    const timer=setTimeout(finish,3500);
+    function finish(){if(done)return;done=true;clearTimeout(timer);audio.pause();resolve()}
+    function fail(error:unknown){if(done)return;done=true;clearTimeout(timer);reject(error)}
+    audio.onended=finish;
+    audio.onerror=()=>fail(new Error('audio sample could not play'));
+    void audio.play().catch(fail);
+   })}
    else await audio.play();
   }catch{
-   const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx)return;ctxRef.current=ctx;await resumeBrowserAudio(ctx);const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='triangle';osc.frequency.value=440*Math.pow(2,(q.midi-69)/12);gain.gain.setValueAtTime(.15,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+1.15);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+1.2);if(waitForEnd)await new Promise(r=>setTimeout(r,1200));
+   try{
+    const ctx=ctxRef.current||createBrowserAudioContext();
+    if(!ctx)throw new Error('Web Audio unavailable');
+    ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+    const osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.type='triangle';osc.frequency.value=440*Math.pow(2,(q.midi-69)/12);
+    gain.gain.setValueAtTime(.15,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+1.15);
+    osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+1.2);
+    if(waitForEnd)await new Promise(r=>setTimeout(r,1200));
+   }catch(error){
+    setStatus(error instanceof Error?error.message:'Audio output unavailable');
+   }
+  }
   }
  }
  async function continueAfterAnswer(q:Question,nextQuestions:number){

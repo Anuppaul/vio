@@ -10,7 +10,10 @@
     "android:sync": "node scripts/sync-android.mjs",
     "android:apk": "node scripts/build-apk.mjs",
     "android:open": "cap open android",
-    "test:android:web": "node scripts/test-android-export.mjs"
+    "test:android:web": "node scripts/test-android-export.mjs",
+    "build:desktop:web": "node scripts/export-desktop.mjs",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
@@ -27,7 +30,8 @@
     "@types/react-dom": "^19.0.0",
     "playwright": "1.56.1",
     "sharp": "0.35.4",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "@tauri-apps/cli": "2.12.2"
   },
   "overrides": {
     "sharp": "$sharp",

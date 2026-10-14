@@ -140,13 +140,22 @@ export default function ScalePractice(){
   }
   async function start(){
     if(running)return;
+    let pendingStream:MediaStream|null=null;
     try{
+      // Initialize audio output from the Start button's user gesture, before
+      // a WebKitGTK microphone permission request can consume activation.
+      const ctx=ctxRef.current||createBrowserAudioContext();
+      if(!ctx)throw new Error('Web Audio unavailable');
+      ctxRef.current=ctx;await resumeBrowserAudio(ctx);
       const stream=await requestRawMicrophone();
-      const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){stream.getTracks().forEach(t=>t.stop());setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+      pendingStream=stream;
       const source=ctx.createMediaStreamSource(stream),analyser=ctx.createAnalyser(),silent=ctx.createGain();
       let processor:ScriptProcessorNode|null=null,worklet:AudioWorkletNode|null=null;
       analyser.fftSize=BUFFER_SIZE;analyser.smoothingTimeConstant=0;silent.gain.value=0;clearCapture();
       source.connect(analyser);
+      // Ensure the analyser is pulled in WebKitGTK even when the worklet or
+      // legacy ScriptProcessor API is unavailable, without microphone echo.
+      analyser.connect(silent);
       if(ctx.audioWorklet&&typeof AudioWorkletNode!=='undefined'){
         try{
           if(!workletLoadedRef.current){await ctx.audioWorklet.addModule('/audio-worklets/vio-capture.js');workletLoadedRef.current=true}
@@ -156,13 +165,23 @@ export default function ScalePractice(){
         }catch{worklet=null}
       }
       if(!worklet){
-        processor=ctx.createScriptProcessor(2048,1,1);
-        processor.onaudioprocess=e=>appendCapture(e.inputBuffer.getChannelData(0),ctx.sampleRate);
-        source.connect(processor);processor.connect(silent);
+        try{
+          processor=ctx.createScriptProcessor(2048,1,1);
+          processor.onaudioprocess=e=>appendCapture(e.inputBuffer.getChannelData(0),ctx.sampleRate);
+          source.connect(processor);processor.connect(silent);
+        }catch{
+          // Sa pitch tracking via the analyser still works. Only saving the
+          // optional microphone voice snippet is unavailable.
+          processor=null;
+        }
       }
       silent.connect(ctx.destination);
+      pendingStream=null;
       streamRef.current=stream;sourceRef.current=source;analyserRef.current=analyser;processorRef.current=processor;workletRef.current=worklet;silentGainRef.current=silent;setRunning(true);clearLive();setStatus(saFrequencyRef.current?'Practice live · sing any swara':'Sing and hold your Sa; natural variation up to ±12 cents is allowed.');lastRef.current=0;rafRef.current=requestAnimationFrame(analyse);
-    }catch(err){setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`)}
+    }catch(err){
+      pendingStream?.getTracks().forEach(track=>track.stop());
+      setStatus(`Microphone unavailable: ${err instanceof Error?err.message:'permission denied'}`);
+    }
   }
   function stop(){
     cancelAnimationFrame(rafRef.current);rafRef.current=0;try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();if(workletRef.current)workletRef.current.port.onmessage=null;workletRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}

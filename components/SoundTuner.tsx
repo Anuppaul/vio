@@ -519,7 +519,7 @@ export default function SoundTuner(){
         ctx.state==='suspended' &&
         streamRef.current
       ){
-        void resumeBrowserAudio(ctx).then(()=>stateChanged());
+        void resumeBrowserAudio(ctx).then(()=>stateChanged()).catch(error=>setStatus(error instanceof Error?error.message:'Audio output unavailable'));
       }
     };
 

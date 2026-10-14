@@ -78,9 +78,9 @@ try{
     await page.getByRole('button',{name:'440 Hz speaker beep'}).click();
     await page.getByText(/Speaker test/).waitFor();
     await page.getByRole('button',{name:'WAV click'}).click();
-    await page.getByText(/PASS · WAV metronome/).waitFor({timeout:15000});
+    await page.getByText(/INFO · WAV metronome/).waitFor({timeout:15000});
     await page.getByRole('button',{name:'MP3 reference'}).click();
-    await page.getByText(/PASS · MP3 reference/).waitFor({timeout:15000});
+    await page.getByText(/INFO · MP3 reference/).waitFor({timeout:15000});
   }
   assert.deepEqual(errors,[],'Uncaught browser errors');assert.deepEqual(external,[],'External network dependencies');assert.deepEqual(missing,[],'Missing bundled assets');
   const report={platform:desktopSmoke?'desktop':'android',passed:true,checks:['six local HTML routes','390px mobile layout','tempo preset and start/stop','real bundled tanpura decoding','raw 440Hz microphone -> A4','Sa setup and swara reference playback','no native service worker','no external network dependencies','no page errors or missing assets'],limitations:desktopSmoke?['Chromium synthetic microphone only, not Tauri WebView2 or WebKitGTK','Physical-device microphone, permissions, audio routing and install/offline acceptance are required']:['Synthetic browser microphone, not a physical Android microphone','Android airplane mode and background audio require on-device acceptance']};

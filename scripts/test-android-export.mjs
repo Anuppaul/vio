@@ -53,7 +53,7 @@ try{
   await page.getByRole('button',{name:'Stop',exact:true}).click();
   await page.goto(`${origin}/tanpura.html`);
   await page.getByRole('button',{name:'Play',exact:true}).click();
-  await page.getByText(/Gapless Hall/).waitFor({timeout:20000});
+  await page.getByText(/Raw MP3/).waitFor({timeout:30000});
   await page.getByRole('button',{name:'Stop',exact:true}).click();
   await page.goto(`${origin}/sound-tuner.html`);
   await page.getByRole('button',{name:'Start tuning',exact:true}).click();

@@ -5,7 +5,9 @@
   "identifier": "com.anuppaul.vio",
   "build": {
     "frontendDist": "../out",
-    "beforeBuildCommand": "npm run build:desktop:web"
+    "beforeBuildCommand": "npm run build:desktop:web",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3000"
   },
   "app": {
     "windows": [
@@ -37,7 +39,10 @@
       }
     },
     "icon": [
-      "../app/icon.png"
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
     ]
   }
 }

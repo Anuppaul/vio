@@ -1,4 +1,4 @@
-# VIO Desktop audio audit — Ubuntu 24.04 / Tauri 2
+# VIO Desktop audio audit — Ubuntu 24.04 / Tauri 2 (desktop 1.0.1)
 
 ## Scope and verification boundary
 
@@ -39,7 +39,7 @@ npm run build:desktop:web
 npm run test:desktop:web   # Chromium simulation only; NOT a native WebKit test
 ```
 
-Use a local Tauri build (not GitHub Actions) for real WebKitGTK testing:
+The patched desktop installer is version **1.0.1**, to distinguish it from the known-problematic 1.0.0 package; the web/Android version has not changed. Use a local Tauri build (not GitHub Actions) for real WebKitGTK testing:
 
 ```bash
 npm run desktop:build -- --bundles deb

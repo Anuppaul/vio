@@ -2,20 +2,6 @@ name: Build VIO Desktop
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, feature/tauri2-desktop]
-    paths:
-      - 'src-tauri/**'
-      - 'scripts/export-desktop.mjs'
-      - 'scripts/test-desktop-export.mjs'
-      - 'scripts/test-android-export.mjs'
-      - 'next.config.ts'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'components/**'
-      - 'lib/**'
-      - 'app/**'
-      - '.github/workflows/desktop-build.yml'
 
 concurrency:
   group: desktop-${{ github.ref }}

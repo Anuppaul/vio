@@ -68,6 +68,20 @@ try{
   await page.getByRole('button',{name:'Stop microphone',exact:true}).click();
   assert.equal(await page.evaluate(async()=> (await navigator.serviceWorker.getRegistrations()).length),0,'Native export must not register a service worker');
   await page.screenshot({path:'release/test-results/scale-practice-mobile.png'});
+  if(desktopSmoke){
+    // In addition to the shared mobile tests, verify that the desktop-only
+    // diagnostics UI is bundled and its speaker/sample paths execute.
+    await page.goto(`${origin}/sound-tuner.html`);
+    await page.getByText(/Desktop Audio Check/).first().click();
+    await page.getByRole('button',{name:'WebView capabilities'}).click();
+    await page.getByText(/WebView environment/).waitFor();
+    await page.getByRole('button',{name:'440 Hz speaker beep'}).click();
+    await page.getByText(/Speaker test/).waitFor();
+    await page.getByRole('button',{name:'WAV click'}).click();
+    await page.getByText(/PASS · WAV metronome/).waitFor({timeout:15000});
+    await page.getByRole('button',{name:'MP3 reference'}).click();
+    await page.getByText(/PASS · MP3 reference/).waitFor({timeout:15000});
+  }
   assert.deepEqual(errors,[],'Uncaught browser errors');assert.deepEqual(external,[],'External network dependencies');assert.deepEqual(missing,[],'Missing bundled assets');
   const report={platform:desktopSmoke?'desktop':'android',passed:true,checks:['six local HTML routes','390px mobile layout','tempo preset and start/stop','real bundled tanpura decoding','raw 440Hz microphone -> A4','Sa setup and swara reference playback','no native service worker','no external network dependencies','no page errors or missing assets'],limitations:desktopSmoke?['Chromium synthetic microphone only, not Tauri WebView2 or WebKitGTK','Physical-device microphone, permissions, audio routing and install/offline acceptance are required']:['Synthetic browser microphone, not a physical Android microphone','Android airplane mode and background audio require on-device acceptance']};
   await writeFile(`release/test-results/${desktopSmoke?'desktop-web-smoke':'web-smoke'}.json`,JSON.stringify(report,null,2)+'\n');

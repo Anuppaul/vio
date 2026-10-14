@@ -15,7 +15,8 @@
     "desktop:dev": "npm run desktop:icons && tauri dev",
     "desktop:build": "npm run desktop:icons && tauri build",
     "desktop:icons": "tauri icon app/icon.png",
-    "test:desktop:web": "node scripts/test-desktop-export.mjs"
+    "test:desktop:web": "node scripts/test-desktop-export.mjs",
+    "audit:desktop:audio": "node scripts/audit-desktop-audio.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

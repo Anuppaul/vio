@@ -56,7 +56,7 @@ export default function DesktopAudioCheck(){
       source.buffer=decoded;gain.gain.value=.4;
       source.connect(gain).connect(ctx.destination);
       source.start();source.stop(ctx.currentTime+Math.min(decoded.duration,.8));
-      record(name,'PASS',`Decoded ${decoded.duration.toFixed(1)}s @ ${decoded.sampleRate} Hz in ${Math.round(performance.now()-start)}ms; confirm that it sounded.`);
+      record(name,'INFO',`Audio file decoded (${decoded.duration.toFixed(1)}s @ ${decoded.sampleRate} Hz, ${Math.round(performance.now()-start)}ms). This does NOT prove audible playback: confirm using the buttons below.`);
     }catch(e){record(name,'FAIL',e instanceof Error?e.message:String(e))}
   }
 
@@ -85,7 +85,7 @@ export default function DesktopAudioCheck(){
         liveStream.getTracks().forEach(t=>t.stop());
         try{source.disconnect();analyser.disconnect();muted.disconnect()}catch{}
         const detail=`Peak level ${Math.round(peak*100)}%, pitch ${frequency?frequency.toFixed(1)+' Hz':'not detected'}, Web Audio ${rate} Hz, microphone track ${settings?.sampleRate??'unknown'} Hz.`;
-        record('Microphone',valid>0?'PASS':'FAIL',valid>0?detail:'No usable microphone samples. '+detail);
+        record('Microphone',frequency>0?'PASS':valid>0?'INFO':'FAIL',frequency>0?'Pitch detected. '+detail:valid>0?'Microphone captured sound, but no reliable note detected. '+detail:'No usable microphone samples. '+detail);
         micStopRef.current=null;
         setCheckingMic(false);
       };
@@ -139,6 +139,10 @@ export default function DesktopAudioCheck(){
       <button className="soft-btn" onClick={()=>void sample('WAV exercise','/assets/exercise/midi-69.wav')}>WAV exercise</button>
       <button className="soft-btn" onClick={()=>void sample('MP3 tanpura','/assets/tanpura/sa-pa_A.mp3')}>MP3 tanpura</button>
       <button className="soft-btn" onClick={()=>void microphone()}>{checkingMic?'Stop microphone test':'Microphone · 6s'}</button>
+    </div>
+    <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:10}}>
+      <button className="soft-btn" onClick={()=>record('Audible playback','PASS','User confirmed audible speaker output on this desktop.')}>I heard the sound</button>
+      <button className="soft-btn" onClick={()=>record('Audible playback','FAIL','Sound was NOT audible despite audio scheduling/decoding; check output routing, volume, GStreamer logs and OS devices.')}>Still silent</button>
     </div>
     {checkingMic&&<p aria-live="polite">Microphone level: {micLevel}%</p>}
     <div role="status" aria-live="polite" style={{marginTop:12}}>

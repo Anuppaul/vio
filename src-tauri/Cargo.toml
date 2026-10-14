@@ -1,0 +1,12 @@
+[package]
+name = "vio"
+version = "1.0.0"
+description = "VIO violin practice suite"
+edition = "2021"
+build = "build.rs"
+
+[build-dependencies]
+tauri-build = "=2.7.2"
+
+[dependencies]
+tauri = "=2.12.3"

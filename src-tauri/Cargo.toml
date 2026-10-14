@@ -10,3 +10,7 @@ tauri-build = "=2.7.2"
 
 [dependencies]
 tauri = "=2.12.3"
+
+# Linux WebKitGTK media capture is disabled by default.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "=2.0.2"

@@ -12,8 +12,10 @@
     "android:open": "cap open android",
     "test:android:web": "node scripts/test-android-export.mjs",
     "build:desktop:web": "node scripts/export-desktop.mjs",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:dev": "npm run desktop:icons && tauri dev",
+    "desktop:build": "npm run desktop:icons && tauri build",
+    "desktop:icons": "tauri icon app/icon.png",
+    "test:desktop:web": "node scripts/test-desktop-export.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

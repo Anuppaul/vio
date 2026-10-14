@@ -61,6 +61,10 @@ wpctl status
 `gst-inspect-1.0` is provided by `gstreamer1.0-tools` (install manually for
 diagnostics if absent). The exact decoder element may vary by distro.
 
+## Diagnostic interpretation
+
+The desktop diagnostics distinguish decoding from audible playback. A decoded WAV/MP3 reports INFO until a human confirms sound with **I heard the sound**. Use **Still silent** if output is not audible even when a decoder succeeds. The microphone self-test expects a sustained A4 (440 Hz) and requires multiple qualifying pitch frames for PASS; ambient noise or arbitrary input is not sufficient.
+
 ## Native on-device acceptance
 
 Open **Sound Tuner → Desktop Audio Check**.

@@ -665,6 +665,7 @@ export default function SoundTuner(){
       }
       return;
     }
+    let pendingStream:MediaStream|null=null;
     try{
       // Resume on the actual Start click, before microphone permission prompts
       // consume the transient activation needed by Linux WebKitGTK.
@@ -674,6 +675,7 @@ export default function SoundTuner(){
       await resumeBrowserAudio(ctx);
       if(session!==captureSessionRef.current)return;
       const stream=await requestRawMicrophone();
+      pendingStream=stream;
       if(session!==captureSessionRef.current){stream.getTracks().forEach(track=>track.stop());return}
       if(ctx.state!=='running')throw new Error('Browser audio is suspended');
       attachWebAudioContextLifecycle(ctx);
@@ -716,6 +718,7 @@ export default function SoundTuner(){
       analyserSink.connect(ctx.destination);
       analyserSinkRef.current=analyserSink;
       streamRef.current=stream;sourceRef.current=source;
+      pendingStream=null;
       attachWebMicrophoneLifecycle(stream.getAudioTracks()[0]);
       analyserRef.current=analyser;shortAnalyserRef.current=shortAnalyser;fastAnalyserRef.current=fastAnalyser;
       trackerRef.current.reset();needleFilterRef.current.reset();
@@ -754,6 +757,7 @@ export default function SoundTuner(){
         rafRef.current=requestAnimationFrame(analyse);
       }
     }catch(err){
+      pendingStream?.getTracks().forEach(track=>track.stop());
       if(session===captureSessionRef.current)cleanupWebCaptureResources(true);
       startingRef.current=false;setStarting(false);
       setRunning(false);setMicLevel(0);clearPitch(true);

@@ -16,10 +16,26 @@ export function createBrowserAudioContext(options:AudioContextOptions={latencyHi
 }
 
 export async function resumeBrowserAudio(ctx:AudioContext){
-  if(ctx.state==='closed')throw new Error('Audio context is closed');
+  if(ctx.state==='closed')throw new Error('Audio output was closed');
   if(ctx.state!=='running'){
-    try{await ctx.resume()}catch{}
+    // A failed or indefinitely pending resume must never look like working
+    // playback. This commonly happens when a WebKit WebView loses user gesture.
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try{
+      await Promise.race([
+        ctx.resume(),
+        new Promise<never>((_,reject)=>{
+          timer=setTimeout(()=>reject(new Error('Audio activation timed out; click Play again')),3500);
+        })
+      ]);
+    }catch(error){
+      const detail=error instanceof Error?error.message:'permission or audio backend failure';
+      throw new Error('Audio output unavailable: '+detail);
+    }finally{
+      if(timer!==undefined)clearTimeout(timer);
+    }
   }
+  if(ctx.state!=='running')throw new Error('Audio output is suspended; click Play again');
   return ctx;
 }
 

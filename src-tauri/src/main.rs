@@ -19,6 +19,10 @@ fn main() {
                 })?;
                 window.with_webview(|view| {
                     if let Some(settings) = view.inner().settings() {
+                        // VIO uses oscillator/buffer playback and HTML audio in
+                        // addition to the WebRTC microphone capture path.
+                        settings.set_enable_media(true);
+                        settings.set_enable_webaudio(true);
                         settings.set_enable_media_stream(true);
                         settings.set_enable_webrtc(true);
                     }

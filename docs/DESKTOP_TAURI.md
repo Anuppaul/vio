@@ -30,12 +30,12 @@ Output directories:
 - `src-tauri/target/release/bundle/deb/`
 - `src-tauri/target/release/bundle/nsis/`
 
-GitHub Actions `Build VIO Desktop` runs the two builds in parallel and uploads 14-day artifacts. Windows packaging occurs on a Windows runner: Linux does not cross-compile the NSIS executable.
+**GitHub Actions are intentionally manual-only while the audio audit is open.** No automatic push-based desktop builds will run. Do not invoke `workflow_dispatch` without the owner's explicit approval. Windows packaging requires Windows; Linux cannot cross-compile the NSIS executable.
 
 ## Important verification gates
 
 - Confirm six local navigation routes work in Linux WebKitGTK and Windows WebView2.
-- Confirm Sound Tuner and Scale Practice microphone permission, pitch latency and A4 detection on both OSes. The Rust `on_permission_request` handler allows **microphone only** for VIO's main local-origin webview, because WebKitGTK otherwise denies it by default; it denies camera and screen capture. This is requested only when an app feature invokes `getUserMedia`, not on launch.
+- Confirm Sound Tuner and Scale Practice microphone permission, pitch latency and A4 detection on both OSes. The Rust `on_permission_request` handler allows **microphone only** for VIO's main local-origin webview, because WebKitGTK otherwise denies it by default; it denies camera and screen capture. Linux Tauri also enables the WebKitGTK `media-stream` / WebRTC settings at app startup. This is requested only when an app feature invokes `getUserMedia`, not on launch.
 - Check playback of Ear Tuner, Tanpura, exercises and Metronome with no network.
 - Verify correct offline start, restart, installer upgrade and uninstall.
 - Unsigned Windows installers may trigger SmartScreen; signing requires a code-signing certificate.
@@ -45,7 +45,7 @@ GitHub Actions `Build VIO Desktop` runs the two builds in parallel and uploads 1
 
 ## Automated smoke checks
 
-On each desktop CI build, VIO packages offline Next.js pages, installs Chromium, and executes the existing synthetic microphone and audio navigation tests. This **does not** replace manual tests inside actual Windows WebView2 or Ubuntu WebKitGTK. To run locally after a desktop static export:
+Once manual CI runs are authorized, VIO packages offline Next.js pages, installs Chromium, and executes synthetic microphone and audio navigation tests. This **does not** replace manual tests inside actual Windows WebView2 or Ubuntu WebKitGTK. To run locally after a desktop static export:
 
 ```bash
 npx playwright install chromium
@@ -61,3 +61,9 @@ Run the installed `.deb` on Ubuntu 24.04 with a working PipeWire/PulseAudio micr
 ## Windows microphone acceptance
 
 Install the NSIS `.exe` and allow microphone access for desktop applications in Windows Privacy & security settings. Repeat the A4, permissions, stop/restart, offline, and audio-output checks in the installed WebView2 app. Code signing is not configured; unsigned installers may show SmartScreen warnings.
+
+## Audio reliability remediation
+
+For the defect history, Ubuntu runtime GStreamer dependencies, native microphone permission/media-stream settings, the Sound Tuner **Desktop Audio Check** panel, device troubleshooting and the physical acceptance checklist, see [DESKTOP_AUDIO_AUDIT.md](DESKTOP_AUDIO_AUDIT.md).
+
+Run `node scripts/audit-desktop-audio.mjs` before building to validate offline asset headers and the source packaging/audio configuration without starting GitHub Actions. This does not test native sound playback.

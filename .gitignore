@@ -39,3 +39,7 @@ public/assets/tanpura/original_network_audio/
 benchmarks/tuner/fixtures/
 benchmarks/tuner/results/
 benchmarks/tuner/manifest.json
+
+# Tauri desktop build outputs
+/src-tauri/target/
+/src-tauri/gen/

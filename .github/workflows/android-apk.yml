@@ -1,16 +1,9 @@
 name: Build Android APK
 
+# Device thermal fixes require physical acceptance before building a release.
+# Never start builds automatically on push.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'capacitor.config.json'
-      - 'next.config.ts'
-      - 'package.json'
-      - 'scripts/*android*'
-      - 'scripts/build-apk.mjs'
-      - '.github/workflows/android-apk.yml'
 
 concurrency:
   group: vio-android-apk

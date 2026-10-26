@@ -149,7 +149,7 @@ export default function Metronome(){
  function scheduler(){
   const ctx=ctxRef.current;if(!ctx||!runningRef.current)return;
   const s=live.current,native=Capacitor.isNativePlatform();
-  const horizon=ctx.currentTime+(native?.23:document.hidden?.7:.16);
+  const horizon=ctx.currentTime+(native ? 0.23 : (document.hidden ? 0.7 : 0.16));
   const sec=(60/s.bpm)/s.subdivision;
   while(nextRef.current<horizon){
    const beat=Math.floor(stepRef.current/s.subdivision)%s.beats,sub=stepRef.current%s.subdivision,down=beat===0&&sub===0;

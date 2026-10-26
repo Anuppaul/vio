@@ -763,6 +763,13 @@ export default function SoundTuner(){
     setStatus('Microphone start cancelled');
   }
 
+  function releaseIdleNativeAudio(){
+    if(!Capacitor.isNativePlatform())return;
+    stopReference();
+    const ctx=ctxRef.current;ctxRef.current=null;
+    if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
+  }
+
   function stop(){
     if(nativeActiveRef.current||nativeListenerRef.current||nativeErrorListenerRef.current||nativeBackendListenerRef.current){
       captureSessionRef.current++;
@@ -771,14 +778,31 @@ export default function SoundTuner(){
       clearNativeListeners();
       void NativePitch.stop().catch(()=>{});
       longFrequencyRef.current=0;longClarityRef.current=0;longAtRef.current=0;uiAtRef.current=0;
-    setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');return;
+    setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
+    releaseIdleNativeAudio();
+    return;
     }
     cleanupWebCaptureResources(true);
     startingRef.current=false;setStarting(false);
     setRunning(false);setMicLevel(0);clearPitch(true);setStatus('Microphone stopped');
+    releaseIdleNativeAudio();
   }
 
-  useEffect(()=>()=>{cleanupWebCaptureResources(true);clearNativeListeners();if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});stopReference()},[]);
+  useEffect(()=>{
+    const onHidden=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop()};
+    const onPageHide=()=>{if(Capacitor.isNativePlatform())stop()};
+    document.addEventListener('visibilitychange',onHidden);
+    window.addEventListener('pagehide',onPageHide);
+    return()=>{
+      document.removeEventListener('visibilitychange',onHidden);
+      window.removeEventListener('pagehide',onPageHide);
+      cleanupWebCaptureResources(true);
+      clearNativeListeners();
+      if(nativeActiveRef.current)void NativePitch.stop().catch(()=>{});
+      releaseIdleNativeAudio();
+      stopReference();
+    };
+  },[]);
 
   const angle=Math.max(-50,Math.min(50,needleCents??0))/50*74;
   const inTune=cents!==null&&Math.abs(cents)<=3;

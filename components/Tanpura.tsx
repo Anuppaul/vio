@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 
 const KEYS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -124,7 +125,7 @@ export default function Tanpura(){
   const [volume,setVolume]=useState(.6);
   const [playing,setPlaying]=useState(false);
   const [status,setStatus]=useState('Ready');
-  const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),sourceRef=useRef<AudioBufferSourceNode|null>(null),timerRef=useRef<ReturnType<typeof setInterval>|null>(null),nodesRef=useRef<AudioScheduledSourceNode[]>([]);
+  const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),inputRef=useRef<GainNode|null>(null),sourceRef=useRef<AudioBufferSourceNode|null>(null),timerRef=useRef<ReturnType<typeof setInterval>|null>(null),nodesRef=useRef(new Set<OscillatorNode>());
   const cacheRef=useRef(new Map<string,AudioBuffer>()),tokenRef=useRef(0);
 
   function outputChain(ctx:AudioContext){
@@ -133,21 +134,58 @@ export default function Tanpura(){
     master.gain.value=volume*.85;
     input.connect(master).connect(ctx.destination);
     masterRef.current=master;
+    inputRef.current=input;
     return input;
   }
 
-  function stop(update=true){
+  function stop(update=true,releaseAudio=update){
+    // Cancel all pending decode/start operations and stop the render graph.
     tokenRef.current++;
-    try{sourceRef.current?.stop()}catch{}sourceRef.current=null;
+    const source=sourceRef.current;sourceRef.current=null;
+    try{source?.stop()}catch{}
+    try{source?.disconnect()}catch{}
     if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null}
-    nodesRef.current.forEach(n=>{try{n.stop()}catch{}});nodesRef.current=[];
-    if(masterRef.current&&ctxRef.current){try{masterRef.current.gain.cancelScheduledValues(ctxRef.current.currentTime);masterRef.current.gain.setTargetAtTime(0,ctxRef.current.currentTime,.018)}catch{}}
-    masterRef.current=null;setPlaying(false);if(update)setStatus('Stopped');
+    nodesRef.current.forEach(n=>{try{n.stop()}catch{}try{n.disconnect()}catch{}});
+    nodesRef.current.clear();
+    try{inputRef.current?.disconnect()}catch{}
+    try{masterRef.current?.disconnect()}catch{}
+    inputRef.current=null;masterRef.current=null;
+    if(releaseAudio){
+      const ctx=ctxRef.current;ctxRef.current=null;
+      if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
+      // Prevent decoded PCM from accumulating over repeated native sessions.
+      if(Capacitor.isNativePlatform())cacheRef.current.clear();
+    }
+    setPlaying(false);
+    if(update)setStatus('Stopped');
   }
-  useEffect(()=>()=>stop(false),[]);
+  useEffect(()=>{
+    const onHidden=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop(true,true)};
+    const onPageHide=()=>{if(Capacitor.isNativePlatform())stop(true,true)};
+    document.addEventListener('visibilitychange',onHidden);
+    window.addEventListener('pagehide',onPageHide);
+    return()=>{
+      document.removeEventListener('visibilitychange',onHidden);
+      window.removeEventListener('pagehide',onPageHide);
+      stop(false,true);
+    };
+  },[]);
 
   function pluck(ctx:AudioContext,dest:AudioNode,freq:number,when:number,amp:number){
-    const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sawtooth';osc.frequency.value=freq;gain.gain.setValueAtTime(.0001,when);gain.gain.exponentialRampToValueAtTime(amp,when+.015);gain.gain.exponentialRampToValueAtTime(.0001,when+2.7);osc.connect(gain).connect(dest);osc.start(when);osc.stop(when+2.8);nodesRef.current.push(osc)
+    const osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.type='sawtooth';osc.frequency.value=freq;
+    gain.gain.setValueAtTime(.0001,when);
+    gain.gain.exponentialRampToValueAtTime(amp,when+.015);
+    gain.gain.exponentialRampToValueAtTime(.0001,when+2.7);
+    osc.connect(gain).connect(dest);
+    // Synth fallback may run for hours: finished oscillators must not accumulate.
+    nodesRef.current.add(osc);
+    osc.onended=()=>{
+      nodesRef.current.delete(osc);
+      try{osc.disconnect()}catch{}
+      try{gain.disconnect()}catch{}
+    };
+    osc.start(when);osc.stop(when+2.8);
   }
   async function synth(){
     const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback');setPlaying(true)
@@ -158,9 +196,15 @@ export default function Tanpura(){
     setStatus('Loading drone…');
     try{
       let buffer=cacheRef.current.get(url);
-      if(!buffer){const response=await fetch(url);if(!response.ok)throw new Error('sample unavailable');buffer=await ctx.decodeAudioData(await response.arrayBuffer());cacheRef.current.set(url,buffer)}
+      if(!buffer){const response=await fetch(url);if(!response.ok)throw new Error('sample unavailable');buffer=await ctx.decodeAudioData(await response.arrayBuffer());cacheRef.current.set(url,buffer);
+        if(Capacitor.isNativePlatform()&&cacheRef.current.size>2){
+          const oldest=cacheRef.current.keys().next().value;
+          if(oldest!==undefined)cacheRef.current.delete(oldest);
+        }
+      }
       if(token!==tokenRef.current)return;
       const input=outputChain(ctx),source=ctx.createBufferSource();
+      source.onended=()=>{try{source.disconnect()}catch{}};
       const bounds=compactLoopBounds(buffer);
       const loopSeconds=Math.max(.1,bounds.end-bounds.start);
       masterRef.current!.gain.setValueAtTime(0,ctx.currentTime);masterRef.current!.gain.linearRampToValueAtTime(volume*.85,ctx.currentTime+.055);
@@ -180,7 +224,7 @@ export default function Tanpura(){
           <div className="control"><div className="control-label"><span>Drone pattern</span></div><div className="seg two"><button className={pattern==='sa-pa'?'active':''} onClick={()=>setPattern('sa-pa')}>सा पा · SA PA</button><button className={pattern==='sa-ma'?'active':''} onClick={()=>setPattern('sa-ma')}>सा मा · SA MA</button></div></div>
           <div className="control"><div className="control-label"><span>Sa / Key</span></div><div className="key-grid">{KEYS.map(k=><button key={k} className={key===k?'active':''} onClick={()=>setKey(k)}>{k}</button>)}</div></div>
           <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(v*.85,ctxRef.current.currentTime,.02)}}/></div>
-          <button className={`primary ${playing?'danger':''}`} onClick={playing?()=>stop():start}>{playing?'Stop':'Play'}</button>
+          <button className={`primary ${playing?'danger':''}`} onClick={playing?()=>stop(true,true):start}>{playing?'Stop':'Play'}</button>
         </div>
       </div>
     </section>

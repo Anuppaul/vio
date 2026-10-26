@@ -288,8 +288,17 @@ public class NativePitchPlugin extends Plugin {
     }
 
     @Override
+    protected void handleOnPause() {
+        // Stop the native DSP worker immediately when the Activity goes into
+        // background. WebView JS may be throttled before its stop() can run.
+        stopCapture();
+        super.handleOnPause();
+    }
+
+    @Override
     protected void handleOnDestroy() {
         stopCapture();
+        super.handleOnDestroy();
     }
 
     private void configureOboeDefaults() {

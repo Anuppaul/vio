@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 
 
@@ -61,21 +62,151 @@ function normalizeBuffer(ctx:AudioContext,buffer:AudioBuffer,target=.98){
 
 export default function Metronome(){
  const [bpm,setBpmState]=useState(120),[beats,setBeatsState]=useState(4),[subdivision,setSubdivisionState]=useState(1),[sound,setSound]=useState<Sound>('click'),[accent,setAccent]=useState(true),[flash,setFlash]=useState(true),[volume,setVolume]=useState(.95),[running,setRunning]=useState(false),[activeBeat,setActiveBeat]=useState(-1),[status,setStatus]=useState('Ready'),[side,setSide]=useState(false);
- const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),limiterRef=useRef<DynamicsCompressorNode|null>(null),buffersRef=useRef<Record<string,AudioBuffer>>({}),timerRef=useRef<ReturnType<typeof setTimeout>|null>(null),rafRef=useRef(0),nextRef=useRef(0),stepRef=useRef(0),queueRef=useRef<{time:number,beat:number,sub:number,down:boolean}[]>([]),tapRef=useRef<number[]>([]),runningRef=useRef(false);
+ const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),limiterRef=useRef<DynamicsCompressorNode|null>(null),buffersRef=useRef<Record<string,AudioBuffer>>({}),sampleLoadRef=useRef<Promise<void>|null>(null),timerRef=useRef<ReturnType<typeof setTimeout>|null>(null),visualTimerRef=useRef<ReturnType<typeof setTimeout>|null>(null),rafRef=useRef(0),startEpochRef=useRef(0),nextRef=useRef(0),stepRef=useRef(0),queueRef=useRef<{time:number,beat:number,sub:number,down:boolean}[]>([]),tapRef=useRef<number[]>([]),runningRef=useRef(false);
  const live=useRef({bpm,beats,subdivision,sound,accent,flash,volume});useEffect(()=>{live.current={bpm,beats,subdivision,sound,accent,flash,volume}},[bpm,beats,subdivision,sound,accent,flash,volume]);
  const tempoName=TEMPO_PRESETS.reduce((best,preset)=>Math.abs(preset.bpm-bpm)<Math.abs(best.bpm-bpm)?preset:best,TEMPO_PRESETS[0]).name;
  function setBpm(v:number){setBpmState(Math.max(1,Math.min(300,Math.round(v))))}
  function chooseTempo(preset:TempoPreset){setBpm(preset.bpm);setStatus(`${preset.name} · ${preset.bpm} BPM`)}
- async function ensureAudio(){const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx)throw new Error('Web Audio unavailable');ctxRef.current=ctx;if(!masterRef.current){const gain=ctx.createGain(),limiter=ctx.createDynamicsCompressor();gain.gain.value=live.current.volume*1.18;limiter.threshold.value=-1.5;limiter.knee.value=0;limiter.ratio.value=20;limiter.attack.value=.001;limiter.release.value=.06;gain.connect(limiter).connect(ctx.destination);masterRef.current=gain;limiterRef.current=limiter}await resumeBrowserAudio(ctx);return ctx}
- useEffect(()=>{ensureAudio().then(async ctx=>{await Promise.all(Object.entries(files).map(async([key,url])=>{try{const res=await fetch(url);if(!res.ok)return;const decoded=await ctx.decodeAudioData(await res.arrayBuffer());buffersRef.current[key]=(key==='click'||key==='accent')?normalizeBuffer(ctx,decoded,.98):decoded}catch{}}));setStatus('Ready')}).catch(()=>setStatus('Web Audio unavailable'));return()=>{stop();cancelAnimationFrame(rafRef.current)}},[]);
- function playBuffer(key:string,when:number,gainValue=1){const buffer=buffersRef.current[key],ctx=ctxRef.current,master=masterRef.current;if(!buffer||!ctx||!master)return false;const src=ctx.createBufferSource(),gain=ctx.createGain();src.buffer=buffer;gain.gain.value=gainValue;src.connect(gain).connect(master);src.start(when);return true}
- function playClickBuffer(key:string,when:number,level=1){const buffer=buffersRef.current[key],ctx=ctxRef.current,master=masterRef.current;if(!buffer||!ctx||!master)return false;const src=ctx.createBufferSource(),pre=ctx.createGain(),comp=ctx.createDynamicsCompressor(),makeup=ctx.createGain();src.buffer=buffer;pre.gain.value=level;comp.threshold.value=-10;comp.knee.value=3;comp.ratio.value=3.5;comp.attack.value=.0008;comp.release.value=.045;makeup.gain.value=2.15;src.connect(pre).connect(comp).connect(makeup).connect(master);src.start(when);return true}
- function synthClick(when:number,isAccent=false,level=1){const ctx=ctxRef.current,master=masterRef.current;if(!ctx||!master)return;const high=ctx.createOscillator(),body=ctx.createOscillator(),highGain=ctx.createGain(),bodyGain=ctx.createGain();high.type='square';body.type='triangle';high.frequency.setValueAtTime(isAccent?3600:2800,when);high.frequency.exponentialRampToValueAtTime(isAccent?2200:1750,when+.028);body.frequency.setValueAtTime(isAccent?520:410,when);body.frequency.exponentialRampToValueAtTime(isAccent?240:190,when+.045);highGain.gain.setValueAtTime(.0001,when);highGain.gain.exponentialRampToValueAtTime((isAccent?1.15:.95)*level,when+.0008);highGain.gain.exponentialRampToValueAtTime(.0001,when+.035);bodyGain.gain.setValueAtTime(.0001,when);bodyGain.gain.exponentialRampToValueAtTime((isAccent?.55:.42)*level,when+.001);bodyGain.gain.exponentialRampToValueAtTime(.0001,when+.055);high.connect(highGain).connect(master);body.connect(bodyGain).connect(master);high.start(when);body.start(when);high.stop(when+.04);body.stop(when+.06)}
+ async function ensureAudio(){
+  const ctx=ctxRef.current||createBrowserAudioContext();
+  if(!ctx)throw new Error('Web Audio unavailable');
+  ctxRef.current=ctx;
+  if(!masterRef.current){
+   const gain=ctx.createGain(),limiter=ctx.createDynamicsCompressor();
+   gain.gain.value=live.current.volume*1.18;
+   limiter.threshold.value=-1.5;limiter.knee.value=0;limiter.ratio.value=20;
+   limiter.attack.value=.001;limiter.release.value=.06;
+   gain.connect(limiter).connect(ctx.destination);
+   masterRef.current=gain;limiterRef.current=limiter;
+  }
+  // Do not create/resume a running AudioContext on mount. Start is user-triggered.
+  await resumeBrowserAudio(ctx);
+  if(!sampleLoadRef.current){
+   sampleLoadRef.current=Promise.all(Object.entries(files).map(async([key,url])=>{
+    try{
+     const res=await fetch(url);
+     if(!res.ok)return;
+     const decoded=await ctx.decodeAudioData(await res.arrayBuffer());
+     if(ctxRef.current===ctx)
+      buffersRef.current[key]=(key==='click'||key==='accent')?normalizeBuffer(ctx,decoded,.98):decoded;
+    }catch{}
+   })).then(()=>{});
+  }
+  await sampleLoadRef.current;
+  return ctx;
+ }
+ useEffect(()=>{
+  const onVisibility=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop()};
+  const onHide=()=>{if(Capacitor.isNativePlatform())stop()};
+  document.addEventListener('visibilitychange',onVisibility);
+  window.addEventListener('pagehide',onHide);
+  return()=>{
+   document.removeEventListener('visibilitychange',onVisibility);
+   window.removeEventListener('pagehide',onHide);
+   stop();
+  };
+ },[]);
+ function playBuffer(key:string,when:number,gainValue=1){
+  const buffer=buffersRef.current[key],ctx=ctxRef.current,master=masterRef.current;
+  if(!buffer||!ctx||!master)return false;
+  const src=ctx.createBufferSource(),gain=ctx.createGain();
+  src.buffer=buffer;gain.gain.value=gainValue;
+  src.connect(gain).connect(master);
+  src.onended=()=>{try{src.disconnect();gain.disconnect()}catch{}};
+  src.start(when);return true;
+ }
+ function playClickBuffer(key:string,when:number,level=1){
+  const buffer=buffersRef.current[key],ctx=ctxRef.current,master=masterRef.current;
+  if(!buffer||!ctx||!master)return false;
+  // Previously created a compressor for every beat; reuse the single master
+  // limiter to avoid sustained DSP and garbage-collection work on Android.
+  const src=ctx.createBufferSource(),gain=ctx.createGain();
+  src.buffer=buffer;gain.gain.value=level;
+  src.connect(gain).connect(master);
+  src.onended=()=>{try{src.disconnect();gain.disconnect()}catch{}};
+  src.start(when);return true;
+ }
+ function synthClick(when:number,isAccent=false,level=1){
+  const ctx=ctxRef.current,master=masterRef.current;if(!ctx||!master)return;
+  const high=ctx.createOscillator(),body=ctx.createOscillator(),highGain=ctx.createGain(),bodyGain=ctx.createGain();
+  high.type='square';body.type='triangle';
+  high.frequency.setValueAtTime(isAccent?3600:2800,when);
+  high.frequency.exponentialRampToValueAtTime(isAccent?2200:1750,when+.028);
+  body.frequency.setValueAtTime(isAccent?520:410,when);
+  body.frequency.exponentialRampToValueAtTime(isAccent?240:190,when+.045);
+  highGain.gain.setValueAtTime(.0001,when);
+  highGain.gain.exponentialRampToValueAtTime((isAccent?1.15:.95)*level,when+.0008);
+  highGain.gain.exponentialRampToValueAtTime(.0001,when+.035);
+  bodyGain.gain.setValueAtTime(.0001,when);
+  bodyGain.gain.exponentialRampToValueAtTime((isAccent?.55:.42)*level,when+.001);
+  bodyGain.gain.exponentialRampToValueAtTime(.0001,when+.055);
+  high.connect(highGain).connect(master);body.connect(bodyGain).connect(master);
+  high.onended=()=>{try{high.disconnect();highGain.disconnect()}catch{}};
+  body.onended=()=>{try{body.disconnect();bodyGain.disconnect()}catch{}};
+  high.start(when);body.start(when);high.stop(when+.04);body.stop(when+.06);
+ }
  function scheduleSound(when:number,beat:number,sub:number){const s=live.current,isMain=sub===0,isDown=beat===0&&isMain;if(s.sound==='click'){if(isMain){const key=isDown&&s.accent?'accent':'click',level=isDown&&s.accent?1.38:1.18;if(!playClickBuffer(key,when,level))synthClick(when,isDown&&s.accent,level)}else{const ghostLevel=.22;if(!playBuffer('click',when,ghostLevel))synthClick(when,false,ghostLevel)}return}if(s.sound==='tabla'){if(isMain){if(isDown){playBuffer('tablaGe',when,s.accent?1.12:.96);playBuffer('tablaNa',when+.012,.56)}else playBuffer(beat%2?'tablaNa':'tablaTin',when,.9)}else playBuffer('tablaTin',when,.31);return}if(isMain){if(isDown||beat%2===0)playBuffer('kick',when,isDown&&s.accent?1.12:.92);else playBuffer('snare',when,.9);if(isDown&&s.accent)playBuffer('hat',when,.55)}else playBuffer('hat',when,.38)}
- function scheduler(){const ctx=ctxRef.current;if(!ctx||!runningRef.current)return;const s=live.current,horizon=ctx.currentTime+(document.hidden?.7:.16),sec=(60/s.bpm)/s.subdivision;while(nextRef.current<horizon){const beat=Math.floor(stepRef.current/s.subdivision)%s.beats,sub=stepRef.current%s.subdivision,down=beat===0&&sub===0;scheduleSound(nextRef.current,beat,sub);queueRef.current.push({time:nextRef.current,beat,sub,down});nextRef.current+=sec;stepRef.current=(stepRef.current+1)%(s.beats*s.subdivision)}timerRef.current=setTimeout(scheduler,document.hidden?120:25)}
- function animate(){const ctx=ctxRef.current;if(ctx){const now=ctx.currentTime;while(queueRef.current.length&&queueRef.current[0].time<=now+.012){const e=queueRef.current.shift()!;if(e.sub===0){setActiveBeat(e.beat);setSide(v=>!v);if(live.current.flash&&typeof document.body.animate==='function'){document.body.animate([{filter:e.down?'brightness(1.02) saturate(1.05)':'brightness(1.01)'},{filter:'none'}],{duration:180})}}}}rafRef.current=requestAnimationFrame(animate)}
- async function start(){if(runningRef.current)return;await ensureAudio();runningRef.current=true;setRunning(true);stepRef.current=0;queueRef.current=[];nextRef.current=ctxRef.current!.currentTime+.06;setStatus(`${bpm} BPM · ${beats} beats`);scheduler();rafRef.current=requestAnimationFrame(animate)}
- function stop(){runningRef.current=false;if(timerRef.current)clearTimeout(timerRef.current);timerRef.current=null;setRunning(false);queueRef.current=[];setActiveBeat(-1);setStatus('Stopped')}
+ function scheduler(){
+  const ctx=ctxRef.current;if(!ctx||!runningRef.current)return;
+  const s=live.current,native=Capacitor.isNativePlatform();
+  const horizon=ctx.currentTime+(native?.23:document.hidden?.7:.16);
+  const sec=(60/s.bpm)/s.subdivision;
+  while(nextRef.current<horizon){
+   const beat=Math.floor(stepRef.current/s.subdivision)%s.beats,sub=stepRef.current%s.subdivision,down=beat===0&&sub===0;
+   scheduleSound(nextRef.current,beat,sub);
+   queueRef.current.push({time:nextRef.current,beat,sub,down});
+   if(queueRef.current.length>128)queueRef.current.splice(0,queueRef.current.length-128);
+   nextRef.current+=sec;
+   stepRef.current=(stepRef.current+1)%(s.beats*s.subdivision);
+  }
+  timerRef.current=setTimeout(scheduler,native?60:document.hidden?120:25);
+ }
+ function animate(){
+  if(!runningRef.current)return;
+  const ctx=ctxRef.current,native=Capacitor.isNativePlatform();
+  if(ctx){
+   const now=ctx.currentTime;
+   while(queueRef.current.length&&queueRef.current[0].time<=now+.012){
+    const e=queueRef.current.shift()!;
+    if(e.sub===0){
+     setActiveBeat(e.beat);setSide(v=>!v);
+     // Body-wide brightness animation continuously repaints the Android WebView.
+     if(!native&&live.current.flash&&typeof document.body.animate==='function')
+      document.body.animate([{filter:e.down?'brightness(1.02) saturate(1.05)':'brightness(1.01)'},{filter:'none'}],{duration:180});
+    }
+   }
+  }
+  if(native)visualTimerRef.current=setTimeout(animate,60);
+  else rafRef.current=requestAnimationFrame(animate);
+ }
+ async function start(){
+  if(runningRef.current)return;
+  const epoch=++startEpochRef.current;
+  try{
+   const ctx=await ensureAudio();
+   if(epoch!==startEpochRef.current||ctxRef.current!==ctx)return;
+   runningRef.current=true;setRunning(true);
+   stepRef.current=0;queueRef.current=[];nextRef.current=ctx.currentTime+.06;
+   setStatus(`${bpm} BPM · ${beats} beats`);
+   scheduler();
+   animate();
+  }catch(error){
+   if(epoch===startEpochRef.current)setStatus(error instanceof Error?error.message:'Web Audio unavailable');
+  }
+ }
+ function stop(){
+  startEpochRef.current++;
+  runningRef.current=false;
+  if(timerRef.current)clearTimeout(timerRef.current);timerRef.current=null;
+  if(visualTimerRef.current)clearTimeout(visualTimerRef.current);visualTimerRef.current=null;
+  if(rafRef.current)cancelAnimationFrame(rafRef.current);rafRef.current=0;
+  queueRef.current=[];setRunning(false);setActiveBeat(-1);setStatus('Stopped');
+  try{masterRef.current?.disconnect();limiterRef.current?.disconnect()}catch{}
+  masterRef.current=null;limiterRef.current=null;
+  const ctx=ctxRef.current;ctxRef.current=null;
+  sampleLoadRef.current=null;buffersRef.current={};
+  if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
+ }
  useEffect(()=>{if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(volume*1.18,ctxRef.current.currentTime,.015)},[volume]);
  function tap(){const now=performance.now(),a=tapRef.current;if(a.length&&now-a[a.length-1]>2000)a.length=0;a.push(now);if(a.length>8)a.shift();if(a.length>=2){const ints=a.slice(1).map((t,i)=>t-a[i]),sorted=[...ints].sort((x,y)=>x-y),med=sorted[Math.floor(sorted.length/2)],filtered=ints.filter(v=>Math.abs(v-med)<med*.28),used=filtered.length?filtered:ints;setBpm(60000/(used.reduce((x,y)=>x+y,0)/used.length));setStatus('Tap tempo')}}
  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName||''))return;if(e.code==='Space'){e.preventDefault();running?stop():start()}else if(e.key.toLowerCase()==='t')tap();else if(e.code==='ArrowUp'){e.preventDefault();setBpm(bpm+(e.shiftKey?5:1))}else if(e.code==='ArrowDown'){e.preventDefault();setBpm(bpm-(e.shiftKey?5:1))}};document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key)},[running,bpm]);

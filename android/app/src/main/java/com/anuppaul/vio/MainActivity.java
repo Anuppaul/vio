@@ -1,7 +1,6 @@
 package com.anuppaul.vio;
 
 import android.os.Bundle;
-import android.view.WindowManager;
 import android.webkit.PermissionRequest;
 import android.net.Uri;
 import androidx.activity.OnBackPressedCallback;
@@ -13,7 +12,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativePitchPlugin.class);
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // Do not force the display to stay awake for the whole practice session.
+        // An always-on illuminated screen was a major avoidable thermal load.
         getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
             @Override
             public void onPermissionRequest(PermissionRequest request) {

@@ -187,11 +187,14 @@ export default function Tanpura(){
     };
     osc.start(when);osc.stop(when+2.8);
   }
-  async function synth(){
-    const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback');setPlaying(true)
+  async function synth(token=tokenRef.current){
+    const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+    if(token!==tokenRef.current)return;
+    const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback');setPlaying(true)
   }
   async function start(){
-    stop(false);const token=tokenRef.current;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){await synth();return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+    stop(false);const token=tokenRef.current;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){await synth(token);return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+    if(token!==tokenRef.current)return;
     const stem=key.replace('#','s'),url=`/assets/tanpura/${pattern}_${stem}.mp3`;
     setStatus('Loading drone…');
     try{
@@ -211,7 +214,7 @@ export default function Tanpura(){
       source.buffer=buffer;source.loop=true;source.loopStart=bounds.start;source.loopEnd=bounds.end;source.connect(input);source.start(ctx.currentTime+.015,bounds.start);
       sourceRef.current=source;setPlaying(true);
       setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · Compact ${loopSeconds.toFixed(1)}s · Raw MP3`);
-    }catch{if(token===tokenRef.current)await synth()}
+    }catch{if(token===tokenRef.current)await synth(token)}
   }
   useEffect(()=>{if(playing)void start()},[pattern,key]);
 

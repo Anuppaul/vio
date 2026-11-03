@@ -30,7 +30,6 @@ await mkdir(mainDir,{recursive:true});
 await writeFile(join(mainDir,'MainActivity.java'),`package ${config.appId};
 
 import android.os.Bundle;
-import android.view.WindowManager;
 import android.webkit.PermissionRequest;
 import android.net.Uri;
 import androidx.activity.OnBackPressedCallback;
@@ -42,8 +41,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativePitchPlugin.class);
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
+        // Use Android's normal screen-off policy during extended practice.\n        getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
             @Override
             public void onPermissionRequest(PermissionRequest request) {
                 Uri origin = request.getOrigin();

@@ -4,17 +4,19 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const read=path=>readFile(path,'utf8');
-const [activity,pitch,tan,metro,ear,exercise,scale,tuner,style,workflow] =
+const [activity,pitch,tan,metro,ear,exercise,scale,tuner,style,workflow,syncScript] =
  await Promise.all([
   'android/app/src/main/java/com/anuppaul/vio/MainActivity.java',
   'android/app/src/main/java/com/anuppaul/vio/NativePitchPlugin.java',
   'components/Tanpura.tsx','components/Metronome.tsx',
   'components/EarTuner.tsx','components/Exercise.tsx',
   'components/ScalePractice.tsx','components/SoundTuner.tsx',
-  'app/native.css','.github/workflows/android-apk.yml'
+  'app/native.css','.github/workflows/android-apk.yml',
+  'scripts/sync-android.mjs'
  ].map(read));
 
 assert.doesNotMatch(activity,/FLAG_KEEP_SCREEN_ON/,'Display must not be pinned on');
+assert.doesNotMatch(syncScript,/FLAG_KEEP_SCREEN_ON/,'Capacitor sync must not re-add a screen-on flag');
 assert.match(pitch,/handleOnPause\(\)[\s\S]{0,200}stopCapture\(\)/,
  'Native pitch DSP must stop when activity pauses');
 assert.match(tan,/nodesRef\.current\.delete\(osc\)/,'Synth nodes must self-release');

@@ -4,6 +4,10 @@ name: Build Android APK
 # Never start builds automatically on push.
 on:
   workflow_dispatch:
+  # One-off, branch-restricted CI trigger. Reverted immediately after dispatch.
+  push:
+    branches: [fix/android-audio-thermal]
+    paths: ['.github/workflows/android-apk.yml']
 
 concurrency:
   group: vio-android-apk

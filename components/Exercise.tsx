@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import ExerciseClefPreview, { EXTRA_CLEF_CONFIG, type ExerciseClefKey } from '@/components/ExerciseClefPreview';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
@@ -144,7 +145,14 @@ export default function Exercise(){
  const [correct,setCorrect]=useState(0),[questions,setQuestions]=useState(0),[,setStreak]=useState(0),[best,setBest]=useState(0),[started,setStarted]=useState(Date.now()),[now,setNow]=useState(Date.now()),[ended,setEnded]=useState(false),[settingsOpen,setSettingsOpen]=useState(false),[settingsPane,setSettingsPane]=useState<SettingsPane>('main'),[reportOpen,setReportOpen]=useState(false),[status,setStatus]=useState('What note is this?');
  const lastId=useRef(''),autoTimer=useRef<ReturnType<typeof setTimeout>|null>(null),audioRef=useRef<HTMLAudioElement|null>(null),ctxRef=useRef<AudioContext|null>(null),sharpHeld=useRef(false),flatHeld=useRef(false);
  useEffect(()=>{try{const saved=localStorage.getItem('vio-exercise-settings');if(saved){const s=migrateSettings(JSON.parse(saved));setSettings(s);setDraft(s)}}catch{}},[]);
- useEffect(()=>{const id=setInterval(()=>setNow(Date.now()),250);return()=>clearInterval(id)},[]);
+ useEffect(()=>{
+  // The entire notation UI was re-rendering four times per second even when
+  // there was no timed challenge. Only tick when a timer/report is visible.
+  if(!reportOpen&&(!settings.challengeMode||settings.timeLimitMinutes<=0||ended))return;
+  setNow(Date.now());
+  const id=setInterval(()=>setNow(Date.now()),1000);
+  return()=>clearInterval(id);
+ },[settings.challengeMode,settings.timeLimitMinutes,ended,reportOpen]);
  const elapsed=now-started,timeLimitMs=settings.challengeMode&&settings.timeLimitMinutes>0?settings.timeLimitMinutes*60000:0,remaining=timeLimitMs?Math.max(0,timeLimitMs-elapsed):0,accuracy=questions?Math.round(correct/questions*100):null;
  const challengeLabel=useMemo(()=>{if(!settings.challengeMode)return'Off';const bits:string[]=[];if(settings.timeLimitMinutes>0)bits.push(`${settings.timeLimitMinutes} min`);if(settings.questionLimit>0)bits.push(`${settings.questionLimit} questions`);return bits.length?bits.join(' · '):'On'},[settings.challengeMode,settings.timeLimitMinutes,settings.questionLimit]);
  const challengeFinished=useCallback((nextQuestions=questions)=>settings.challengeMode&&((settings.questionLimit>0&&nextQuestions>=settings.questionLimit)||(settings.timeLimitMinutes>0&&Date.now()-started>=settings.timeLimitMinutes*60000)),[settings.challengeMode,settings.questionLimit,settings.timeLimitMinutes,questions,started]);
@@ -202,6 +210,25 @@ export default function Exercise(){
  function toggleNoteValue(value:NoteValue){setDraft(d=>{const on=d.noteValues.includes(value);if(on&&d.noteValues.length===1)return d;return{...d,noteValues:on?d.noteValues.filter(v=>v!==value):[...d.noteValues,value]}})}
  function toggleFilter(token:string){setDraft(d=>{const on=d.noteFilterValues.includes(token);if(on&&d.noteFilterValues.length===1)return d;return{...d,noteFilterValues:on?d.noteFilterValues.filter(x=>x!==token):[...d.noteFilterValues,token]}})}
  function setDraftRange(clef:Clef,min:number,max:number){setDraft(d=>({...d,ranges:{...d.ranges,[clef]:{min,max}}}))}
+
+ useEffect(()=>{
+  const release=()=>{
+   if(!Capacitor.isNativePlatform())return;
+   if(autoTimer.current){clearTimeout(autoTimer.current);autoTimer.current=null}
+   audioRef.current?.pause();
+   audioRef.current=null;
+   const ctx=ctxRef.current;ctxRef.current=null;
+   if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
+  };
+  const onVisibility=()=>{if(document.hidden)release()};
+  document.addEventListener('visibilitychange',onVisibility);
+  window.addEventListener('pagehide',release);
+  return()=>{
+   document.removeEventListener('visibilitychange',onVisibility);
+   window.removeEventListener('pagehide',release);
+   release();
+  };
+ },[]);
 
  const answerRows=useMemo(()=>['#','','b'].map(acc=>({acc,tokens:NOTE_TOKENS.filter(t=>tokenParts(t).acc===acc)})),[]);
 

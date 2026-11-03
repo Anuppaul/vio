@@ -10,7 +10,8 @@
     "android:sync": "node scripts/sync-android.mjs",
     "android:apk": "node scripts/build-apk.mjs",
     "android:open": "cap open android",
-    "test:android:web": "node scripts/test-android-export.mjs"
+    "test:android:web": "node scripts/test-android-export.mjs",
+    "test:android:thermal": "node scripts/test-android-thermal.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

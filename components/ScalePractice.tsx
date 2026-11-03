@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { PitchDetector } from 'pitchy';
 import { rms } from '@/lib/music';
 import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
@@ -166,7 +167,12 @@ export default function ScalePractice(){
   }
   function stop(){
     cancelAnimationFrame(rafRef.current);rafRef.current=0;try{sourceRef.current?.disconnect();analyserRef.current?.disconnect();if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();if(workletRef.current)workletRef.current.port.onmessage=null;workletRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}
-    streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;analyserRef.current=null;processorRef.current=null;workletRef.current=null;silentGainRef.current=null;streamRef.current=null;setRunning(false);clearLive();clearCapture();setStatus('Microphone stopped')
+    streamRef.current?.getTracks().forEach(t=>t.stop());sourceRef.current=null;analyserRef.current=null;processorRef.current=null;workletRef.current=null;silentGainRef.current=null;streamRef.current=null;setRunning(false);clearLive();clearCapture();setStatus('Microphone stopped');
+    if(Capacitor.isNativePlatform()){
+      stopReference();
+      const ctx=ctxRef.current;ctxRef.current=null;
+      if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
+    }
   }
   function setSa(){
     const chosen=saFrequency?frequency:saReadyFrequency;if(!chosen)return;const ctx=ctxRef.current;
@@ -185,7 +191,17 @@ export default function ScalePractice(){
     }
     const osc=ctx.createOscillator(),gain=ctx.createGain(),now=ctx.currentTime,duration=.65;osc.type='triangle';osc.frequency.value=target;gain.gain.setValueAtTime(.0001,now);gain.gain.linearRampToValueAtTime(.16,now+.025);gain.gain.setValueAtTime(.16,now+duration-.05);gain.gain.exponentialRampToValueAtTime(.0001,now+duration);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(now+duration);osc.onended=()=>setPlayingOffset(null)
   }
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);stopReference();try{if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();if(workletRef.current)workletRef.current.port.onmessage=null;workletRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
+  useEffect(()=>{
+    const onHidden=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop()};
+    const onPageHide=()=>{if(Capacitor.isNativePlatform())stop()};
+    document.addEventListener('visibilitychange',onHidden);
+    window.addEventListener('pagehide',onPageHide);
+    return()=>{
+      document.removeEventListener('visibilitychange',onHidden);
+      window.removeEventListener('pagehide',onPageHide);
+    };
+  },[]);
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);stopReference();try{if(processorRef.current)processorRef.current.onaudioprocess=null;processorRef.current?.disconnect();if(workletRef.current)workletRef.current.port.onmessage=null;workletRef.current?.disconnect();silentGainRef.current?.disconnect()}catch{}streamRef.current?.getTracks().forEach(t=>t.stop());const ctx=ctxRef.current;ctxRef.current=null;if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{})},[]);
 
   function scaleRow(kind:Saptak,offsets:number[]){
     const subtitle=saFrequency

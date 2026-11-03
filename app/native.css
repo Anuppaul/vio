@@ -64,3 +64,10 @@ html.vio-native {
     transition: none;
   }
 }
+
+/* Long-running audio practice must not keep the mobile compositor busy.
+ * The drone plays unchanged; only the decorative breathing rings are static. */
+.vio-native .tan-visual.playing .tan-ring {
+  animation: none !important;
+  will-change: auto;
+}

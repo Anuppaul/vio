@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { FLAT_NAMES, NOTE_NAMES, midiFrequency } from '@/lib/music';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 
@@ -125,20 +126,39 @@ export default function EarTuner(){
 
   const preset=useMemo(()=>Object.entries(presets).find(([,v])=>v.every((n,i)=>n===notes[i]))?.[0]||'', [notes]);
 
-  function stop(update=true){
+  function stop(update=true,releaseAudio=update){
     tokenRef.current++;
     try{sampleSourceRef.current?.stop()}catch{}
     try{oscRef.current?.stop()}catch{}
+    try{sampleSourceRef.current?.disconnect();sampleGainRef.current?.disconnect()}catch{}
+    try{oscRef.current?.disconnect();gainRef.current?.disconnect()}catch{}
     sampleSourceRef.current=null;sampleGainRef.current=null;
-    oscRef.current=null;gainRef.current=null;setActive(-1);if(update)setStatus('Stopped');
+    oscRef.current=null;gainRef.current=null;
+    if(releaseAudio){
+      const ctx=ctxRef.current;ctxRef.current=null;
+      if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
+      if(Capacitor.isNativePlatform())sampleCacheRef.current.clear();
+    }
+    setActive(-1);
+    if(update)setStatus('Stopped');
   }
-  useEffect(()=>()=>stop(false),[]);
+  useEffect(()=>{
+    const onHidden=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop(true,true)};
+    const onPageHide=()=>{if(Capacitor.isNativePlatform())stop(true,true)};
+    document.addEventListener('visibilitychange',onHidden);
+    window.addEventListener('pagehide',onPageHide);
+    return()=>{
+      document.removeEventListener('visibilitychange',onHidden);
+      window.removeEventListener('pagehide',onPageHide);
+      stop(false,true);
+    };
+  },[]);
 
   async function beep(midi:number,index:number){
     const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
     const osc=ctx.createOscillator(),gain=ctx.createGain();
     osc.type='sine';osc.frequency.value=midiFrequency(midi);gain.gain.value=volume*.5;osc.connect(gain).connect(ctx.destination);osc.start();oscRef.current=osc;gainRef.current=gain;setActive(index);setStatus(`${displayName(midi,flats)} · ${midiFrequency(midi).toFixed(2)} Hz`);
-    if(!loop)setTimeout(()=>{if(oscRef.current===osc)stop(false)},1800);
+    if(!loop)setTimeout(()=>{if(oscRef.current===osc)stop(false,true)},1800);
   }
 
   async function playSample(midi:number,index:number){
@@ -160,6 +180,10 @@ export default function EarTuner(){
           const bounds=gaplessLoopBounds(buffer,midi);
           sample={buffer,start:bounds.start,end:bounds.end};
           sampleCacheRef.current.set(url,sample);
+          if(Capacitor.isNativePlatform()&&sampleCacheRef.current.size>4){
+            const oldest=sampleCacheRef.current.keys().next().value;
+            if(oldest!==undefined)sampleCacheRef.current.delete(oldest);
+          }
         }
         if(token!==tokenRef.current)return;
 
@@ -175,6 +199,9 @@ export default function EarTuner(){
         source.onended=()=>{
           if(sampleSourceRef.current!==source)return;
           sampleSourceRef.current=null;sampleGainRef.current=null;
+          try{source.disconnect();gain.disconnect()}catch{}
+          const stoppedCtx=ctxRef.current;ctxRef.current=null;
+          if(stoppedCtx&&stoppedCtx.state!=='closed')void stoppedCtx.close().catch(()=>{});
           setActive(-1);setStatus('Ready');
         };
         source.start();

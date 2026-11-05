@@ -44,7 +44,7 @@ public class BackgroundAudioPlugin extends Plugin {
     public void playTanpura(PluginCall call) {
         String pattern = call.getString("pattern", "sa-pa");
         String key = call.getString("key", "C");
-        if (!(pattern.equals("sa-pa") || pattern.equals("sa-ma")) || !validKey(key)) {
+        if (!("sa-pa".equals(pattern) || "sa-ma".equals(pattern)) || !validKey(key)) {
             call.reject("Invalid Tanpura key or pattern");
             return;
         }

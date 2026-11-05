@@ -1,51 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" viewBox="0 0 1280 440" role="img" aria-labelledby="title desc">
-<title id="title">VIO — Listen closer. Practice smarter.</title>
-<desc id="desc">A professional open-source VIO banner showing live pitch detection, Tanpura, ear training and metronome for violinists.</desc>
-<defs>
- <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#12152B"/><stop offset=".58" stop-color="#1B2141"/><stop offset="1" stop-color="#302651"/></linearGradient>
- <linearGradient id="violet" x1="0" x2="1" y1="0" y2=".5"><stop stop-color="#AFA3FF"/><stop offset="1" stop-color="#F5A882"/></linearGradient>
- <linearGradient id="card" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF" stop-opacity=".16"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".055"/></linearGradient>
- <radialGradient id="glow"><stop stop-color="#8D76FF" stop-opacity=".38"/><stop offset="1" stop-color="#8D76FF" stop-opacity="0"/></radialGradient>
- <pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse"><path d="M34 0H0V34" fill="none" stroke="#FFFFFF" stroke-opacity=".045"/></pattern>
- <clipPath id="round"><rect width="1280" height="440" rx="28"/></clipPath>
-</defs>
-<g clip-path="url(#round)">
- <rect width="1280" height="440" fill="url(#bg)"/><rect width="1280" height="440" fill="url(#grid)"/>
- <circle cx="1075" cy="200" r="350" fill="url(#glow)"/>
- <path d="M0 360C180 330 320 395 510 366S830 305 1000 363 1160 395 1280 354" fill="none" stroke="#B0A1FF" stroke-opacity=".12" stroke-width="2"/>
- <path d="M0 385C180 355 320 420 510 391S830 330 1000 388 1160 420 1280 379" fill="none" stroke="#F4AC95" stroke-opacity=".10" stroke-width="2"/>
- <g font-family="Inter,Segoe UI,Arial,sans-serif">
-  <rect x="64" y="56" width="174" height="33" rx="16.5" fill="#AAA0FF" fill-opacity=".13" stroke="#B3A9FF" stroke-opacity=".4"/>
-  <circle cx="81" cy="72.5" r="4" fill="#C2FADE"/>
-  <text x="95" y="78" font-size="12" font-weight="700" fill="#DDD7FF" letter-spacing="1.4">OPEN SOURCE · MIT</text>
-  <text x="64" y="211" font-size="124" font-weight="800" fill="#FFFFFF" letter-spacing="-11">VIO<tspan fill="#B6A3FF">.</tspan></text>
-  <text x="68" y="258" font-size="26" font-weight="650" fill="#F4EEFF" letter-spacing="-.5">Listen closer. Practice smarter.</text>
-  <text x="68" y="296" font-size="16" fill="#B7BCD4">A modern, offline-ready violin practice toolkit.</text>
-  <g font-size="12" font-weight="650" fill="#E0DDF3">
-   <rect x="68" y="334" width="137" height="31" rx="15.5" fill="#FFFFFF" fill-opacity=".08" stroke="#FFFFFF" stroke-opacity=".14"/>
-   <text x="85" y="354">LIVE PITCH</text>
-   <rect x="218" y="334" width="116" height="31" rx="15.5" fill="#FFFFFF" fill-opacity=".08" stroke="#FFFFFF" stroke-opacity=".14"/>
-   <text x="237" y="354">TANPURA</text>
-   <rect x="347" y="334" width="135" height="31" rx="15.5" fill="#FFFFFF" fill-opacity=".08" stroke="#FFFFFF" stroke-opacity=".14"/>
-   <text x="367" y="354">METRONOME</text>
-  </g>
-  <text x="70" y="414" font-size="12" fill="#949BB8" letter-spacing=".4">CREATED &amp; MAINTAINED BY ANUPPAUL</text>
- </g>
- <g transform="translate(738 43)">
-  <rect x="18" y="16" width="465" height="342" rx="29" fill="#060914" opacity=".40"/>
-  <rect x="0" y="0" width="465" height="342" rx="29" fill="url(#card)" stroke="#C9C2FF" stroke-opacity=".32" stroke-width="1.4"/>
-  <rect x="22" y="22" width="421" height="42" rx="14" fill="#FFFFFF" fill-opacity=".10"/>
-  <circle cx="44" cy="43" r="6" fill="#BBF4CD"/>
-  <text x="60" y="48" font-size="14" font-weight="700" fill="#FAF9FF" font-family="Inter,Segoe UI,Arial,sans-serif">Sound Tuner</text>
-  <text x="372" y="48" font-size="11" fill="#BCC8E1" font-family="Inter,Segoe UI,Arial,sans-serif">Listening</text>
-  <path d="M98 223A143 143 0 0 1 367 223" fill="none" stroke="#BDB5E4" stroke-opacity=".2" stroke-width="15" stroke-linecap="round"/>
-  <path d="M132 173A112 112 0 0 1 334 173" fill="none" stroke="#B0EDC2" stroke-width="10" stroke-linecap="round"/>
-  <path d="M232 220L253 120" stroke="#F2B09B" stroke-width="5" stroke-linecap="round"/>
-  <circle cx="232" cy="220" r="12" fill="#F1B29F" stroke="#FFFFFF" stroke-width="4"/>
-  <text x="232" y="148" text-anchor="middle" font-size="58" font-weight="800" fill="#FFFFFF" font-family="Inter,Segoe UI,Arial,sans-serif">A4</text>
-  <text x="232" y="180" text-anchor="middle" font-size="17" fill="#C5EEDA" font-family="Inter,Segoe UI,Arial,sans-serif">440.0 Hz</text>
-  <rect x="29" y="249" width="407" height="66" rx="16" fill="#070C22" fill-opacity=".40" stroke="#FFFFFF" stroke-opacity=".08"/>
-  <path d="M44 282H59L65 270L71 298L79 254L87 307L95 270L103 294L112 282L124 282L130 273L136 290L142 261L149 301L156 276L164 289L173 282H184L190 264L198 300L207 256L215 305L224 270L231 290L240 282H250L258 274L267 290L274 259L282 302L289 272L298 288L308 282H318L326 266L333 297L342 256L351 305L358 270L365 291L374 282H393L401 272L408 291L416 282H426" fill="none" stroke="url(#violet)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
- </g>
-</g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="460" viewBox="0 0 1280 460" role="img" aria-labelledby="svgTitle svgDesc"><title id="svgTitle">VIO — Listen closer. Sing with confidence.</title><desc id="svgDesc">Desktop VIO open-source hero with a singing Sa Re Ga Ma relative pitch display.</desc><defs>
+<linearGradient id="page" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#11172B"/><stop offset="1" stop-color="#242548"/></linearGradient>
+<linearGradient id="card" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#283255"/><stop offset="1" stop-color="#1A243E"/></linearGradient>
+<linearGradient id="featured" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#29315A"/><stop offset="1" stop-color="#312A53"/></linearGradient>
+<linearGradient id="wave" x1="0" x2="1" y1="0" y2="0"><stop stop-color="#77E9C8"/><stop offset=".52" stop-color="#ADABFF"/><stop offset="1" stop-color="#F6B59B"/></linearGradient>
+<radialGradient id="glow"><stop stop-color="#8A7EEB" stop-opacity=".48"/><stop offset="1" stop-color="#8A7EEB" stop-opacity="0"/></radialGradient>
+<pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1" fill="#FFFFFF" fill-opacity=".055"/></pattern>
+</defs><rect width="1280" height="460" rx="28" fill="url(#page)"/><rect width="1280" height="460" rx="28" fill="url(#dots)"/><circle cx="1050" cy="190" r="335" fill="url(#glow)"/><rect x="63" y="53" width="230" height="35" rx="17.5" fill="#FFFFFF" fill-opacity=".075" stroke="#FFFFFF" stroke-opacity=".18"/><text x="79" y="75.05" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" fill="#B8A9FF" font-weight="780" letter-spacing=".55">●  OPEN SOURCE · MIT</text><text x="63" y="199" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="112" fill="#EEF3FF" font-weight="840" letter-spacing="-6">VIO</text><text x="267" y="199" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="111" fill="#B8A9FF" font-weight="850" >.</text><text x="67" y="252" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="27" fill="#EEF3FF" font-weight="735" >Listen closer. Sing with confidence.</text><text x="67" y="292" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="17" fill="#B5BED6" font-weight="530" >Violin tuning, singing swaras and rhythm practice</text><rect x="67" y="326" width="188" height="37" rx="18.5" fill="#FFFFFF" fill-opacity=".075" stroke="#FFFFFF" stroke-opacity=".18"/><text x="83" y="349.05" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" fill="#B8A9FF" font-weight="780" letter-spacing=".55">SA · RE · GA · MA</text><rect x="268" y="326" width="170" height="37" rx="18.5" fill="#FFFFFF" fill-opacity=".075" stroke="#FFFFFF" stroke-opacity=".18"/><text x="284" y="349.05" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" fill="#7BE7C9" font-weight="780" letter-spacing=".55">LIVE PITCH</text><rect x="451" y="326" width="138" height="37" rx="18.5" fill="#FFFFFF" fill-opacity=".075" stroke="#FFFFFF" stroke-opacity=".18"/><text x="467" y="349.05" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" fill="#F9BA9B" font-weight="780" letter-spacing=".55">OFFLINE</text><text x="68" y="425" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12" fill="#9BA5C4" font-weight="740" letter-spacing="1.1">INDEPENDENT OPEN SOURCE · CREATED BY ANUPPAUL</text><rect x="730" y="52" width="485" height="358" rx="28" fill="url(#card)" stroke="#D8D1FF" stroke-opacity=".42"/><rect x="756" y="75" width="433" height="50" rx="15" fill="#313C5D" stroke="#B8B5E8" stroke-opacity=".2"/><circle cx="781" cy="100" r="7" fill="#7BE7C9"/><text x="799" y="105" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="17" fill="#EEF3FF" font-weight="750" >Singing · Relative Sa tuner</text><text x="1172" y="104" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12" fill="#7BE7C9" font-weight="740" text-anchor="end">LIVE</text><text x="971" y="190" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="70" fill="#EEF3FF" font-weight="840" text-anchor="middle">Sa</text><text x="971" y="223" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14" fill="#B5BED6" font-weight="620" text-anchor="middle">Find your note · ±5 cents guidance</text><circle cx="801" cy="289" r="29" fill="#7BE7C9" fill-opacity=".95" stroke="#FFFFFF" stroke-opacity=".3"/><text x="801" y="294.6" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16" fill="#11172D" font-weight="770" text-anchor="middle">Sa</text><circle cx="889" cy="289" r="29" fill="#FFFFFF" fill-opacity=".085" stroke="#FFFFFF" stroke-opacity=".16"/><text x="889" y="294.6" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16" fill="#EEF3FF" font-weight="770" text-anchor="middle">Re</text><circle cx="976" cy="289" r="29" fill="#FFFFFF" fill-opacity=".085" stroke="#FFFFFF" stroke-opacity=".16"/><text x="976" y="294.6" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16" fill="#EEF3FF" font-weight="770" text-anchor="middle">Ga</text><circle cx="1063" cy="289" r="29" fill="#FFFFFF" fill-opacity=".085" stroke="#FFFFFF" stroke-opacity=".16"/><text x="1063" y="294.6" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16" fill="#EEF3FF" font-weight="770" text-anchor="middle">Ma</text><circle cx="1150" cy="289" r="29" fill="#FFFFFF" fill-opacity=".085" stroke="#FFFFFF" stroke-opacity=".16"/><text x="1150" y="294.6" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16" fill="#EEF3FF" font-weight="770" text-anchor="middle">Pa</text><polyline points="774.0,348.0 779.5,338.9 784.9,341.9 790.4,352.0 795.8,353.9 801.3,345.7 806.8,342.5 812.2,351.4 817.7,358.6 823.1,350.4 828.6,336.3 834.0,336.6 839.5,351.4 845.0,359.3 850.4,350.4 855.9,340.8 861.3,346.8 866.8,357.9 872.3,353.5 877.7,336.8 883.2,332.6 888.6,349.1 894.1,363.7 899.5,356.7 905.0,340.7 910.5,340.4 915.9,353.7 921.4,356.0 926.8,340.8 932.3,331.7 937.8,345.7 943.2,364.9 948.7,362.2 954.1,342.5 959.6,334.6 965.0,347.2 970.5,357.0 976.0,347.2 981.4,334.6 986.9,342.5 992.3,362.2 997.8,364.9 1003.3,345.7 1008.7,331.7 1014.2,340.8 1019.6,356.0 1025.1,353.7 1030.5,340.4 1036.0,340.7 1041.5,356.7 1046.9,363.7 1052.4,349.1 1057.8,332.6 1063.3,336.8 1068.8,353.5 1074.2,357.9 1079.7,346.8 1085.1,340.8 1090.6,350.4 1096.0,359.3 1101.5,351.4 1107.0,336.6 1112.4,336.3 1117.9,350.4 1123.3,358.6 1128.8,351.4 1134.3,342.5 1139.7,345.7 1145.2,353.9 1150.6,352.0 1156.1,341.9 1161.5,338.9 1167.0,348.0" fill="none" stroke="url(#wave)" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/><text x="777" y="383" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12" fill="#B5BED6" font-weight="720" letter-spacing="1">SING  ·  LISTEN  ·  ADJUST</text></svg>

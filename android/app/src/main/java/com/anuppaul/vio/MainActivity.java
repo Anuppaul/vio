@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativePitchPlugin.class);
+        registerPlugin(BackgroundAudioPlugin.class);
         super.onCreate(savedInstanceState);
         // Do not force the display to stay awake for the whole practice session.
         // An always-on illuminated screen was a major avoidable thermal load.

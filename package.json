@@ -11,7 +11,8 @@
     "android:apk": "node scripts/build-apk.mjs",
     "android:open": "cap open android",
     "test:android:web": "node scripts/test-android-export.mjs",
-    "test:android:thermal": "node scripts/test-android-thermal.mjs"
+    "test:android:thermal": "node scripts/test-android-thermal.mjs",
+    "test:android:background": "node scripts/test-android-background-audio.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

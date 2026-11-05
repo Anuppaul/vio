@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
+import { backgroundAudio, nativeAudioStatus, prepareBackgroundNotification } from '@/lib/background-audio';
 
 
 type TempoPreset={name:string;range:string;bpm:number;description:string};
@@ -63,6 +64,7 @@ function normalizeBuffer(ctx:AudioContext,buffer:AudioBuffer,target=.98){
 export default function Metronome(){
  const [bpm,setBpmState]=useState(120),[beats,setBeatsState]=useState(4),[subdivision,setSubdivisionState]=useState(1),[sound,setSound]=useState<Sound>('click'),[accent,setAccent]=useState(true),[flash,setFlash]=useState(true),[volume,setVolume]=useState(.95),[running,setRunning]=useState(false),[activeBeat,setActiveBeat]=useState(-1),[status,setStatus]=useState('Ready'),[side,setSide]=useState(false);
  const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),limiterRef=useRef<DynamicsCompressorNode|null>(null),buffersRef=useRef<Record<string,AudioBuffer>>({}),sampleLoadRef=useRef<Promise<void>|null>(null),timerRef=useRef<ReturnType<typeof setTimeout>|null>(null),visualTimerRef=useRef<ReturnType<typeof setTimeout>|null>(null),rafRef=useRef(0),startEpochRef=useRef(0),nextRef=useRef(0),stepRef=useRef(0),queueRef=useRef<{time:number,beat:number,sub:number,down:boolean}[]>([]),tapRef=useRef<number[]>([]),runningRef=useRef(false);
+ const nativeStartingRef=useRef(false),nativeVisualStartRef=useRef(0),nativeRestoreSkipRef=useRef<string|null>(null);
  const live=useRef({bpm,beats,subdivision,sound,accent,flash,volume});useEffect(()=>{live.current={bpm,beats,subdivision,sound,accent,flash,volume}},[bpm,beats,subdivision,sound,accent,flash,volume]);
  const tempoName=TEMPO_PRESETS.reduce((best,preset)=>Math.abs(preset.bpm-bpm)<Math.abs(best.bpm-bpm)?preset:best,TEMPO_PRESETS[0]).name;
  function setBpm(v:number){setBpmState(Math.max(1,Math.min(300,Math.round(v))))}
@@ -96,14 +98,39 @@ export default function Metronome(){
   return ctx;
  }
  useEffect(()=>{
-  const onVisibility=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop()};
-  const onHide=()=>{if(Capacitor.isNativePlatform())stop()};
+  let unmounted=false;
+  const sync=async()=>{
+   const state=await nativeAudioStatus();
+   if(unmounted||!state)return;
+   if(state.mode==='metronome'&&state.playing){
+    const key=[state.bpm,state.beats,state.subdivision,state.sound,state.accent].join('/');
+    nativeRestoreSkipRef.current=key;
+    setBpm(state.bpm);setBeatsState(state.beats);setSubdivisionState(state.subdivision);
+    setSound(state.sound);setAccent(state.accent);setVolume(state.volume);
+    runningRef.current=true;setRunning(true);
+    setStatus('Metronome · native background playback');
+    nativeVisualStartRef.current=performance.now();
+    if(visualTimerRef.current)clearTimeout(visualTimerRef.current);
+    if(!document.hidden)visualTimerRef.current=setTimeout(nativeVisual,100);
+   }else if(backgroundAudio()){
+    runningRef.current=false;setRunning(false);setActiveBeat(-1);
+   }
+  };
+  if(backgroundAudio())void sync().catch(()=>{});
+  const onVisibility=()=>{
+   if(backgroundAudio()){
+    if(document.hidden){if(visualTimerRef.current)clearTimeout(visualTimerRef.current);visualTimerRef.current=null}
+    else void sync().catch(()=>{});
+   }else if(Capacitor.isNativePlatform()&&document.hidden)stop(false);
+  };
+  const onHide=()=>{if(Capacitor.isNativePlatform()&&!backgroundAudio())stop(false)};
   document.addEventListener('visibilitychange',onVisibility);
   window.addEventListener('pagehide',onHide);
   return()=>{
+   unmounted=true;
    document.removeEventListener('visibilitychange',onVisibility);
    window.removeEventListener('pagehide',onHide);
-   stop();
+   stop(false);
   };
  },[]);
  function playBuffer(key:string,when:number,gainValue=1){
@@ -179,8 +206,35 @@ export default function Metronome(){
   if(native)visualTimerRef.current=setTimeout(animate,60);
   else rafRef.current=requestAnimationFrame(animate);
  }
+ function nativeVisual(){
+  if(!runningRef.current||document.hidden)return;
+  const elapsed=Math.max(0,performance.now()-nativeVisualStartRef.current);
+  const beat=Math.floor(elapsed/(60000/live.current.bpm))%live.current.beats;
+  setActiveBeat(previous=>previous===beat?previous:beat);
+  visualTimerRef.current=setTimeout(nativeVisual,120);
+ }
  async function start(){
-  if(runningRef.current)return;
+  if(runningRef.current||nativeStartingRef.current)return;
+  const native=backgroundAudio();
+  if(native){
+   nativeStartingRef.current=true;
+   const epoch=++startEpochRef.current;
+   try{
+    await prepareBackgroundNotification();
+    if(epoch!==startEpochRef.current)return;
+    await native.playMetronome({bpm,beats,subdivision,sound,accent,volume});
+    if(epoch!==startEpochRef.current)return;
+    runningRef.current=true;setRunning(true);setActiveBeat(0);
+    setStatus(bpm+' BPM · native screen-off metronome');
+    nativeVisualStartRef.current=performance.now();
+    if(visualTimerRef.current)clearTimeout(visualTimerRef.current);
+    nativeVisual();
+   }catch(error){
+    if(epoch===startEpochRef.current)setStatus(error instanceof Error?error.message:String(error));
+   }finally{nativeStartingRef.current=false}
+   return;
+  }
+  if(Capacitor.isNativePlatform()){setStatus('Background audio plugin missing · update APK');return}
   const epoch=++startEpochRef.current;
   try{
    const ctx=await ensureAudio();
@@ -194,7 +248,10 @@ export default function Metronome(){
    if(epoch===startEpochRef.current)setStatus(error instanceof Error?error.message:'Web Audio unavailable');
   }
  }
- function stop(){
+ function stop(stopNative=true){
+  const native=backgroundAudio();
+  if(stopNative&&native)void native.stop().catch(()=>{});
+  nativeStartingRef.current=false;
   startEpochRef.current++;
   runningRef.current=false;
   if(timerRef.current)clearTimeout(timerRef.current);timerRef.current=null;
@@ -207,12 +264,27 @@ export default function Metronome(){
   sampleLoadRef.current=null;buffersRef.current={};
   if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
  }
- useEffect(()=>{if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(volume*1.18,ctxRef.current.currentTime,.015)},[volume]);
+ useEffect(()=>{
+  if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(volume*1.18,ctxRef.current.currentTime,.015);
+  if(runningRef.current)void backgroundAudio()?.setVolume({volume}).catch(()=>{});
+ },[volume]);
+ useEffect(()=>{
+  const native=backgroundAudio();
+  if(!native||!runningRef.current)return;
+  const key=[bpm,beats,subdivision,sound,accent].join('/');
+  if(nativeRestoreSkipRef.current){
+   const restored=nativeRestoreSkipRef.current;nativeRestoreSkipRef.current=null;
+   if(restored===key)return;
+  }
+  void native.playMetronome({bpm,beats,subdivision,sound,accent,volume}).then(()=>{
+   nativeVisualStartRef.current=performance.now();
+  }).catch(error=>setStatus('Metronome update failed: '+String(error)));
+ },[bpm,beats,subdivision,sound,accent]);
  function tap(){const now=performance.now(),a=tapRef.current;if(a.length&&now-a[a.length-1]>2000)a.length=0;a.push(now);if(a.length>8)a.shift();if(a.length>=2){const ints=a.slice(1).map((t,i)=>t-a[i]),sorted=[...ints].sort((x,y)=>x-y),med=sorted[Math.floor(sorted.length/2)],filtered=ints.filter(v=>Math.abs(v-med)<med*.28),used=filtered.length?filtered:ints;setBpm(60000/(used.reduce((x,y)=>x+y,0)/used.length));setStatus('Tap tempo')}}
  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName||''))return;if(e.code==='Space'){e.preventDefault();running?stop():start()}else if(e.key.toLowerCase()==='t')tap();else if(e.code==='ArrowUp'){e.preventDefault();setBpm(bpm+(e.shiftKey?5:1))}else if(e.code==='ArrowDown'){e.preventDefault();setBpm(bpm-(e.shiftKey?5:1))}};document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key)},[running,bpm]);
  useEffect(()=>{stepRef.current=0},[beats,subdivision]);
  return <>
-  <section className="card"><div className="card-head"><div><h2>Practice Metronome</h2></div><span>{status}</span></div><div className="metro-layout"><div className="metro-player"><div className="bpm-zone"><button className="round" onClick={()=>setBpm(bpm-1)}>−</button><div className="bpm-center"><span className="tempo-name">{tempoName}</span><div><input className="bpm-input" type="number" min="1" max="300" value={bpm} onChange={e=>setBpm(+e.target.value)}/><b className="muted"> BPM</b></div></div><button className="round" onClick={()=>setBpm(bpm+1)}>+</button></div><input className="range" type="range" min="1" max="300" value={bpm} onChange={e=>setBpm(+e.target.value)}/><div className="surface"><div className="pendulum" style={{transform:`rotate(${side?28:-28}deg)`,['--swing' as string]:`${(60/bpm)*.48}s`}}/><div className="beat-dots">{Array.from({length:beats},(_,i)=><i key={i} className={`beat-dot ${activeBeat===i?'active':''} ${activeBeat===0&&i===0?'down':''}`}/>)}</div></div><div className="actions"><button className={`primary ${running?'danger':''}`} onClick={running?stop:start}>{running?'Stop':'Start'}</button><button className="soft-btn" onClick={tap}>Tap Tempo</button></div></div><aside className="metro-settings"><div className="control"><div className="control-label"><span>Beats per bar</span></div><div className="seg seven">{[1,2,3,4,5,6,7].map(n=><button key={n} className={beats===n?'active':''} onClick={()=>setBeatsState(n)}>{n}</button>)}</div></div><div className="control"><div className="control-label"><span>Subdivision</span></div><div className="seg two">{([{n:1,label:'Quarter'},{n:2,label:'Eighths'},{n:3,label:'Triplets'},{n:4,label:'Sixteenths'}] as const).map(({n,label})=><button key={n} className={subdivision===n?'active':''} onClick={()=>setSubdivisionState(n)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,minHeight:46,padding:'4px 7px'}}><SubdivisionIcon kind={n}/><span>{label}</span></button>)}</div></div><div className="control"><div className="control-label"><span>Sound</span></div><div className="seg three">{(['click','tabla','drum'] as Sound[]).map(s=><button key={s} className={sound===s?'active':''} onClick={()=>setSound(s)}>{s[0].toUpperCase()+s.slice(1)}</button>)}</div></div><div className="control"><label className="toggle"><span>Accent first beat</span><input type="checkbox" checked={accent} onChange={e=>setAccent(e.target.checked)}/></label><label className="toggle"><span>Visual flash</span><input type="checkbox" checked={flash} onChange={e=>setFlash(e.target.checked)}/></label></div><div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>setVolume(+e.target.value/100)}/></div></aside></div>
+  <section className="card"><div className="card-head"><div><h2>Practice Metronome</h2></div><span>{status}</span></div><div className="metro-layout"><div className="metro-player"><div className="bpm-zone"><button className="round" onClick={()=>setBpm(bpm-1)}>−</button><div className="bpm-center"><span className="tempo-name">{tempoName}</span><div><input className="bpm-input" type="number" min="1" max="300" value={bpm} onChange={e=>setBpm(+e.target.value)}/><b className="muted"> BPM</b></div></div><button className="round" onClick={()=>setBpm(bpm+1)}>+</button></div><input className="range" type="range" min="1" max="300" value={bpm} onChange={e=>setBpm(+e.target.value)}/><div className="surface"><div className="pendulum" style={{transform:`rotate(${side?28:-28}deg)`,['--swing' as string]:`${(60/bpm)*.48}s`}}/><div className="beat-dots">{Array.from({length:beats},(_,i)=><i key={i} className={`beat-dot ${activeBeat===i?'active':''} ${activeBeat===0&&i===0?'down':''}`}/>)}</div></div><div className="actions"><button className={`primary ${running?'danger':''}`} onClick={running ? () => stop() : () => { void start(); }}>{running?'Stop':'Start'}</button><button className="soft-btn" onClick={tap}>Tap Tempo</button></div></div><aside className="metro-settings"><div className="control"><div className="control-label"><span>Beats per bar</span></div><div className="seg seven">{[1,2,3,4,5,6,7].map(n=><button key={n} className={beats===n?'active':''} onClick={()=>setBeatsState(n)}>{n}</button>)}</div></div><div className="control"><div className="control-label"><span>Subdivision</span></div><div className="seg two">{([{n:1,label:'Quarter'},{n:2,label:'Eighths'},{n:3,label:'Triplets'},{n:4,label:'Sixteenths'}] as const).map(({n,label})=><button key={n} className={subdivision===n?'active':''} onClick={()=>setSubdivisionState(n)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,minHeight:46,padding:'4px 7px'}}><SubdivisionIcon kind={n}/><span>{label}</span></button>)}</div></div><div className="control"><div className="control-label"><span>Sound</span></div><div className="seg three">{(['click','tabla','drum'] as Sound[]).map(s=><button key={s} className={sound===s?'active':''} onClick={()=>setSound(s)}>{s[0].toUpperCase()+s.slice(1)}</button>)}</div></div><div className="control"><label className="toggle"><span>Accent first beat</span><input type="checkbox" checked={accent} onChange={e=>setAccent(e.target.checked)}/></label><label className="toggle"><span>Visual flash</span><input type="checkbox" checked={flash} onChange={e=>setFlash(e.target.checked)}/></label></div><div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>setVolume(+e.target.value/100)}/></div></aside></div>
    <div className="tempo-presets"><div className="tempo-badge-row">{TEMPO_PRESETS.map(preset=><button type="button" key={preset.name} className={bpm===preset.bpm?'active':''} title={`${preset.name} · ${preset.range} · ${preset.description}`} onClick={()=>chooseTempo(preset)}><b>{preset.name}</b><span>{preset.bpm}</span></button>)}</div></div>
   </section>
  </>

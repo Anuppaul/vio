@@ -15,6 +15,8 @@ const sdk=process.env.ANDROID_HOME||process.env.ANDROID_SDK_ROOT;
 assert.ok(sdk,'Set ANDROID_HOME to your Android SDK (API 36 and Build Tools 36).');
 run(process.execPath,['scripts/export-android.mjs']);
 run(process.execPath,['scripts/sync-android.mjs']);
+// Verify sync retained foreground-service registration and audio permissions.
+run(process.execPath,['scripts/test-android-background-audio.mjs']);
 const variant=signed?'release':'debug';
 const gradlew=process.platform==='win32'?'gradlew.bat':'./gradlew';
 run(gradlew,['--no-daemon','--max-workers=2',`assemble${signed?'Release':'Debug'}`,'lintDebug','testDebugUnitTest'],{cwd:'android'});

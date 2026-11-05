@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { FLAT_NAMES, NOTE_NAMES, midiFrequency } from '@/lib/music';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
+import { backgroundAudio, nativeAudioStatus, prepareBackgroundNotification } from '@/lib/background-audio';
 
 const ranges = [62,69,76,83].map(top => Array.from({length:15},(_,i)=>top-i));
 const presets: Record<string, number[]> = { standard:[55,62,69,76], aeae:[57,64,69,76], adae:[57,62,69,76], pasapasa:[55,60,67,72] };
@@ -126,7 +127,7 @@ export default function EarTuner(){
 
   const preset=useMemo(()=>Object.entries(presets).find(([,v])=>v.every((n,i)=>n===notes[i]))?.[0]||'', [notes]);
 
-  function stop(update=true,releaseAudio=update){
+  function stop(update=true,releaseAudio=update,stopNative=update){
     tokenRef.current++;
     try{sampleSourceRef.current?.stop()}catch{}
     try{oscRef.current?.stop()}catch{}
@@ -139,18 +140,42 @@ export default function EarTuner(){
       if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
       if(Capacitor.isNativePlatform())sampleCacheRef.current.clear();
     }
+    if(stopNative){
+      const native=backgroundAudio();
+      if(native)void native.stop().catch(()=>{});
+    }
     setActive(-1);
     if(update)setStatus('Stopped');
   }
   useEffect(()=>{
-    const onHidden=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop(true,true)};
-    const onPageHide=()=>{if(Capacitor.isNativePlatform())stop(true,true)};
+    let unmounted=false;
+    if(backgroundAudio())void nativeAudioStatus().then(st=>{
+      if(unmounted||!st||st.mode!=='ear'||!st.playing)return;
+      setActive(notes.indexOf(st.midi));
+      setTone(st.tone);setLoop(st.loop);setVolume(st.volume);
+      setStatus('Reference continues in background · screen-off ready');
+    }).catch(()=>{});
+    const onHidden=()=>{
+      if(!Capacitor.isNativePlatform())return;
+      if(document.hidden){
+        if(!backgroundAudio())stop(true,true,false);
+        return;
+      }
+      if(backgroundAudio())void nativeAudioStatus().then(st=>{
+        if(unmounted||!st)return;
+        const active=st.mode==='ear'&&st.playing;
+        setActive(active?notes.indexOf(st.midi):-1);
+        setStatus(active?'Reference continues in background · screen-off ready':'Ready');
+      }).catch(()=>{});
+    };
+    const onPageHide=()=>{if(Capacitor.isNativePlatform()&&!backgroundAudio())stop(true,true,false)};
     document.addEventListener('visibilitychange',onHidden);
     window.addEventListener('pagehide',onPageHide);
     return()=>{
+      unmounted=true;
       document.removeEventListener('visibilitychange',onHidden);
       window.removeEventListener('pagehide',onPageHide);
-      stop(false,true);
+      stop(false,true,false);
     };
   },[]);
 
@@ -216,6 +241,26 @@ export default function EarTuner(){
     setStatus(`${displayName(midi,flats)} · oscillator fallback`);
   }
   function playMidi(midi:number,index:number){
+    const native=backgroundAudio();
+    if(native){
+      stop(false,true,false);
+      const token=tokenRef.current;
+      void prepareBackgroundNotification().then(()=>{
+        if(token!==tokenRef.current)return;
+        return native.playEar({midi,tone,loop,volume});
+      }).then(()=>{
+        if(token===tokenRef.current){
+          setActive(index);setStatus('Native reference playing · background audio');
+        }
+      }).catch(error=>{
+        if(token===tokenRef.current)setStatus('Reference unavailable: '+String(error));
+      });
+      return;
+    }
+    if(Capacitor.isNativePlatform()){
+      setStatus('Background audio plugin missing · update the APK');
+      return;
+    }
     if(tone==='natural')playSample(midi,index);
     else{stop(false);void beep(midi,index)}
   }
@@ -237,10 +282,10 @@ export default function EarTuner(){
         </div>
         <aside className="side">
           <div className="control"><div className="control-label"><span>Tuning</span></div><select value={preset} onChange={e=>{if(e.target.value)setNotes([...presets[e.target.value]])}}><option value="">Custom</option><option value="standard">Standard · G D A E</option><option value="aeae">Cross · A E A E</option><option value="adae">Cross · A D A E</option><option value="pasapasa">Cross · G C G C · পা সা পা সা</option></select></div>
-          <div className="control"><div className="control-label"><span>Tone</span></div><div className="seg two"><button className={tone==='natural'?'active':''} onClick={()=>setTone('natural')}>Natural</button><button className={tone==='beep'?'active':''} onClick={()=>setTone('beep')}>Beep</button></div></div>
+          <div className="control"><div className="control-label"><span>Tone</span></div><div className="seg two"><button className={tone==='natural'?'active':''} onClick={()=>{setTone('natural');if(active>=0)void backgroundAudio()?.playEar({midi:notes[active],tone:'natural',loop,volume}).catch(()=>{})}}>Natural</button><button className={tone==='beep'?'active':''} onClick={()=>{setTone('beep');if(active>=0)void backgroundAudio()?.playEar({midi:notes[active],tone:'beep',loop,volume}).catch(()=>{})}}>Beep</button></div></div>
           <div className="control"><div className="control-label"><span>Notation</span></div><div className="seg two"><button className={!flats?'active':''} onClick={()=>setFlats(false)}>Sharps ♯</button><button className={flats?'active':''} onClick={()=>setFlats(true)}>Flats ♭</button></div></div>
-          <div className="control"><div className="control-label"><span>Repeat</span></div><div className="seg two"><button className={loop?'active':''} onClick={()=>{setLoop(true);if(sampleSourceRef.current)sampleSourceRef.current.loop=true}}>Loop</button><button className={!loop?'active':''} onClick={()=>{setLoop(false);if(sampleSourceRef.current)sampleSourceRef.current.loop=false}}>Once</button></div></div>
-          <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(sampleGainRef.current)sampleGainRef.current.gain.value=v;if(gainRef.current)gainRef.current.gain.value=v*.5}}/></div>
+          <div className="control"><div className="control-label"><span>Repeat</span></div><div className="seg two"><button className={loop?'active':''} onClick={()=>{setLoop(true);if(sampleSourceRef.current)sampleSourceRef.current.loop=true;if(active>=0)void backgroundAudio()?.playEar({midi:notes[active],tone,loop:true,volume}).catch(()=>{})}}>Loop</button><button className={!loop?'active':''} onClick={()=>{setLoop(false);if(sampleSourceRef.current)sampleSourceRef.current.loop=false;if(active>=0)void backgroundAudio()?.playEar({midi:notes[active],tone,loop:false,volume}).catch(()=>{})}}>Once</button></div></div>
+          <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(sampleGainRef.current)sampleGainRef.current.gain.value=v;if(gainRef.current)gainRef.current.gain.value=v*.5;if(active>=0)void backgroundAudio()?.setVolume({volume:v}).catch(()=>{})}}/></div>
           <button className="primary danger" onClick={()=>stop()}>Stop sound</button>
         </aside>
       </div>

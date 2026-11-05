@@ -1,6 +1,9 @@
 package com.anuppaul.vio;
 
 import android.content.Intent;
+import android.os.Build;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
@@ -8,10 +11,35 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
 /** Minimal Capacitor bridge: commands do not depend on WebView timers. */
-@CapacitorPlugin(name = "BackgroundAudio")
+@CapacitorPlugin(
+    name = "BackgroundAudio",
+    permissions = {@Permission(alias = "notifications", strings = {Manifest.permission.POST_NOTIFICATIONS})}
+)
 public class BackgroundAudioPlugin extends Plugin {
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionCallback(call);
+        } else {
+            requestPermissionForAlias("notifications", call, "notificationPermissionCallback");
+        }
+    }
+
+    @PermissionCallback
+    public void notificationPermissionCallback(PluginCall call) {
+        JSObject response = new JSObject();
+        response.put("granted", Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED);
+        call.resolve(response);
+    }
+
     @PluginMethod
     public void playTanpura(PluginCall call) {
         String pattern = call.getString("pattern", "sa-pa");

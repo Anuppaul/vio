@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
-import { backgroundAudio, nativeAudioStatus } from '@/lib/background-audio';
+import { backgroundAudio, nativeAudioStatus, prepareBackgroundNotification } from '@/lib/background-audio';
 
 const KEYS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 function keyFreq(key:string){return 130.81278265*Math.pow(2,KEYS.indexOf(key)/12)}
@@ -220,6 +220,8 @@ export default function Tanpura(){
       stop(false,true,false);
       const token=tokenRef.current;
       try{
+        await prepareBackgroundNotification();
+        if(token!==tokenRef.current)return;
         await native.playTanpura({pattern,key,volume});
         if(token!==tokenRef.current)return;
         setPlaying(true);

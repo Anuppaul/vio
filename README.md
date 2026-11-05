@@ -1,5 +1,9 @@
 <div align="center">
 
+<img src="public/icons/vio-logo.png" alt="VIO official logo" width="120" />
+
+<br/>
+
 <picture>
   <source media="(max-width: 720px)" srcset="docs/assets/vio-hero-mobile.svg"/>
   <img src="docs/assets/vio-hero.svg" alt="VIO by Anuppaul — violin and singing practice with a live Sa Re Ga Ma pitch guide." width="100%"/>

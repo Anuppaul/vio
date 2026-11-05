@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
-import { backgroundAudio, nativeAudioStatus } from '@/lib/background-audio';
+import { backgroundAudio, nativeAudioStatus, prepareBackgroundNotification } from '@/lib/background-audio';
 
 
 type TempoPreset={name:string;range:string;bpm:number;description:string};
@@ -220,6 +220,8 @@ export default function Metronome(){
    nativeStartingRef.current=true;
    const epoch=++startEpochRef.current;
    try{
+    await prepareBackgroundNotification();
+    if(epoch!==startEpochRef.current)return;
     await native.playMetronome({bpm,beats,subdivision,sound,accent,volume});
     if(epoch!==startEpochRef.current)return;
     runningRef.current=true;setRunning(true);setActiveBeat(0);

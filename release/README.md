@@ -30,6 +30,6 @@ For a release-mode build, set the private `VIO_KEYSTORE_PATH`, `VIO_KEYSTORE_PAS
 
 ## Publishing policy
 
-VIO Android's GitHub Actions workflow is intentionally **manual-only**. It has an optional publish job that can commit artifacts back to `main` after a successful manual run. **Avoid using that as an official public release mechanism until dependency security and audio rights blockers are resolved.** Official tagged binaries should ultimately be distributed through **GitHub Releases**, with a signed APK, checksum, source revision, release notes and a recorded asset license audit.
+VIO Android's GitHub Actions workflow is intentionally **manual-only**. It has an optional publish job that can commit artifacts back to `main` after a successful manual run. **The publish job is currently disabled unless repository variable `VIO_ASSETS_CLEARED` is explicitly set to `true` after the licensing/security review.** Do not set it while the blockers remain. Official tagged binaries should ultimately be distributed through **GitHub Releases**, with a signed APK, checksum, source revision, release notes and a recorded asset license audit.
 
 See [the release checklist](../docs/OPEN_SOURCE_RELEASE_CHECKLIST.md) and [the Android background-audio documentation](../docs/ANDROID_SCREEN_OFF_AUDIO.md).

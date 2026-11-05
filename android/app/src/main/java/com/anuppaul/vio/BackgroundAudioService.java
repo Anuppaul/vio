@@ -37,7 +37,6 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 
@@ -601,9 +600,11 @@ public class BackgroundAudioService extends Service {
         }
         private float mixVoices() {
             float sum = 0;
-            for (Iterator<Voice> iter = voices.iterator(); iter.hasNext();) {
-                Voice voice = iter.next();
-                if (voice.position >= voice.data.length) { iter.remove(); continue; }
+            // This runs at 48kHz for hours: an Iterator here would allocate
+            // 48,000 short-lived objects per second and heat the phone.
+            for (int index = voices.size() - 1; index >= 0; index--) {
+                Voice voice = voices.get(index);
+                if (voice.position >= voice.data.length) { voices.remove(index); continue; }
                 sum += voice.data[voice.position++] * voice.level;
             }
             return Math.max(-1f, Math.min(1f, sum));

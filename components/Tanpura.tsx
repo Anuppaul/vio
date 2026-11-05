@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
+import { backgroundAudio, nativeAudioStatus } from '@/lib/background-audio';
 
 const KEYS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 function keyFreq(key:string){return 130.81278265*Math.pow(2,KEYS.indexOf(key)/12)}
@@ -127,6 +128,7 @@ export default function Tanpura(){
   const [status,setStatus]=useState('Ready');
   const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),inputRef=useRef<GainNode|null>(null),sourceRef=useRef<AudioBufferSourceNode|null>(null),timerRef=useRef<ReturnType<typeof setInterval>|null>(null),nodesRef=useRef(new Set<OscillatorNode>());
   const cacheRef=useRef(new Map<string,AudioBuffer>()),tokenRef=useRef(0);
+  const restoreNativeRef=useRef<{key:string;pattern:string}|null>(null);
 
   function outputChain(ctx:AudioContext){
     const input=ctx.createGain(),master=ctx.createGain();
@@ -138,7 +140,7 @@ export default function Tanpura(){
     return input;
   }
 
-  function stop(update=true,releaseAudio=update){
+  function stop(update=true,releaseAudio=update,stopNative=update){
     // Cancel all pending decode/start operations and stop the render graph.
     tokenRef.current++;
     const source=sourceRef.current;sourceRef.current=null;
@@ -156,18 +158,38 @@ export default function Tanpura(){
       // Prevent decoded PCM from accumulating over repeated native sessions.
       if(Capacitor.isNativePlatform())cacheRef.current.clear();
     }
+    if(stopNative){
+      const native=backgroundAudio();
+      if(native)void native.stop().catch(error=>setStatus(String(error)));
+    }
     setPlaying(false);
     if(update)setStatus('Stopped');
   }
   useEffect(()=>{
-    const onHidden=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop(true,true)};
-    const onPageHide=()=>{if(Capacitor.isNativePlatform())stop(true,true)};
+    // Restore the Android foreground service state when returning from
+    // another VIO page. Page navigation must NEVER stop service playback.
+    let unmounted=false;
+    if(backgroundAudio())void nativeAudioStatus().then(st=>{
+      if(unmounted||!st||st.mode!=='tanpura'||!st.playing)return;
+      restoreNativeRef.current={key:st.key,pattern:st.pattern};
+      setPattern(st.pattern);setKey(st.key);setVolume(st.volume);
+      setPlaying(true);
+      setStatus('Background audio · continues with screen off');
+    }).catch(()=>{});
+    const onHidden=()=>{
+      if(Capacitor.isNativePlatform()&&document.hidden&&!backgroundAudio())
+        stop(true,true,false);
+    };
+    const onPageHide=()=>{
+      if(Capacitor.isNativePlatform()&&!backgroundAudio())stop(true,true,false);
+    };
     document.addEventListener('visibilitychange',onHidden);
     window.addEventListener('pagehide',onPageHide);
     return()=>{
+      unmounted=true;
       document.removeEventListener('visibilitychange',onHidden);
       window.removeEventListener('pagehide',onPageHide);
-      stop(false,true);
+      stop(false,true,false);
     };
   },[]);
 
@@ -193,6 +215,27 @@ export default function Tanpura(){
     const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback');setPlaying(true)
   }
   async function start(){
+    const native=backgroundAudio();
+    if(native){
+      stop(false,true,false);
+      const token=tokenRef.current;
+      try{
+        await native.playTanpura({pattern,key,volume});
+        if(token!==tokenRef.current)return;
+        setPlaying(true);
+        setStatus('Tanpura · native background audio · screen-off ready');
+      }catch(error){
+        if(token===tokenRef.current){
+          setPlaying(false);
+          setStatus('Native audio unavailable: '+(error instanceof Error?error.message:String(error)));
+        }
+      }
+      return;
+    }
+    if(Capacitor.isNativePlatform()){
+      setStatus('Background audio plugin missing · update the APK');
+      return;
+    }
     stop(false);const token=tokenRef.current;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){await synth(token);return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
     if(token!==tokenRef.current)return;
     const stem=key.replace('#','s'),url=`/assets/tanpura/${pattern}_${stem}.mp3`;
@@ -216,7 +259,14 @@ export default function Tanpura(){
       setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · Compact ${loopSeconds.toFixed(1)}s · Raw MP3`);
     }catch{if(token===tokenRef.current)await synth(token)}
   }
-  useEffect(()=>{if(playing)void start()},[pattern,key]);
+  useEffect(()=>{
+    if(!playing)return;
+    if(restoreNativeRef.current){
+      const restored=restoreNativeRef.current;restoreNativeRef.current=null;
+      if(restored.pattern===pattern&&restored.key===key)return;
+    }
+    void start();
+  },[pattern,key]);
 
   return <>
     <section className="card">
@@ -226,7 +276,7 @@ export default function Tanpura(){
         <div className="section">
           <div className="control"><div className="control-label"><span>Drone pattern</span></div><div className="seg two"><button className={pattern==='sa-pa'?'active':''} onClick={()=>setPattern('sa-pa')}>सा पा · SA PA</button><button className={pattern==='sa-ma'?'active':''} onClick={()=>setPattern('sa-ma')}>सा मा · SA MA</button></div></div>
           <div className="control"><div className="control-label"><span>Sa / Key</span></div><div className="key-grid">{KEYS.map(k=><button key={k} className={key===k?'active':''} onClick={()=>setKey(k)}>{k}</button>)}</div></div>
-          <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(v*.85,ctxRef.current.currentTime,.02)}}/></div>
+          <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(v*.85,ctxRef.current.currentTime,.02);if(playing)void backgroundAudio()?.setVolume({volume:v}).catch(()=>{})}}/></div>
           <button className={`primary ${playing?'danger':''}`} onClick={playing?()=>stop(true,true):start}>{playing?'Stop':'Play'}</button>
         </div>
       </div>

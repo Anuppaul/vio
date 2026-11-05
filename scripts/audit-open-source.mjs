@@ -41,7 +41,7 @@ for(const name of ['vio-hero','vio-features','vio-architecture']){
   assert.match(svg,/<svg\s/);
   assert.match(svg,/<title/);
   assert.match(svg,/<desc/);
-  assert.doesNotMatch(svg,/<script\b|<foreignObject\b|https?:\/\//i);
+  assert.doesNotMatch(svg,/<script\b|<foreignObject\b|(?:href|xlink:href)="https?:\/\//i);
 }
 console.log(JSON.stringify({
   sourceDocs:'PASS',

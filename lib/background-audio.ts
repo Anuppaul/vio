@@ -24,6 +24,7 @@ type NativeAudioPlugin = {
   stop():Promise<void>;
   setVolume(options:{volume:number}):Promise<void>;
   getStatus():Promise<NativeAudioStatus>;
+  requestNotificationPermission():Promise<{granted:boolean}>;
 };
 
 let plugin:NativeAudioPlugin|null=null;
@@ -40,4 +41,15 @@ export async function nativeAudioStatus():Promise<NativeAudioStatus|null>{
   const native=backgroundAudio();
   if(!native)return null;
   return native.getStatus();
+}
+
+/** Ask once when the user presses Play. Denial never blocks audio itself. */
+export async function prepareBackgroundNotification():Promise<void>{
+  const native=backgroundAudio();
+  if(!native)return;
+  try{
+    if(localStorage.getItem('vio-background-notification-asked')==='1')return;
+    localStorage.setItem('vio-background-notification-asked','1');
+  }catch{}
+  try{await native.requestNotificationPermission()}catch{}
 }

@@ -16,7 +16,7 @@
     "audit:opensource": "node scripts/audit-open-source.mjs"
   },
   "dependencies": {
-    "@capacitor/android": "8.5.2",
+    "@capacitor/android": "8.6.0",
     "@capacitor/core": "8.5.2",
     "next": "16.3.4",
     "pitchy": "4.1.0",

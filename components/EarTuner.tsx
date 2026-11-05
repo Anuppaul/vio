@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { FLAT_NAMES, NOTE_NAMES, midiFrequency } from '@/lib/music';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
-import { backgroundAudio, nativeAudioStatus } from '@/lib/background-audio';
+import { backgroundAudio, nativeAudioStatus, prepareBackgroundNotification } from '@/lib/background-audio';
 
 const ranges = [62,69,76,83].map(top => Array.from({length:15},(_,i)=>top-i));
 const presets: Record<string, number[]> = { standard:[55,62,69,76], aeae:[57,64,69,76], adae:[57,62,69,76], pasapasa:[55,60,67,72] };
@@ -233,7 +233,10 @@ export default function EarTuner(){
     if(native){
       stop(false,true,false);
       const token=tokenRef.current;
-      void native.playEar({midi,tone,loop,volume}).then(()=>{
+      void prepareBackgroundNotification().then(()=>{
+        if(token!==tokenRef.current)return;
+        return native.playEar({midi,tone,loop,volume});
+      }).then(()=>{
         if(token===tokenRef.current){
           setActive(index);setStatus('Native reference playing · background audio');
         }

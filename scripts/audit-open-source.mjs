@@ -8,6 +8,7 @@ const expected = [
   'README.md', 'LICENSE', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md',
   'SECURITY.md', 'SUPPORT.md', 'CHANGELOG.md', 'THIRD_PARTY_NOTICES.md',
   'docs/ASSET_LICENSING.md', 'docs/OPEN_SOURCE_RELEASE_CHECKLIST.md',
+  'docs/assets/vio-logo.svg',
   'docs/assets/vio-hero.svg', 'docs/assets/vio-hero-mobile.svg',
   'docs/assets/vio-features.svg', 'docs/assets/vio-features-mobile.svg',
   'docs/assets/vio-singing.svg', 'docs/assets/vio-singing-mobile.svg',
@@ -54,7 +55,7 @@ assert.equal(metadata.author,'Anuppaul');
 assert.equal(metadata.license,'MIT');
 assert.equal(metadata.private,true,'Do not accidentally npm-publish uncleared media');
 // Both responsive variants must render as standalone accessible, self-contained SVGs.
-const images=['vio-hero','vio-hero-mobile','vio-features','vio-features-mobile',
+const images=['vio-logo','vio-hero','vio-hero-mobile','vio-features','vio-features-mobile',
   'vio-singing','vio-singing-mobile','vio-architecture','vio-architecture-mobile'];
 for(const name of images){
   const svg=await read('docs/assets/'+name+'.svg');
@@ -78,6 +79,8 @@ for(const name of images){
     'README does not reference '+name);
   if(mobile)assert.match(readme,/<source media=/, 'Responsive SVG sources missing');
 }
+assert.match(readme,/src="\.\/docs\/assets\/vio-logo\.svg"/);
+assert.doesNotMatch(readme,/raw\.githubusercontent\.com\/Anuppaul\/vio\/main\/public\/icons/);
 assert.match(readme,/Singing special · Sa Re Ga Ma/);
 assert.match(readme,/±5 cents/);
 

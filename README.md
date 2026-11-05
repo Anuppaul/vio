@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./docs/assets/vio-logo.svg" alt="VIO logo" width="128" height="128" />
+<img src="./public/icons/vio-logo.png" alt="VIO original violin logo" width="160" height="160" />
 
 <br/>
 

@@ -23,6 +23,26 @@ for(const permission of ['RECORD_AUDIO','MODIFY_AUDIO_SETTINGS']) {
 }
 if(!manifest.includes('android.hardware.microphone')) manifest=manifest.replace('</manifest>','    <uses-feature android:name="android.hardware.microphone" android:required="false" />\n</manifest>');
 manifest=manifest.replace('android:allowBackup="true"','android:allowBackup="false"');
+
+const serviceMarker='android:name=".BackgroundAudioService"';
+if(!manifest.includes(serviceMarker)){
+  manifest=manifest.replace('        <provider',`        <!-- User-started screen-off playback; no persistent screen-on flag. -->
+        <service android:name=".BackgroundAudioService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <provider`);
+}
+for(const permission of [
+  'FOREGROUND_SERVICE','FOREGROUND_SERVICE_MEDIA_PLAYBACK','WAKE_LOCK','POST_NOTIFICATIONS'
+]){
+  if(!manifest.includes(`android.permission.${permission}`)){
+    manifest=manifest.replace('</manifest>',
+      `    <uses-permission android:name="android.permission.${permission}" />\\n</manifest>`);
+  }
+}
+
 await writeFile(manifestPath,manifest);
 
 const mainDir=join('android/app/src/main/java',...config.appId.split('.'));
@@ -40,6 +60,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativePitchPlugin.class);
+        registerPlugin(BackgroundAudioPlugin.class);
         super.onCreate(savedInstanceState);
         // Use Android's normal screen-off policy during extended practice.\n        getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
             @Override

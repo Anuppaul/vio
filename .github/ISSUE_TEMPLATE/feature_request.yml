@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a musical, accessibility, or technical improvement
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us about the practice problem and the outcome you need. For third-party audio proposals, include a verifiable license and original creator.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Pitch detection
+        - Music theory / ear training
+        - Tanpura / reference audio
+        - Metronome
+        - Android background playback
+        - Accessibility
+        - Performance / battery
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the real musician's workflow or pain point.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed change
+      description: What could VIO do differently? Include alternatives if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: What would success look like?
+      placeholder: "Example: plays with the phone locked for 30 minutes without drift"

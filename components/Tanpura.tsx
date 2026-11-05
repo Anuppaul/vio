@@ -177,8 +177,17 @@ export default function Tanpura(){
       setStatus('Background audio · continues with screen off');
     }).catch(()=>{});
     const onHidden=()=>{
-      if(Capacitor.isNativePlatform()&&document.hidden&&!backgroundAudio())
-        stop(true,true,false);
+      if(!Capacitor.isNativePlatform())return;
+      if(document.hidden){
+        if(!backgroundAudio())stop(true,true,false);
+        return;
+      }
+      if(backgroundAudio())void nativeAudioStatus().then(st=>{
+        if(unmounted||!st)return;
+        const active=st.mode==='tanpura'&&st.playing;
+        setPlaying(active);
+        setStatus(active?'Tanpura · native background audio · screen-off ready':'Ready');
+      }).catch(()=>{});
     };
     const onPageHide=()=>{
       if(Capacitor.isNativePlatform()&&!backgroundAudio())stop(true,true,false);

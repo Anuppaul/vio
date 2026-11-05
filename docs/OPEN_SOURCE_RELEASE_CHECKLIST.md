@@ -39,6 +39,7 @@ The repository can be public without being ready for unrestricted redistribution
 - [x] Professional SVG README and architecture diagrams.
 - [x] MIT LICENSE, attribution/asset notice, contribution/community/security docs.
 - [x] Issue templates and PR template.
+- [x] Dependabot update PRs for npm, Gradle and GitHub Actions.
 - [ ] Set the repository About description and topic tags in GitHub Settings (e.g. `violin`, `music-education`, `metronome`, `pitch-detection`, `android`, `nextjs`, `open-source`).
 - [ ] Enable GitHub Discussions if desired and verify private vulnerability reporting is enabled.
 

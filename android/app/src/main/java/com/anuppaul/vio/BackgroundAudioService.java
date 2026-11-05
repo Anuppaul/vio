@@ -124,6 +124,11 @@ public class BackgroundAudioService extends Service {
     public void onCreate() {
         super.onCreate();
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        // A new service instance has no live player. Clear old version's
+        // extracted MP3s so APK updates cannot reuse stale sound samples.
+        File cacheDir = new File(getCacheDir(), "vio-offline-media");
+        File[] oldFiles = cacheDir.listFiles();
+        if (oldFiles != null) for (File file : oldFiles) if (file.isFile()) file.delete();
         createChannel();
         mediaSession = new MediaSession(this, "vio-practice-audio");
         mediaSession.setCallback(new MediaSession.Callback() {
@@ -163,7 +168,7 @@ public class BackgroundAudioService extends Service {
             updateNotification();
             return START_NOT_STICKY;
         }
-        if (!ACTION_PLAY.equals(action)) return START_NOT_STICKY;
+        if (!ACTION_PLAY.equals(action)) { stopSelf(); return START_NOT_STICKY; }
 
         // Promote immediately: Android requires this within a few seconds of
         // ContextCompat.startForegroundService, before decoding any asset.
@@ -193,6 +198,12 @@ public class BackgroundAudioService extends Service {
                     String label = NOTE_NAMES[midi % 12] + octave;
                     try { playMedia("ear/" + label + ".mp3", loop); }
                     catch (Exception missingSample) {
+                        // A missing note file must not leave behind a partially
+                        // initialized MediaPlayer when we switch to oscillator.
+                        if (mediaPlayer != null) {
+                            try { mediaPlayer.release(); } catch (Exception ignored) {}
+                            mediaPlayer = null;
+                        }
                         tone = "beep";
                         startPcm();
                     }

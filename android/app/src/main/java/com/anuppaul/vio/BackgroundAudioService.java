@@ -156,8 +156,10 @@ public class BackgroundAudioService extends Service {
             return START_NOT_STICKY;
         }
         if (ACTION_VOLUME.equals(action)) {
+            if ("none".equals(mode)) { stopSelf(); return START_NOT_STICKY; }
             volume = bounded(intent.getDoubleExtra("volume", volume), 0, 1);
             if (mediaPlayer != null) mediaPlayer.setVolume((float)volume, (float)volume);
+            if (pcmPlayback != null) pcmPlayback.playbackVolume = volume;
             updateNotification();
             return START_NOT_STICKY;
         }
@@ -450,7 +452,7 @@ public class BackgroundAudioService extends Service {
         final int note, meter, subdivisionCount, tempo;
         final boolean looping, accented;
         final String kit;
-        final double playbackVolume;
+        volatile double playbackVolume;
         final Map<String, float[]> sampleCache = new HashMap<>();
         final ArrayList<Voice> voices = new ArrayList<>();
         volatile boolean active = true;
@@ -484,7 +486,14 @@ public class BackgroundAudioService extends Service {
                 .build();
             if (track.getState() != AudioTrack.STATE_INITIALIZED) throw new IllegalStateException("AudioTrack not initialized");
             acquireWake();
-            track.play();
+            try {
+                track.play();
+            } catch (RuntimeException failure) {
+                try { track.release(); } catch (Exception ignored) {}
+                track = null;
+                releaseWake();
+                throw failure;
+            }
             thread = new Thread(this, "vio-screen-off-pcm");
             thread.setDaemon(true);
             thread.start();
@@ -493,6 +502,12 @@ public class BackgroundAudioService extends Service {
             active = false;
             if (track != null) {
                 try { track.pause(); track.flush(); } catch (Exception ignored) {}
+                // If initialization failed before worker thread creation, the
+                // worker cannot release the AudioTrack in its finally block.
+                if (thread == null) {
+                    try { track.release(); } catch (Exception ignored) {}
+                    track = null;
+                }
             }
             if (thread != null) thread.interrupt();
         }

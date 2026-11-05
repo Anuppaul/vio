@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible issue with VIO
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve VIO. For vulnerabilities, use the private reporting process in SECURITY.md instead.
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      description: Where does the issue occur?
+      options:
+        - Ear Tuner
+        - Sound Tuner
+        - Scale Practice
+        - Tanpura
+        - Note Exercise
+        - Metronome
+        - Android native / background audio
+        - Build / installation
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android APK
+        - Web browser
+        - Installed PWA
+        - Multiple platforms
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Include expected and actual results. Do not attach private audio recordings.
+      placeholder: |
+        1. Open ...
+        2. Tap ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "Device/model, Android version or browser, VIO commit/version, output device"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or evidence (optional)
+      description: Remove any API keys, personal data, or private recordings.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked existing issues and removed private information from logs.
+          required: true

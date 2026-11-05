@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="public/icons/vio-logo.png" alt="VIO official logo" width="120" />
+<img src="https://raw.githubusercontent.com/Anuppaul/vio/main/public/icons/icon-192.png" alt="VIO official app logo" width="112" height="112" />
 
 <br/>
 

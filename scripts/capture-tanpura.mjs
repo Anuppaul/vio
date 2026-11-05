@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Capture Spardha Tanpura audio with Playwright.
+ * Capture Tanpura audio from a user-specified, authorized source with Playwright.
  * Defaults: Firefox, source volume 100%, all 24 combinations, 60s each.
  */
 
@@ -11,8 +11,8 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
-const PRIMARY_URL='https://www.spardhaschoolofmusic.com/tools/tanpura';
-const FALLBACK_URL='https://music-tools.spardhaschoolofmusic.com/tanpura';
+const PRIMARY_URL=process.env.VIO_TANPURA_CAPTURE_URL||'';
+const FALLBACK_URL=process.env.VIO_TANPURA_CAPTURE_FALLBACK_URL||'';
 const KEYS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const PATTERNS=[
   {id:'sa-pa',label:/SA\s*[-–—]?\s*PA/i},
@@ -253,7 +253,9 @@ async function main(){
     }catch{}})();rawWrites.add(task);task.finally(()=>rawWrites.delete(task));
   });
 
-  const urls=args.url?[args.url]:[PRIMARY_URL,FALLBACK_URL];let loaded=false;
+  const urls=args.url?[args.url]:[PRIMARY_URL,FALLBACK_URL].filter(Boolean);
+  if(!urls.length)throw new Error('Specify --url or VIO_TANPURA_CAPTURE_URL for an authorized audio source.');
+  let loaded=false;
   for(const url of urls){try{console.log(`[open] ${url}`);await page.goto(url,{waitUntil:'domcontentloaded',timeout:45000});await page.waitForTimeout(4000);loaded=true;break}catch(err){console.warn(`[open] failed: ${url}: ${err.message}`)}}
   if(!loaded)throw new Error('Could not open the Tanpura site');
   await forceFullVolume(page);

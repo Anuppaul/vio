@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="docs/assets/vio-hero.svg" alt="VIO — Listen closer. Practice smarter. An independent music practice project by Anuppaul." width="100%"/>
+<picture>
+  <source media="(max-width: 720px)" srcset="docs/assets/vio-hero-mobile.svg"/>
+  <img src="docs/assets/vio-hero.svg" alt="VIO by Anuppaul — violin and singing practice with a live Sa Re Ga Ma pitch guide." width="100%"/>
+</picture>
 
 <br/>
 
@@ -25,16 +28,30 @@
 
 VIO brings essential pitch and rhythm tools into one focused interface, designed around intentional music practice rather than account setup or cloud services.
 
-<img src="docs/assets/vio-features.svg" alt="Illustrated VIO modules: live pitch, Tanpura drone, ear and scale practice, and metronome." width="100%"/>
+<picture>
+  <source media="(max-width: 720px)" srcset="docs/assets/vio-features-mobile.svg"/>
+  <img src="docs/assets/vio-features.svg" alt="Six VIO practice modules: Sa Re Ga Ma singing, live pitch tuner, Tanpura, Ear Tuner, Note Exercise and Metronome." width="100%"/>
+</picture>
 
 | Module | What it does |
 | :--- | :--- |
 | **Ear Tuner** | Reference notes for violin strings, alternate tunings, natural samples, and clean oscillator tones. |
 | **Sound Tuner** | Live microphone pitch detection with note, frequency, cents deviation, and signal confidence feedback. |
-| **Scale Practice** | Set your *Sa* reference, practise swaras and intervals, and get live pitch feedback. |
+| **Singing / Scale Practice** | Sing and hold *Sa*, set it as a reference, and practise **Sa Re Ga Ma** with live note and cents feedback. |
 | **Tanpura** | Choose Sa–Pa or Sa–Ma, one of 12 keys, and control the drone's volume. |
 | **Note Exercise** | Read notes, answer exercises, configure difficulty, and track session performance. |
 | **Metronome** | Tempo presets, beats per bar, subdivisions, accents, and click/tabla/drum sounds. |
+
+### Singing special · Sa Re Ga Ma
+
+<picture>
+  <source media="(max-width: 720px)" srcset="docs/assets/vio-singing-mobile.svg"/>
+  <img src="docs/assets/vio-singing.svg" alt="Pitch-perfect practice concept — sing Sa Re Ga Ma with real-time relative pitch and cents feedback." width="100%"/>
+</picture>
+
+The **Relative Sa Tuner** is built for singing as well as instrumental practice. Sing and hold a stable **Sa**, set it as your reference, then practise swaras across the lower, middle, and upper registers. VIO shows the detected swara, frequency, and pitch deviation in **cents** while you sing. The current interface marks a detected note *in tune* when the deviation is within **±5 cents** of the selected reference.
+
+*“Pitch-perfect practice” describes the learning goal, not a guarantee of flawless pitch detection.* Results depend on microphone quality, room noise, voice stability, and device processing.
 
 ### Designed for real practice
 
@@ -49,7 +66,10 @@ VIO brings essential pitch and rhythm tools into one focused interface, designed
 
 ## Platforms and architecture
 
-<img src="docs/assets/vio-architecture.svg" alt="VIO architecture: Next.js/React interface, shared practice logic, and Android Capacitor with native audio." width="100%"/>
+<picture>
+  <source media="(max-width: 720px)" srcset="docs/assets/vio-architecture-mobile.svg"/>
+  <img src="docs/assets/vio-architecture.svg" alt="VIO architecture — Next.js interface, pitch and swara practice logic, and Android native audio." width="100%"/>
+</picture>
 
 | Layer | Stack | Responsibility |
 | :--- | :--- | :--- |

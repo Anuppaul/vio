@@ -7,7 +7,7 @@ The repository can be public without being ready for unrestricted redistribution
 - [x] The repository is under the personal GitHub account **Anuppaul**.
 - [x] The project source is offered under an explicit MIT LICENSE.
 - [x] The project's original SVG documentation artwork is attributed to **Anuppaul**.
-- [ ] **BLOCKER:** Clear or replace all bundled Tanpura recordings currently documented as captured from Spardha School of Music.
+- [ ] **BLOCKER:** Clear or replace all bundled Tanpura recordings with unresolved external-source redistribution rights.
 - [ ] **BLOCKER:** Verify the license/source of the downloaded Ear Tuner MP3 files.
 - [ ] Audit original authorship and any underlying sample sources for metronome/exercise sounds.
 - [ ] Confirm VIO launcher/icon rights before a full artwork MIT grant.

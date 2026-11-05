@@ -19,6 +19,6 @@ This is **not** a complete dependency-by-dependency license inventory. Check `pa
 
 ### Audio-specific third parties
 
-The Tanpura asset manifests record that bundled recordings were captured from **Spardha School of Music**. Naming the source is **attribution, not a license or permission grant**. The original sound recordings are **excluded from Anuppaul's MIT grant** unless an appropriate authorization is subsequently documented. See [Audio asset licensing and provenance](docs/ASSET_LICENSING.md).
+Some bundled Tanpura recordings were captured from an external audio source. Exact historical source references remain available in repository history for rights verification. The sound recordings are **not covered by Anuppaul's MIT grant** unless appropriate authorization is documented. See [Audio asset licensing and provenance](docs/ASSET_LICENSING.md).
 
 VIO is not represented as affiliated with or endorsed by any upstream project or source of third-party recordings.

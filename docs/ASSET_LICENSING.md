@@ -8,7 +8,7 @@
 
 | Location | What the repository records | Licensing conclusion |
 | --- | --- | --- |
-| `public/assets/tanpura/*.mp3` | `capture-manifest.json` documents 24 approximately 60-second **browser-runtime recordings** from the Spardha School of Music Tanpura page. `manifest.json` also points to `audio.spardhaschoolofmusic.com`. | **NOT CLEARED**. The MIT LICENSE **does not cover these audio recordings**. Obtain a documented redistribution/sublicensing grant or replace them with independently created or suitably licensed recordings. |
+| `public/assets/tanpura/*.mp3` | `capture-manifest.json` documents 24 approximately 60-second **browser-runtime recordings** from an external source; precise original-source metadata remains recoverable from repository history for provenance verification. | **NOT CLEARED**. The MIT LICENSE **does not cover these audio recordings**. Obtain a documented redistribution/sublicensing grant or replace them with independently created or suitably licensed recordings. |
 | `public/assets/ear/*.mp3` | The folder README says they were downloaded by `download_violin_mp3.py`, but does not identify a verified recording license. | **NOT CLEARED**. Confirm and document chain of title/permissions or replace them. |
 | `public/assets/metronome/*.wav` | The folder README describes locally generated clicks, tabla and drum sounds. | Origin appears local, but confirm generator, underlying samples (if any), and authorship before a blanket MIT claim. |
 | `public/assets/exercise/*.wav` | The folder README describes generating WAV note samples locally. | Confirm they are algorithmically synthesized and not derived from a third-party sample pack before licensing. |

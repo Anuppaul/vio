@@ -1,7 +1,7 @@
 // Offline source/community-file audit; no external network or GitHub Actions.
 // PASS means "documentation structure is present", not legal/security clearance.
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 
 const read = path => readFile(path, 'utf8');
 const expected = [
@@ -17,6 +17,20 @@ const expected = [
 for(const path of expected){
   assert.ok((await stat(path)).size>30, 'Missing or empty community file: '+path);
 }
+// Guard against accidentally removing playback media during documentation
+// cleanup. These sample counts are required by the current offline app.
+for(const [dir,extension,expected] of [
+  ['tanpura','mp3',24], ['ear','mp3',34],
+  ['exercise','wav',61], ['metronome','wav',8]
+]){
+  const names=await readdir('public/assets/'+dir);
+  const actual=names.filter(name=>name.toLowerCase().endsWith('.'+extension)).length;
+  assert.equal(actual,expected,'Offline audio missing from '+dir);
+}
+const capture=JSON.parse(await readFile('public/assets/tanpura/capture-manifest.json','utf8'));
+assert.equal(capture.combinations?.length,24,'Tanpura capture provenance entries missing');
+assert.ok(capture.provenanceHistoryCommit,'Historical source reference must remain traceable');
+
 const [license,readme,asset,workflow,pkg,notices] = await Promise.all([
   'LICENSE','README.md','docs/ASSET_LICENSING.md',
   '.github/workflows/android-apk.yml','package.json','THIRD_PARTY_NOTICES.md'
@@ -27,7 +41,7 @@ assert.match(readme,/Created and maintained by \[Anuppaul\]/);
 assert.match(readme,/Audio licensing notice/i);
 assert.match(readme,/docs\/assets\/vio-hero\.svg/);
 assert.match(asset,/NOT CLEARED/);
-assert.match(asset,/Spardha School of Music/);
+assert.match(asset,/external source|historical source|repository history/i);
 assert.match(notices,/does not replace/);
 assert.match(workflow,/on:\s*\n\s*workflow_dispatch:/);
 assert.doesNotMatch(workflow,/^\s+push:\s*$/m);

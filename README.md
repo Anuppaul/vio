@@ -17,7 +17,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Audio licensing notice:** VIO's original project code and SVG artwork are offered under MIT. Some bundled audio recordings have **uncleared third-party provenance** and are **not licensed by this MIT grant**. In particular, the Tanpura recording manifests identify captures originating from Spardha School of Music. **Do not redistribute those recordings or publish an APK that includes them until the rights are confirmed or the assets replaced.** Read [Asset licensing & provenance](docs/ASSET_LICENSING.md) before distributing a fork or binary.
+> **Audio licensing notice:** VIO's original project code and SVG artwork are offered under MIT. Some bundled audio recordings have **uncleared third-party provenance** and are **not licensed by this MIT grant**. The original source references are retained in Git history for an accurate rights review. **Do not redistribute those recordings or publish an APK that includes them until the rights are confirmed or the assets replaced.** Read [Asset licensing & provenance](docs/ASSET_LICENSING.md) before distributing a fork or binary.
 
 ---
 

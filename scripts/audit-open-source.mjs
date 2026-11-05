@@ -27,7 +27,7 @@ assert.match(readme,/Created and maintained by \[Anuppaul\]/);
 assert.match(readme,/Audio licensing notice/i);
 assert.match(readme,/docs\/assets\/vio-hero\.svg/);
 assert.match(asset,/NOT CLEARED/);
-assert.match(asset,/Spardha School of Music/);
+assert.match(asset,/external source|historical source|repository history/i);
 assert.match(notices,/does not replace/);
 assert.match(workflow,/on:\s*\n\s*workflow_dispatch:/);
 assert.doesNotMatch(workflow,/^\s+push:\s*$/m);

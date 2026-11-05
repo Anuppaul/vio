@@ -155,7 +155,19 @@ export default function EarTuner(){
       setTone(st.tone);setLoop(st.loop);setVolume(st.volume);
       setStatus('Reference continues in background · screen-off ready');
     }).catch(()=>{});
-    const onHidden=()=>{if(Capacitor.isNativePlatform()&&document.hidden&&!backgroundAudio())stop(true,true,false)};
+    const onHidden=()=>{
+      if(!Capacitor.isNativePlatform())return;
+      if(document.hidden){
+        if(!backgroundAudio())stop(true,true,false);
+        return;
+      }
+      if(backgroundAudio())void nativeAudioStatus().then(st=>{
+        if(unmounted||!st)return;
+        const active=st.mode==='ear'&&st.playing;
+        setActive(active?notes.indexOf(st.midi):-1);
+        setStatus(active?'Reference continues in background · screen-off ready':'Ready');
+      }).catch(()=>{});
+    };
     const onPageHide=()=>{if(Capacitor.isNativePlatform()&&!backgroundAudio())stop(true,true,false)};
     document.addEventListener('visibilitychange',onHidden);
     window.addEventListener('pagehide',onPageHide);

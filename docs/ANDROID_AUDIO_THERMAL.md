@@ -22,7 +22,7 @@ VIO may warm an Android phone during long Tanpura, Ear Tuner, Metronome, Exercis
 
 ## Playback behavior
 
-On Android, moving VIO into the background, changing pages or locking the screen **stops** continuous playback/capture. This is intentional until a dedicated foreground-service audio mode with notification, audio focus and background playback controls exists. This version does **not** claim uninterrupted screen-off music playback.
+On Android, **Tanpura, Metronome and Ear Tuner now continue playing** through screen lock and page navigation using the dedicated native foreground mediaPlayback service. **Microphone capture still stops** on Activity pause for privacy and thermal efficiency. The native service uses a persistent playback notification with media controls and scoped wake locks. Its reliability and thermal impact still require long-duration on-device acceptance. See [ANDROID_SCREEN_OFF_AUDIO.md](ANDROID_SCREEN_OFF_AUDIO.md).
 
 Hosted web/PWA audio behavior is not intentionally throttled; the new native-specific lifecycle handlers check `Capacitor.isNativePlatform()`. The decorative CSS change applies only to the `vio-native` app.
 

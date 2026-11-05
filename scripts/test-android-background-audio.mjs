@@ -38,6 +38,7 @@ const required = [
   ['service user-initiated only', /ACTION_PLAY\.equals\(action\)/, service],
   ['Tanpura native playback', /native\.playTanpura/, tanpura],
   ['Metronome native playback', /native\.playMetronome/, metronome],
+  ['Metronome React onClick passes no MouseEvent to boolean stop', /onClick=\{running\s*\?\s*\(\)\s*=>\s*stop\(\)\s*:\s*\(\)\s*=>\s*\{\s*void start\(\);\s*\}\}/, metronome],
   ['Ear native playback', /native\.playEar/, ear],
   ['WebView-independent native API', /Capacitor.isNativePlatform\(\)/, jsBridge],
   ['no global screen-wake flag', /getBridge\(\)\.getWebView\(\)/, main]

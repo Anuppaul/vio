@@ -39,7 +39,7 @@ for(const permission of [
 ]){
   if(!manifest.includes(`android.permission.${permission}`)){
     manifest=manifest.replace('</manifest>',
-      `    <uses-permission android:name="android.permission.${permission}" />\\n</manifest>`);
+      `    <uses-permission android:name="android.permission.${permission}" />\n</manifest>`);
   }
 }
 

@@ -553,8 +553,12 @@ public class BackgroundAudioService extends Service {
                         frames++;
                     }
                     if (count > 0 && active) {
-                        int written = track.write(chunk, 0, count, AudioTrack.WRITE_BLOCKING);
-                        if (written <= 0) break;
+                        int offset = 0;
+                        while (offset < count && active) {
+                            int written = track.write(chunk, offset, count - offset, AudioTrack.WRITE_BLOCKING);
+                            if (written <= 0) { active = false; break; }
+                            offset += written;
+                        }
                     }
                     if (!active) break;
                 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
+import { backgroundAudio, nativeAudioStatus } from '@/lib/background-audio';
 
 
 type TempoPreset={name:string;range:string;bpm:number;description:string};
@@ -63,6 +64,7 @@ function normalizeBuffer(ctx:AudioContext,buffer:AudioBuffer,target=.98){
 export default function Metronome(){
  const [bpm,setBpmState]=useState(120),[beats,setBeatsState]=useState(4),[subdivision,setSubdivisionState]=useState(1),[sound,setSound]=useState<Sound>('click'),[accent,setAccent]=useState(true),[flash,setFlash]=useState(true),[volume,setVolume]=useState(.95),[running,setRunning]=useState(false),[activeBeat,setActiveBeat]=useState(-1),[status,setStatus]=useState('Ready'),[side,setSide]=useState(false);
  const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),limiterRef=useRef<DynamicsCompressorNode|null>(null),buffersRef=useRef<Record<string,AudioBuffer>>({}),sampleLoadRef=useRef<Promise<void>|null>(null),timerRef=useRef<ReturnType<typeof setTimeout>|null>(null),visualTimerRef=useRef<ReturnType<typeof setTimeout>|null>(null),rafRef=useRef(0),startEpochRef=useRef(0),nextRef=useRef(0),stepRef=useRef(0),queueRef=useRef<{time:number,beat:number,sub:number,down:boolean}[]>([]),tapRef=useRef<number[]>([]),runningRef=useRef(false);
+ const nativeStartingRef=useRef(false),nativeVisualStartRef=useRef(0),nativeRestoreSkipRef=useRef<string|null>(null);
  const live=useRef({bpm,beats,subdivision,sound,accent,flash,volume});useEffect(()=>{live.current={bpm,beats,subdivision,sound,accent,flash,volume}},[bpm,beats,subdivision,sound,accent,flash,volume]);
  const tempoName=TEMPO_PRESETS.reduce((best,preset)=>Math.abs(preset.bpm-bpm)<Math.abs(best.bpm-bpm)?preset:best,TEMPO_PRESETS[0]).name;
  function setBpm(v:number){setBpmState(Math.max(1,Math.min(300,Math.round(v))))}
@@ -96,14 +98,39 @@ export default function Metronome(){
   return ctx;
  }
  useEffect(()=>{
-  const onVisibility=()=>{if(Capacitor.isNativePlatform()&&document.hidden)stop()};
-  const onHide=()=>{if(Capacitor.isNativePlatform())stop()};
+  let unmounted=false;
+  const sync=async()=>{
+   const state=await nativeAudioStatus();
+   if(unmounted||!state)return;
+   if(state.mode==='metronome'&&state.playing){
+    const key=[state.bpm,state.beats,state.subdivision,state.sound,state.accent].join('/');
+    nativeRestoreSkipRef.current=key;
+    setBpm(state.bpm);setBeatsState(state.beats);setSubdivisionState(state.subdivision);
+    setSound(state.sound);setAccent(state.accent);setVolume(state.volume);
+    runningRef.current=true;setRunning(true);
+    setStatus('Metronome · native background playback');
+    nativeVisualStartRef.current=performance.now();
+    if(visualTimerRef.current)clearTimeout(visualTimerRef.current);
+    if(!document.hidden)visualTimerRef.current=setTimeout(nativeVisual,100);
+   }else if(backgroundAudio()){
+    runningRef.current=false;setRunning(false);setActiveBeat(-1);
+   }
+  };
+  if(backgroundAudio())void sync().catch(()=>{});
+  const onVisibility=()=>{
+   if(backgroundAudio()){
+    if(document.hidden){if(visualTimerRef.current)clearTimeout(visualTimerRef.current);visualTimerRef.current=null}
+    else void sync().catch(()=>{});
+   }else if(Capacitor.isNativePlatform()&&document.hidden)stop(false);
+  };
+  const onHide=()=>{if(Capacitor.isNativePlatform()&&!backgroundAudio())stop(false)};
   document.addEventListener('visibilitychange',onVisibility);
   window.addEventListener('pagehide',onHide);
   return()=>{
+   unmounted=true;
    document.removeEventListener('visibilitychange',onVisibility);
    window.removeEventListener('pagehide',onHide);
-   stop();
+   stop(false);
   };
  },[]);
  function playBuffer(key:string,when:number,gainValue=1){
@@ -179,8 +206,33 @@ export default function Metronome(){
   if(native)visualTimerRef.current=setTimeout(animate,60);
   else rafRef.current=requestAnimationFrame(animate);
  }
+ function nativeVisual(){
+  if(!runningRef.current||document.hidden)return;
+  const elapsed=Math.max(0,performance.now()-nativeVisualStartRef.current);
+  const beat=Math.floor(elapsed/(60000/live.current.bpm))%live.current.beats;
+  setActiveBeat(previous=>previous===beat?previous:beat);
+  visualTimerRef.current=setTimeout(nativeVisual,120);
+ }
  async function start(){
-  if(runningRef.current)return;
+  if(runningRef.current||nativeStartingRef.current)return;
+  const native=backgroundAudio();
+  if(native){
+   nativeStartingRef.current=true;
+   const epoch=++startEpochRef.current;
+   try{
+    await native.playMetronome({bpm,beats,subdivision,sound,accent,volume});
+    if(epoch!==startEpochRef.current)return;
+    runningRef.current=true;setRunning(true);setActiveBeat(0);
+    setStatus(bpm+' BPM · native screen-off metronome');
+    nativeVisualStartRef.current=performance.now();
+    if(visualTimerRef.current)clearTimeout(visualTimerRef.current);
+    nativeVisual();
+   }catch(error){
+    if(epoch===startEpochRef.current)setStatus(error instanceof Error?error.message:String(error));
+   }finally{nativeStartingRef.current=false}
+   return;
+  }
+  if(Capacitor.isNativePlatform()){setStatus('Background audio plugin missing · update APK');return}
   const epoch=++startEpochRef.current;
   try{
    const ctx=await ensureAudio();
@@ -194,7 +246,10 @@ export default function Metronome(){
    if(epoch===startEpochRef.current)setStatus(error instanceof Error?error.message:'Web Audio unavailable');
   }
  }
- function stop(){
+ function stop(stopNative=true){
+  const native=backgroundAudio();
+  if(stopNative&&native)void native.stop().catch(()=>{});
+  nativeStartingRef.current=false;
   startEpochRef.current++;
   runningRef.current=false;
   if(timerRef.current)clearTimeout(timerRef.current);timerRef.current=null;
@@ -207,7 +262,22 @@ export default function Metronome(){
   sampleLoadRef.current=null;buffersRef.current={};
   if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
  }
- useEffect(()=>{if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(volume*1.18,ctxRef.current.currentTime,.015)},[volume]);
+ useEffect(()=>{
+  if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(volume*1.18,ctxRef.current.currentTime,.015);
+  if(runningRef.current)void backgroundAudio()?.setVolume({volume}).catch(()=>{});
+ },[volume]);
+ useEffect(()=>{
+  const native=backgroundAudio();
+  if(!native||!runningRef.current)return;
+  const key=[bpm,beats,subdivision,sound,accent].join('/');
+  if(nativeRestoreSkipRef.current){
+   const restored=nativeRestoreSkipRef.current;nativeRestoreSkipRef.current=null;
+   if(restored===key)return;
+  }
+  void native.playMetronome({bpm,beats,subdivision,sound,accent,volume}).then(()=>{
+   nativeVisualStartRef.current=performance.now();
+  }).catch(error=>setStatus('Metronome update failed: '+String(error)));
+ },[bpm,beats,subdivision,sound,accent]);
  function tap(){const now=performance.now(),a=tapRef.current;if(a.length&&now-a[a.length-1]>2000)a.length=0;a.push(now);if(a.length>8)a.shift();if(a.length>=2){const ints=a.slice(1).map((t,i)=>t-a[i]),sorted=[...ints].sort((x,y)=>x-y),med=sorted[Math.floor(sorted.length/2)],filtered=ints.filter(v=>Math.abs(v-med)<med*.28),used=filtered.length?filtered:ints;setBpm(60000/(used.reduce((x,y)=>x+y,0)/used.length));setStatus('Tap tempo')}}
  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName||''))return;if(e.code==='Space'){e.preventDefault();running?stop():start()}else if(e.key.toLowerCase()==='t')tap();else if(e.code==='ArrowUp'){e.preventDefault();setBpm(bpm+(e.shiftKey?5:1))}else if(e.code==='ArrowDown'){e.preventDefault();setBpm(bpm-(e.shiftKey?5:1))}};document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key)},[running,bpm]);
  useEffect(()=>{stepRef.current=0},[beats,subdivision]);

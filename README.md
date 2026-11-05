@@ -123,6 +123,9 @@ Screen-off acceptance was tested by the maintainer on a phone; broader device co
 # Deterministic pitch-tracking regression cases
 node scripts/run-tuner-regression.mjs
 
+# Check community files, attribution and release guardrails
+npm run audit:opensource
+
 # Android lifecycle/source contracts
 npm run test:android:thermal
 npm run test:android:background

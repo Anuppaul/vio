@@ -495,7 +495,11 @@ public class BackgroundAudioService extends Service {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .setBufferSizeInBytes(buffer)
                 .build();
-            if (track.getState() != AudioTrack.STATE_INITIALIZED) throw new IllegalStateException("AudioTrack not initialized");
+            if (track.getState() != AudioTrack.STATE_INITIALIZED) {
+                try { track.release(); } catch (Exception ignored) {}
+                track = null;
+                throw new IllegalStateException("AudioTrack not initialized");
+            }
             acquireWake();
             try {
                 track.play();

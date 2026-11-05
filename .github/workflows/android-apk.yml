@@ -1,7 +1,7 @@
 name: Build Android APK
 
-# Device thermal fixes require physical acceptance before building a release.
-# Never start builds automatically on push.
+# Public VIO repository: builds are opt-in; no automatic Actions on pushes.
+# APK publication to main is additionally disabled until media rights are cleared.
 on:
   workflow_dispatch:
 
@@ -87,7 +87,9 @@ jobs:
 
   publish:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    # Unset by default. Enable only after clearing bundled audio rights,
+    # dependency audits, and signed-binary release acceptance.
+    if: github.ref == 'refs/heads/main' && vars.VIO_ASSETS_CLEARED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

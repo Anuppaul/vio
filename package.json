@@ -12,7 +12,8 @@
     "android:open": "cap open android",
     "test:android:web": "node scripts/test-android-export.mjs",
     "test:android:thermal": "node scripts/test-android-thermal.mjs",
-    "test:android:background": "node scripts/test-android-background-audio.mjs"
+    "test:android:background": "node scripts/test-android-background-audio.mjs",
+    "audit:opensource": "node scripts/audit-open-source.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
@@ -36,5 +37,28 @@
     "xcode": {
       "uuid": "11.1.1"
     }
-  }
+  },
+  "description": "Independent open-source violin practice suite with live pitch detection, Tanpura, ear training, scales and Android background audio.",
+  "license": "MIT",
+  "author": "Anuppaul",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Anuppaul/vio.git"
+  },
+  "homepage": "https://github.com/Anuppaul/vio#readme",
+  "bugs": {
+    "url": "https://github.com/Anuppaul/vio/issues"
+  },
+  "keywords": [
+    "violin",
+    "music-practice",
+    "metronome",
+    "tanpura",
+    "pitch-detection",
+    "ear-training",
+    "android",
+    "capacitor",
+    "nextjs",
+    "open-source"
+  ]
 }

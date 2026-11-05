@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="238" viewBox="0 0 1180 238" role="img" aria-labelledby="title desc">
+<title id="title">VIO's architecture</title><desc id="desc">Next.js web interface shares music practice logic with an Android Capacitor shell and independent native audio services.</desc>
+<defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#1B1C39"/><stop offset="1" stop-color="#302C51"/></linearGradient></defs>
+<rect width="1180" height="238" rx="25" fill="#F2F2FA"/>
+<g font-family="Inter,Segoe UI,Arial,sans-serif" text-anchor="middle">
+<rect x="26" y="43" width="263" height="152" rx="19" fill="url(#g)"/><text x="157" y="91" fill="#C3B7FF" font-weight="800" font-size="14" letter-spacing="2">INTERFACE</text><text x="157" y="125" fill="#FFFFFF" font-weight="750" font-size="22">Next.js · React</text><text x="157" y="152" fill="#BAC1DA" font-size="14">Web &amp; PWA</text>
+<path d="M307 116H353" stroke="#958AE7" stroke-width="4" stroke-linecap="round"/><path d="M345 107L356 116L345 125" fill="none" stroke="#958AE7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="371" y="43" width="319" height="152" rx="19" fill="url(#g)"/><text x="530" y="91" fill="#E7BBA9" font-weight="800" font-size="14" letter-spacing="2">PRACTICE CORE</text><text x="530" y="125" fill="#FFFFFF" font-weight="750" font-size="21">Pitch · Ear · Rhythm</text><text x="530" y="152" fill="#BAC1DA" font-size="14">Offline audio assets &amp; logic</text>
+<path d="M708 116H755" stroke="#958AE7" stroke-width="4" stroke-linecap="round"/><path d="M747 107L758 116L747 125" fill="none" stroke="#958AE7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="775" y="43" width="379" height="152" rx="19" fill="url(#g)"/><text x="964" y="91" fill="#A9E6CE" font-weight="800" font-size="14" letter-spacing="2">ANDROID RUNTIME</text><text x="964" y="125" fill="#FFFFFF" font-weight="750" font-size="22">Capacitor · Native Audio</text><text x="964" y="152" fill="#BAC1DA" font-size="14">Foreground playback · Microphone</text>
+</g></svg>

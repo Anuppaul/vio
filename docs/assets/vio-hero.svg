@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" viewBox="0 0 1280 440" role="img" aria-labelledby="title desc">
+<title id="title">VIO — Listen closer. Practice smarter.</title>
+<desc id="desc">A professional open-source VIO banner showing live pitch detection, Tanpura, ear training and metronome for violinists.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#12152B"/><stop offset=".58" stop-color="#1B2141"/><stop offset="1" stop-color="#302651"/></linearGradient>
+ <linearGradient id="violet" x1="0" x2="1" y1="0" y2=".5"><stop stop-color="#AFA3FF"/><stop offset="1" stop-color="#F5A882"/></linearGradient>
+ <linearGradient id="card" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF" stop-opacity=".16"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".055"/></linearGradient>
+ <radialGradient id="glow"><stop stop-color="#8D76FF" stop-opacity=".38"/><stop offset="1" stop-color="#8D76FF" stop-opacity="0"/></radialGradient>
+ <pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse"><path d="M34 0H0V34" fill="none" stroke="#FFFFFF" stroke-opacity=".045"/></pattern>
+ <clipPath id="round"><rect width="1280" height="440" rx="28"/></clipPath>
+</defs>
+<g clip-path="url(#round)">
+ <rect width="1280" height="440" fill="url(#bg)"/><rect width="1280" height="440" fill="url(#grid)"/>
+ <circle cx="1075" cy="200" r="350" fill="url(#glow)"/>
+ <path d="M0 360C180 330 320 395 510 366S830 305 1000 363 1160 395 1280 354" fill="none" stroke="#B0A1FF" stroke-opacity=".12" stroke-width="2"/>
+ <path d="M0 385C180 355 320 420 510 391S830 330 1000 388 1160 420 1280 379" fill="none" stroke="#F4AC95" stroke-opacity=".10" stroke-width="2"/>
+ <g font-family="Inter,Segoe UI,Arial,sans-serif">
+  <rect x="64" y="56" width="174" height="33" rx="16.5" fill="#AAA0FF" fill-opacity=".13" stroke="#B3A9FF" stroke-opacity=".4"/>
+  <circle cx="81" cy="72.5" r="4" fill="#C2FADE"/>
+  <text x="95" y="78" font-size="12" font-weight="700" fill="#DDD7FF" letter-spacing="1.4">OPEN SOURCE · MIT</text>
+  <text x="64" y="211" font-size="124" font-weight="800" fill="#FFFFFF" letter-spacing="-11">VIO<tspan fill="#B6A3FF">.</tspan></text>
+  <text x="68" y="258" font-size="26" font-weight="650" fill="#F4EEFF" letter-spacing="-.5">Listen closer. Practice smarter.</text>
+  <text x="68" y="296" font-size="16" fill="#B7BCD4">A modern, offline-ready violin practice toolkit.</text>
+  <g font-size="12" font-weight="650" fill="#E0DDF3">
+   <rect x="68" y="334" width="137" height="31" rx="15.5" fill="#FFFFFF" fill-opacity=".08" stroke="#FFFFFF" stroke-opacity=".14"/>
+   <text x="85" y="354">LIVE PITCH</text>
+   <rect x="218" y="334" width="116" height="31" rx="15.5" fill="#FFFFFF" fill-opacity=".08" stroke="#FFFFFF" stroke-opacity=".14"/>
+   <text x="237" y="354">TANPURA</text>
+   <rect x="347" y="334" width="135" height="31" rx="15.5" fill="#FFFFFF" fill-opacity=".08" stroke="#FFFFFF" stroke-opacity=".14"/>
+   <text x="367" y="354">METRONOME</text>
+  </g>
+  <text x="70" y="414" font-size="12" fill="#949BB8" letter-spacing=".4">CREATED &amp; MAINTAINED BY ANUPPAUL</text>
+ </g>
+ <g transform="translate(738 43)">
+  <rect x="18" y="16" width="465" height="342" rx="29" fill="#060914" opacity=".40"/>
+  <rect x="0" y="0" width="465" height="342" rx="29" fill="url(#card)" stroke="#C9C2FF" stroke-opacity=".32" stroke-width="1.4"/>
+  <rect x="22" y="22" width="421" height="42" rx="14" fill="#FFFFFF" fill-opacity=".10"/>
+  <circle cx="44" cy="43" r="6" fill="#BBF4CD"/>
+  <text x="60" y="48" font-size="14" font-weight="700" fill="#FAF9FF" font-family="Inter,Segoe UI,Arial,sans-serif">Sound Tuner</text>
+  <text x="372" y="48" font-size="11" fill="#BCC8E1" font-family="Inter,Segoe UI,Arial,sans-serif">Listening</text>
+  <path d="M98 223A143 143 0 0 1 367 223" fill="none" stroke="#BDB5E4" stroke-opacity=".2" stroke-width="15" stroke-linecap="round"/>
+  <path d="M132 173A112 112 0 0 1 334 173" fill="none" stroke="#B0EDC2" stroke-width="10" stroke-linecap="round"/>
+  <path d="M232 220L253 120" stroke="#F2B09B" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="232" cy="220" r="12" fill="#F1B29F" stroke="#FFFFFF" stroke-width="4"/>
+  <text x="232" y="148" text-anchor="middle" font-size="58" font-weight="800" fill="#FFFFFF" font-family="Inter,Segoe UI,Arial,sans-serif">A4</text>
+  <text x="232" y="180" text-anchor="middle" font-size="17" fill="#C5EEDA" font-family="Inter,Segoe UI,Arial,sans-serif">440.0 Hz</text>
+  <rect x="29" y="249" width="407" height="66" rx="16" fill="#070C22" fill-opacity=".40" stroke="#FFFFFF" stroke-opacity=".08"/>
+  <path d="M44 282H59L65 270L71 298L79 254L87 307L95 270L103 294L112 282L124 282L130 273L136 290L142 261L149 301L156 276L164 289L173 282H184L190 264L198 300L207 256L215 305L224 270L231 290L240 282H250L258 274L267 290L274 259L282 302L289 272L298 288L308 282H318L326 266L333 297L342 256L351 305L358 270L365 291L374 282H393L401 272L408 291L416 282H426" fill="none" stroke="url(#violet)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+ </g>
+</g>
+</svg>

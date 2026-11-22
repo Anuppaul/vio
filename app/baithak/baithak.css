@@ -1,0 +1,358 @@
+.baithak {
+  --focus: #6555d5;
+  --surface: var(--panel);
+  --field: #f8f7fd;
+  --accent-wash: #f0edff;
+  padding: clamp(12px, 2.5vw, 26px);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: linear-gradient(145deg, #f3efff, #fff6fa 52%, #edf9f6);
+  box-shadow: var(--soft);
+  color: var(--ink);
+}
+.baithak-heading h1 {
+  margin: 0 0 16px;
+  font-size: clamp(1.75rem, 3.6vw, 2.5rem);
+  font-weight: 850;
+  line-height: 1.05;
+  letter-spacing: -.045em;
+}
+.baithak-tuning,
+.baithak-strip,
+.baithak-transport {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--soft);
+}
+.baithak-tuning {
+  margin-bottom: 14px;
+  padding: 14px;
+}
+.baithak-tuning h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+.baithak-tuning-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(165px, 2fr);
+  align-items: center;
+  gap: 18px;
+}
+.baithak-keyboard {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+.baithak-keyboard button {
+  display: grid;
+  align-items: end;
+  min-width: 0;
+  height: 72px;
+  padding: 0 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  color: var(--ink);
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.baithak-keyboard button.baithak-black-key {
+  position: absolute;
+  top: 0;
+  width: 8%;
+  height: 41px;
+  transform: translateX(-50%);
+  border-color: #6c6190;
+  background: #6c6190;
+  color: #fff;
+  font-size: .75rem;
+}
+.baithak-keyboard button[aria-pressed="true"] {
+  background: var(--focus);
+  border-color: var(--focus);
+  color: #fff;
+}
+.baithak-fine {
+  display: grid;
+  gap: 6px;
+  font-size: .82rem;
+}
+.baithak-fine > span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px;
+}
+.baithak-instruments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.baithak-strip > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 13px 6px;
+  border-radius: 15px 15px 0 0;
+}
+.baithak-mark {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  background: var(--accent-wash);
+  color: var(--focus);
+}
+.baithak .range {
+  accent-color: var(--focus);
+}
+.baithak-strip .card {
+  margin: 0;
+  border: 0;
+  border-radius: 0 0 15px 15px;
+  background: transparent;
+  box-shadow: none;
+}
+.baithak-strip .card-head {
+  padding: 7px 10px;
+  min-height: 0;
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+}
+.baithak-strip .card-head h2,
+.baithak-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.baithak-strip .section {
+  padding: 10px;
+}
+.baithak-strip .tanpura-layout,
+.baithak-strip .tabla-controls,
+.baithak-strip .swarmandal-controls {
+  grid-template-columns: minmax(0, 1fr);
+}
+.baithak-strip .tan-visual {
+  display: none;
+}
+.baithak-strip .tabla-beats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.baithak-strip .tabla-beats li {
+  overflow-wrap: anywhere;
+}
+.baithak-strip select {
+  min-width: 0;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+.harmonium-keys {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 8px;
+}
+.baithak-transport {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+}
+.baithak :is(button, select, input):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (max-width: 560px) {
+  .baithak-tuning-layout { grid-template-columns: minmax(0, 1fr); }
+}
+.baithak-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: .75rem;
+  cursor: pointer;
+}
+.baithak-switch input {
+  appearance: none;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  border: 1px solid #8a8ba6;
+  border-radius: 999px;
+  background: #ecebf4;
+  cursor: pointer;
+}
+.baithak-switch input::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px #37335226;
+  content: '';
+}
+.baithak-switch input:checked {
+  border-color: var(--focus);
+  background: var(--focus);
+}
+.baithak-switch input:checked::after {
+  left: auto;
+  right: 2px;
+}
+
+.baithak-strip:nth-child(1) {
+  --focus: #a45f37;
+  --accent-wash: #fff0e4;
+}
+.baithak-strip:nth-child(2) {
+  --focus: #326d9e;
+  --accent-wash: #e9f4ff;
+}
+.baithak-strip:nth-child(3) {
+  --focus: #267a69;
+  --accent-wash: #e6f7f0;
+}
+.baithak-strip:nth-child(4) {
+  --focus: #985078;
+  --accent-wash: #fbeaf4;
+}
+.baithak-strip[data-enabled="true"] {
+  border-color: color-mix(in srgb, var(--focus) 50%, var(--line));
+}
+.baithak-strip-name {
+  min-width: 0;
+  font-size: .87rem;
+}
+.baithak-strip-name span {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: .72rem;
+}
+.baithak-strip-name small {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: .67rem;
+}
+.baithak-strip .section {
+  padding: 8px 13px 12px;
+}
+.baithak-strip .card-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+}
+.baithak-strip .control {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.baithak-strip .control-label {
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-size: .69rem;
+}
+.baithak-strip .tabla-controls,
+.harmonium-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 9px;
+}
+.baithak-strip .swarmandal-controls,
+.baithak-strip .tanpura-layout .section {
+  display: grid;
+  gap: 9px;
+}
+.baithak-strip select {
+  color: var(--ink);
+  background: var(--field);
+  border-color: var(--line);
+  min-height: 34px;
+}
+.baithak-strip select option {
+  color: var(--ink);
+  background: var(--field);
+}
+.harmonium-controls > :nth-child(n+3),
+.baithak-cycle,
+.baithak-wide {
+  grid-column: 1 / -1;
+}
+.baithak-cycle > div {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: .7rem;
+}
+.baithak-strip .tabla-beats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 5px 0 3px;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--field);
+}
+.baithak-strip .tabla-beats li {
+  flex: 1 0 15px;
+  padding: 4px 1px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+.baithak-strip .tabla-beats .tabla-division {
+  border-left: 1px solid var(--line);
+}
+.baithak-strip .tabla-beats [aria-current="step"] {
+  background: var(--focus);
+  color: #fff;
+}
+.baithak-cycle > strong {
+  color: var(--focus);
+  font-size: .9rem;
+}
+.baithak-transport {
+  background: linear-gradient(135deg, #f0ecff, #fff1f7 60%, #edf9f6);
+}
+.baithak-mix-readout {
+  display: grid;
+}
+.baithak-mix-readout span, .baithak-transport-beat span {
+  color: var(--muted);
+  font-size: .75rem;
+}
+.baithak-transport-beat {
+  margin-left: auto;
+  color: var(--focus);
+  font-variant-numeric: tabular-nums;
+}
+.baithak-transport .baithak-switch {
+  margin-left: 6px;
+}
+@media (max-width: 610px) {
+  .baithak-instruments { grid-template-columns: minmax(0, 1fr); }
+  .baithak-strip select { font-size: .8rem; }
+}

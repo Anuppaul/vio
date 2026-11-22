@@ -1,9 +1,9 @@
-const VERSION='vio-pwa-v75';
+const VERSION='vio-pwa-v107';
 const APP_CACHE=`${VERSION}-app`;
 const AUDIO_CACHE=`${VERSION}-audio`;
 const RUNTIME_CACHE=`${VERSION}-runtime`;
 
-const ROUTES=['/','/sound-tuner','/scale-practice','/tanpura','/exercise','/metronome','/manifest.webmanifest'];
+const ROUTES=['/','/sound-tuner','/scale-practice','/baithak','/tanpura','/tabla','/harmonium','/swarmandal','/exercise','/metronome','/manifest.webmanifest'];
 const TUNER_WORKERS=['/tuner-capture-worklet.js?v=3','/tuner-consensus-worker.js?v=2'];
 const EAR_NOTES=['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
 const EAR_AUDIO=[];
@@ -16,8 +16,9 @@ const METRONOME_AUDIO=[
   '/assets/metronome/tabla-na.wav','/assets/metronome/tabla-tin.wav','/assets/metronome/tabla-ge.wav',
   '/assets/metronome/drum-kick.wav','/assets/metronome/drum-snare.wav','/assets/metronome/drum-hihat.wav'
 ];
+const TABLA_AUDIO=['Dha','Dhin','Ga','Ge','Ke','Na','Ta','Ti','Tin','Tun'].map(stroke=>`/assets/tabla/${stroke}.wav`);
 const ICONS=['/icon.png','/apple-icon.png','/icons/icon-192.png?v=13','/icons/icon-512.png?v=13'];
-const AUDIO=[...EAR_AUDIO,...EXERCISE_AUDIO,...TANPURA_AUDIO,...METRONOME_AUDIO];
+const AUDIO=[...EAR_AUDIO,...EXERCISE_AUDIO,...TANPURA_AUDIO,...METRONOME_AUDIO,...TABLA_AUDIO];
 
 async function cacheOne(cache,url){
   try{

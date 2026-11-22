@@ -1,0 +1,132 @@
+.tabla-card {
+  margin-top: 18px;
+}
+.tabla-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+.tabla-controls .control {
+  margin: 0;
+}
+.tabla-controls select {
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 10px;
+  border: 1px solid #c5c8d7;
+  border-radius: 10px;
+  background: #fff;
+  color: #273249;
+  font: inherit;
+}
+.tabla-beats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tabla-beats li {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px 5px;
+  border-radius: 8px;
+  background: #f1f2f8;
+  color: #273249;
+  text-align: center;
+  font-size: .85rem;
+}
+.tabla-beats li:first-child,
+.tabla-beats .tabla-division {
+  box-shadow: inset 0 3px #8c78b8;
+}
+.tabla-beats li[aria-current="step"] {
+  background: #553b87;
+  color: #fff;
+}
+.tabla-controls > .primary,
+.tabla-status {
+  grid-column: 1 / -1;
+}
+@media (max-width: 480px) {
+  .tabla-controls { gap: 10px; }
+  .tabla-beats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.swarmandal-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+.swarmandal-controls .control {
+  margin: 0;
+}
+.swarmandal-controls select,
+.swarmandal-controls input[type="number"] {
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 10px;
+  border: 1px solid #c5c8d7;
+  border-radius: 10px;
+  background: #fff;
+  color: #273249;
+  font: inherit;
+}
+.swarmandal-strings,
+.swarmandal-actions,
+.swarmandal-controls p {
+  grid-column: 1 / -1;
+}
+.swarmandal-strings {
+  display: grid;
+  grid-template-columns: repeat(32, minmax(0, 1fr));
+  padding: 8px;
+  border-radius: 14px;
+  background: #f1edf9;
+  touch-action: pan-y;
+  user-select: none;
+}
+.swarmandal-strings button {
+  min-width: 0;
+  height: 108px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: linear-gradient(#a38abb, #a38abb) center / 1px 100% no-repeat;
+  color: #42355e;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  cursor: pointer;
+}
+.swarmandal-strings button.tonic {
+  background-size: 2px 100%;
+  background-image: linear-gradient(#6946a1, #6946a1);
+}
+.swarmandal-strings button span {
+  background: #f1edf9;
+  font-size: .7rem;
+}
+.swarmandal-strings button:active,
+.swarmandal-strings button:focus-visible {
+  background-color: #d9cbf2;
+}
+.swarmandal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.swarmandal-actions button {
+  flex: 1 1 130px;
+}
+.swarmandal-status {
+  margin: 0;
+  font-size: .88rem;
+  color: #4f586c;
+}
+@media (max-width: 720px) {
+  .swarmandal-strings { grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 6px 0; }
+  .swarmandal-strings button { height: 68px; }
+}

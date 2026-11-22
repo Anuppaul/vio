@@ -21,4 +21,6 @@ This is **not** a complete dependency-by-dependency license inventory. Check `pa
 
 Some bundled Tanpura recordings were captured from an external audio source. Exact historical source references remain available in repository history for rights verification. The sound recordings are **not covered by Anuppaul's MIT grant** unless appropriate authorization is documented. See [Audio asset licensing and provenance](docs/ASSET_LICENSING.md).
 
+The Tabla player bundles individual WAV strokes from [Naad by Oormi Creations and Contributors](https://github.com/oormicreations/naad/tree/master/Bol) under the [MIT license](public/assets/tabla/LICENSE.txt).
+
 VIO is not represented as affiliated with or endorsed by any upstream project or source of third-party recordings.

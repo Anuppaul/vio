@@ -1,0 +1,194 @@
+.swarmandal-studio {
+  --swarmandal-ink: #29243e;
+  --swarmandal-line: #e4ddec;
+  --swarmandal-accent: #6846a5;
+  width: min(100%, 930px);
+  margin-inline: auto;
+  padding: clamp(12px, 3vw, 25px);
+  border: 1px solid var(--swarmandal-line);
+  border-radius: 24px;
+  background: linear-gradient(155deg, #f4edff, #fff6f6 58%, #f7f2ff);
+  color: var(--swarmandal-ink);
+  box-shadow: var(--soft);
+}
+.swarmandal-studio h1 {
+  margin: 0 0 14px;
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+}
+.swarmandal-console {
+  padding: clamp(12px, 2vw, 20px);
+  border: 1px solid var(--swarmandal-line);
+  border-radius: 16px;
+  background: #fffdfd;
+}
+.swarmandal-selects,
+.swarmandal-console-grid {
+  display: grid;
+  gap: 12px;
+}
+.swarmandal-selects {
+  grid-template-columns: minmax(75px, .7fr) minmax(130px, 1fr) minmax(0, 2fr);
+}
+.swarmandal-console-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--swarmandal-line);
+  padding-top: 13px;
+  margin-top: 14px;
+}
+.swarmandal-selects .control {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.swarmandal-selects select {
+  width: 100%;
+  min-height: 38px;
+  padding: 4px 8px;
+  border: 1px solid var(--swarmandal-line);
+  border-radius: 8px;
+  background: #f9f6fc;
+  color: var(--swarmandal-ink);
+  font-size: .87rem;
+}
+.swarmandal-automation-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+.swarmandal-console h2,
+.swarmandal-automation-head label {
+  margin: 0;
+  font-size: .8rem;
+  font-weight: 700;
+}
+.swarmandal-automation-head label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.swarmandal-studio .range,
+.swarmandal-automation-head input {
+  accent-color: var(--swarmandal-accent);
+}
+.swarmandal-sweeps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0 5px;
+}
+.swarmandal-sweeps button,
+.swarmandal-studio-footer button {
+  min-height: 36px;
+  padding: 5px 8px;
+  border: 1px solid var(--swarmandal-line);
+  border-radius: 9px;
+  background: #f7f1fd;
+  color: var(--swarmandal-ink);
+  font-weight: 700;
+}
+.swarmandal-sweeps button[aria-pressed="true"] {
+  border-color: var(--swarmandal-accent);
+  background: #eee4ff;
+  color: #52318a;
+}
+.swarmandal-slider {
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr) 3rem;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-top: 4px;
+  font-size: .79rem;
+}
+.swarmandal-slider output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.swarmandal-soundboard {
+  margin-top: clamp(14px, 3vw, 24px);
+  padding: clamp(8px, 2vw, 18px);
+  border: 1px solid #a88abf;
+  border-radius: 20px;
+  background: linear-gradient(150deg, #d3b4d6 0%, #a17ab5 70%, #8f71ae);
+  box-shadow: inset 0 1px 2px #fff9, 0 8px 18px #4b335631;
+}
+.swarmandal-studio .swarmandal-strings {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(32, minmax(0, 1fr));
+  gap: 0;
+  padding: 13px 0;
+  border: 1px solid #7b618c;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 31% 51%, #443053 0%, #443053 9%, #8c6ea4 9.4%, transparent 10%),
+    repeating-linear-gradient(97deg, #ffffff04 0 3px, transparent 3px 10px),
+    linear-gradient(145deg, #68517a, #4b365b);
+  overflow: hidden;
+  touch-action: none;
+}
+.swarmandal-studio .swarmandal-strings::before,
+.swarmandal-studio .swarmandal-strings::after {
+  position: absolute;
+  left: 2%;
+  right: 2%;
+  height: 6px;
+  border-radius: 5px;
+  background: #a48ab6;
+  box-shadow: 0 2px 4px #352544;
+  content: '';
+  pointer-events: none;
+}
+.swarmandal-studio .swarmandal-strings::before { top: 13px; }
+.swarmandal-studio .swarmandal-strings::after { bottom: 13px; }
+.swarmandal-studio .swarmandal-strings button {
+  z-index: 1;
+  display: grid;
+  place-items: stretch center;
+  height: clamp(150px, 34vw, 300px);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  touch-action: none;
+}
+.swarmandal-studio .swarmandal-strings button span {
+  width: 1px;
+  background: linear-gradient(#f0dffc, #e8d5f7 40%, #cfb6e0);
+  box-shadow: 1px 0 3px #291b35;
+  pointer-events: none;
+}
+.swarmandal-studio .swarmandal-strings button.tonic span {
+  width: 2px;
+  background: #ffe4ea;
+}
+.swarmandal-studio .swarmandal-strings button:is(:hover, :focus-visible, :active) span {
+  background: #fff;
+  box-shadow: 0 0 5px 1px #ffe7ffb0;
+}
+.swarmandal-studio :is(button, select, input):focus-visible {
+  outline: 2px solid var(--swarmandal-accent);
+  outline-offset: 2px;
+}
+.swarmandal-studio .swarmandal-strings button:focus-visible {
+  outline-offset: -2px;
+  outline-color: #ffedff;
+}
+.swarmandal-studio-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .swarmandal-console-grid { grid-template-columns: 1fr; }
+  .swarmandal-selects { grid-template-columns: minmax(75px, 1fr) minmax(0, 2fr); }
+  .swarmandal-selects > :last-child { grid-column: 1 / -1; }
+  .swarmandal-studio .swarmandal-strings button.tonic span { width: 1px; }
+}

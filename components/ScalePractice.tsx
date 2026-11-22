@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { PitchDetector } from 'pitchy';
+import {
+  createPracticePitchDetector,
+  PRACTICE_PITCH_WINDOW as BUFFER_SIZE,
+  PRACTICE_PITCH_INTERVAL_MS as ANALYSIS_MS,
+} from '@/lib/practice-pitch';
 import { rms } from '@/lib/music';
 import { createBrowserAudioContext, requestRawMicrophone, resumeBrowserAudio } from '@/lib/browser-audio';
 
-const BUFFER_SIZE=8192;
-const ANALYSIS_MS=35;
 const SA_READY_FRAMES=7;
 const SA_READY_MIN_INLIERS=5;
 const SA_READY_TOLERANCE_CENTS=12;
@@ -80,9 +82,9 @@ export default function ScalePractice(){
   const processorRef=useRef<ScriptProcessorNode|null>(null),workletRef=useRef<AudioWorkletNode|null>(null),silentGainRef=useRef<GainNode|null>(null),playbackSourceRef=useRef<AudioBufferSourceNode|null>(null);
   const bufferRef=useRef(new Float32Array(BUFFER_SIZE)),rafRef=useRef(0),lastRef=useRef(0),saFrequencyRef=useRef<number|null>(null),saSamplesRef=useRef<number[]>([]);
   const captureChunksRef=useRef<Float32Array[]>([]),captureSamplesRef=useRef(0),candidateVoiceRef=useRef<Float32Array|null>(null),saVoiceRef=useRef<Float32Array|null>(null),saVoiceRateRef=useRef(0);
-  const detectorRef=useRef<ReturnType<typeof PitchDetector.forFloat32Array>|null>(null),workletLoadedRef=useRef(false);
+  const detectorRef=useRef<ReturnType<typeof createPracticePitchDetector>|null>(null),workletLoadedRef=useRef(false);
 
-  if(!detectorRef.current){const detector=PitchDetector.forFloat32Array(BUFFER_SIZE);detector.minVolumeAbsolute=0;detectorRef.current=detector}
+  if(!detectorRef.current)detectorRef.current=createPracticePitchDetector()
   useEffect(()=>{saFrequencyRef.current=saFrequency},[saFrequency]);
   useEffect(()=>{
     try{

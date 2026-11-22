@@ -25,3 +25,12 @@
 .player-card small,.string-heads span,.hint,.target-chip,.summary>div,.report-grid span,.saptak-title span,.swara-cell small,.scale-saptak-name,.sa-reference span{color:#5f6b7d}
 .practice-head{color:#4d5a6d}
 .nav-items a{color:#556176}
+
+@media (max-width: 1050px) {
+  .nav-items { overflow-x: auto; scrollbar-width: thin; }
+  .nav-items a { flex: 1 0 auto; }
+}
+@media (max-width: 650px) {
+  .nav-items a { flex-basis: 28px; }
+  .nav-items a i { width: 25px; height: 25px; }
+}

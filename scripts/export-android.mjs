@@ -24,7 +24,7 @@ const compactTanpura = spawnSync(process.execPath, ['scripts/compact-tanpura-and
 if (compactTanpura.error) throw compactTanpura.error;
 if (compactTanpura.status !== 0) process.exit(compactTanpura.status ?? 1);
 
-const routes = ['index', 'sound-tuner', 'scale-practice', 'tanpura', 'exercise', 'metronome'];
+const routes = ['index', 'sound-tuner', 'scale-practice', 'baithak', 'tanpura', 'tabla', 'harmonium', 'swarmandal', 'exercise', 'metronome'];
 for (const route of routes) {
   const html = await readFile(resolve('out', `${route}.html`), 'utf8');
   assert.match(html, /vio-native/, `${route} is not a native export`);
@@ -34,7 +34,8 @@ for (const route of routes) {
 }
 const keys = ['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
 const tanpuraAudio = ['sa-pa','sa-ma'].flatMap(pattern => keys.map(key => `tanpura/${pattern}_${key}.mp3`));
-const audio = [...tanpuraAudio];
+const tablaAudio = ['Dha', 'Dhin', 'Ga', 'Ge', 'Ke', 'Na', 'Ta', 'Ti', 'Tin', 'Tun'].map(stroke => `tabla/${stroke}.wav`);
+const audio = [...tanpuraAudio, ...tablaAudio];
 
 const compactManifest = JSON.parse(
   await readFile('out/assets/tanpura/android-compact-manifest.json', 'utf8')
@@ -56,6 +57,8 @@ for (let midi=36; midi<=96; midi++) audio.push(`exercise/midi-${midi}.wav`);
 for (const file of ['click','click-accent','tabla-na','tabla-tin','tabla-ge','drum-kick','drum-snare','drum-hihat']) audio.push(`metronome/${file}.wav`);
 for (const file of ['G3','D4','A4','E5']) audio.push(`ear/${file}.mp3`);
 for (const file of audio) assert.ok((await stat(`out/assets/${file}`)).size>0, `Missing offline audio: ${file}`);
+await stat('out/assets/tabla/LICENSE.txt');
+await rm('out/naad-master.zip', { force: true });
 await rm('out/sw.js', { force: true });
 await writeFile('out/webview-error.html', '<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Update Android System WebView</title><body style="font:18px system-ui;padding:32px;background:#f8f9fd;color:#273249"><h1>VIO</h1><p>Please update Android System WebView or Chrome, then reopen VIO.</p><p>This app needs WebView 111 or newer.</p></body></html>');
 await writeFile('out/native-build.json', JSON.stringify({

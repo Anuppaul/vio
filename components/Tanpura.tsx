@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import type { MixerChannel } from '@/lib/mixer-channel';
+import { stretchAudioLoop } from '@/lib/stretch-audio-loop';
+import SaPicker from '@/components/SaPicker';
+import { saFrequency } from '@/lib/riyaaz';
 import { Capacitor } from '@capacitor/core';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
+import type { BaithakAudio } from '@/lib/baithak-audio';
 import { backgroundAudio, nativeAudioStatus, prepareBackgroundNotification } from '@/lib/background-audio';
-
-const KEYS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-function keyFreq(key:string){return 130.81278265*Math.pow(2,KEYS.indexOf(key)/12)}
 
 function zeroCrossNear(buffer:AudioBuffer,index:number,radius:number){
   const data=buffer.getChannelData(0),length=buffer.length;
@@ -120,21 +122,27 @@ function compactLoopBounds(buffer:AudioBuffer){
   return {start:best.start,end:best.end};
 }
 
-export default function Tanpura(){
+export default function Tanpura({ sa, cents = 0, channel, mixAudio }: { sa?: { note: string; onChange: (note: string) => void }; cents?: number; channel?: Ref<MixerChannel>; mixAudio?: BaithakAudio }){
   const [pattern,setPattern]=useState<'sa-pa'|'sa-ma'>('sa-pa');
-  const [key,setKey]=useState('C');
-  const [volume,setVolume]=useState(.6);
+  const [speed,setSpeed]=useState(100);
+  const [localKey,setLocalKey]=useState('C');
+  const key=sa?.note??localKey;
+  const setKey=sa?.onChange??setLocalKey;
+  const [volume,setVolume]=useState(channel ? .45 : .6);
   const [playing,setPlaying]=useState(false);
   const [status,setStatus]=useState('Ready');
   const ctxRef=useRef<AudioContext|null>(null),masterRef=useRef<GainNode|null>(null),inputRef=useRef<GainNode|null>(null),sourceRef=useRef<AudioBufferSourceNode|null>(null),timerRef=useRef<ReturnType<typeof setInterval>|null>(null),nodesRef=useRef(new Set<OscillatorNode>());
   const cacheRef=useRef(new Map<string,AudioBuffer>()),tokenRef=useRef(0);
+  const centsRef=useRef(cents);
+  const requestedRef=useRef(false);
+  const boundsCache=useRef(new WeakMap<AudioBuffer,{start:number;end:number}>());
   const restoreNativeRef=useRef<{key:string;pattern:string}|null>(null);
 
   function outputChain(ctx:AudioContext){
     const input=ctx.createGain(),master=ctx.createGain();
     input.gain.value=1;
     master.gain.value=volume*.85;
-    input.connect(master).connect(ctx.destination);
+    input.connect(master).connect(mixAudio?.get()?.output ?? ctx.destination);
     masterRef.current=master;
     inputRef.current=input;
     return input;
@@ -143,6 +151,7 @@ export default function Tanpura(){
   function stop(update=true,releaseAudio=update,stopNative=update){
     // Cancel all pending decode/start operations and stop the render graph.
     tokenRef.current++;
+    if(update)requestedRef.current=false;
     const source=sourceRef.current;sourceRef.current=null;
     try{source?.stop()}catch{}
     try{source?.disconnect()}catch{}
@@ -154,12 +163,12 @@ export default function Tanpura(){
     inputRef.current=null;masterRef.current=null;
     if(releaseAudio){
       const ctx=ctxRef.current;ctxRef.current=null;
-      if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
+      if(!mixAudio&&ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});
       // Prevent decoded PCM from accumulating over repeated native sessions.
       if(Capacitor.isNativePlatform())cacheRef.current.clear();
     }
     if(stopNative){
-      const native=backgroundAudio();
+      const native=channel?null:backgroundAudio();
       if(native)void native.stop().catch(error=>setStatus(String(error)));
     }
     setPlaying(false);
@@ -169,8 +178,9 @@ export default function Tanpura(){
     // Restore the Android foreground service state when returning from
     // another VIO page. Page navigation must NEVER stop service playback.
     let unmounted=false;
-    if(backgroundAudio())void nativeAudioStatus().then(st=>{
+    if(!channel&&backgroundAudio())void nativeAudioStatus().then(st=>{
       if(unmounted||!st||st.mode!=='tanpura'||!st.playing)return;
+      requestedRef.current=true;
       restoreNativeRef.current={key:st.key,pattern:st.pattern};
       setPattern(st.pattern);setKey(st.key);setVolume(st.volume);
       setPlaying(true);
@@ -179,10 +189,10 @@ export default function Tanpura(){
     const onHidden=()=>{
       if(!Capacitor.isNativePlatform())return;
       if(document.hidden){
-        if(!backgroundAudio())stop(true,true,false);
+        if(channel||!backgroundAudio())stop(true,true,false);
         return;
       }
-      if(backgroundAudio())void nativeAudioStatus().then(st=>{
+      if(!channel&&backgroundAudio())void nativeAudioStatus().then(st=>{
         if(unmounted||!st)return;
         const active=st.mode==='tanpura'&&st.playing;
         setPlaying(active);
@@ -190,7 +200,7 @@ export default function Tanpura(){
       }).catch(()=>{});
     };
     const onPageHide=()=>{
-      if(Capacitor.isNativePlatform()&&!backgroundAudio())stop(true,true,false);
+      if(Capacitor.isNativePlatform()&&(channel||!backgroundAudio()))stop(true,true,false);
     };
     document.addEventListener('visibilitychange',onHidden);
     window.addEventListener('pagehide',onPageHide);
@@ -221,10 +231,25 @@ export default function Tanpura(){
   async function synth(token=tokenRef.current){
     const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){setStatus('Web Audio unavailable');return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
     if(token!==tokenRef.current)return;
-    const input=outputChain(ctx);const sa=keyFreq(key),other=sa*Math.pow(2,(pattern==='sa-pa'?7:5)/12);const cycle=()=>{const t=ctx.currentTime+.03;pluck(ctx,input,other,t,.14);pluck(ctx,input,sa,t+.72,.17);pluck(ctx,input,sa*2,t+1.44,.12);pluck(ctx,input,sa,t+2.16,.16)};cycle();timerRef.current=setInterval(cycle,2880);setStatus('Synth fallback');setPlaying(true)
+    const input=outputChain(ctx);
+    const step=.72/(speed/100);
+    const cycle=()=>{
+      const t=ctx.currentTime+.03;
+      const sa=saFrequency(key)*2**(centsRef.current/1200);
+      const other=sa*2**((pattern==='sa-pa'?7:5)/12);
+      pluck(ctx,input,other,t,.14);
+      pluck(ctx,input,sa,t+step,.17);
+      pluck(ctx,input,sa*2,t+step*2,.12);
+      pluck(ctx,input,sa,t+step*3,.16);
+    };
+    cycle();
+    timerRef.current=setInterval(cycle,step*4000);
+    setStatus('Synthesized drone');
+    setPlaying(true);
   }
   async function start(){
-    const native=backgroundAudio();
+    requestedRef.current=true;
+    const native=channel?null:backgroundAudio();
     if(native){
       stop(false,true,false);
       const token=tokenRef.current;
@@ -243,11 +268,16 @@ export default function Tanpura(){
       }
       return;
     }
-    if(Capacitor.isNativePlatform()){
+    if(Capacitor.isNativePlatform()&&!channel){
       setStatus('Background audio plugin missing · update the APK');
       return;
     }
-    stop(false);const token=tokenRef.current;const ctx=ctxRef.current||createBrowserAudioContext();if(!ctx){await synth(token);return}ctxRef.current=ctx;await resumeBrowserAudio(ctx);
+    stop(false);const token=tokenRef.current;const ctx=ctxRef.current||(mixAudio ? mixAudio.get()?.context : createBrowserAudioContext());if(!ctx){
+      if(channel){setStatus('Recorded audio unavailable');requestedRef.current=false}
+      else await synth(token);
+      return;
+    }
+    ctxRef.current=ctx;await resumeBrowserAudio(ctx);
     if(token!==tokenRef.current)return;
     const stem=key.replace('#','s'),url=`/assets/tanpura/${pattern}_${stem}.mp3`;
     setStatus('Loading drone…');
@@ -262,33 +292,67 @@ export default function Tanpura(){
       if(token!==tokenRef.current)return;
       const input=outputChain(ctx),source=ctx.createBufferSource();
       source.onended=()=>{try{source.disconnect()}catch{}};
-      const bounds=compactLoopBounds(buffer);
+      let bounds=boundsCache.current.get(buffer);
+      if(!bounds){
+        bounds=compactLoopBounds(buffer);
+        boundsCache.current.set(buffer,bounds);
+      }
+      const stretched=channel&&speed!==100?stretchAudioLoop(ctx,buffer,bounds.start,bounds.end,speed/100):null;
+      if(stretched){
+        buffer=stretched;
+        bounds={start:0,end:stretched.duration};
+      }
       const loopSeconds=Math.max(.1,bounds.end-bounds.start);
       masterRef.current!.gain.setValueAtTime(0,ctx.currentTime);masterRef.current!.gain.linearRampToValueAtTime(volume*.85,ctx.currentTime+.055);
-      source.buffer=buffer;source.loop=true;source.loopStart=bounds.start;source.loopEnd=bounds.end;source.connect(input);source.start(ctx.currentTime+.015,bounds.start);
+      source.buffer=buffer;source.detune.value=centsRef.current;source.loop=true;source.loopStart=bounds.start;source.loopEnd=bounds.end;source.connect(input);source.start(ctx.currentTime+.015,bounds.start);
       sourceRef.current=source;setPlaying(true);
-      setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · Compact ${loopSeconds.toFixed(1)}s · Raw MP3`);
-    }catch{if(token===tokenRef.current)await synth(token)}
+      setStatus(`${key} · ${pattern==='sa-pa'?'SA PA':'SA MA'} · Compact ${loopSeconds.toFixed(1)}s · ${stretched?'Recorded audio':'Raw MP3'}`);
+    }catch{
+      if(token!==tokenRef.current)return;
+      if(!channel){await synth(token);return}
+      stop(true,true,false);
+      setStatus('Recorded audio unavailable');
+    }
   }
   useEffect(()=>{
-    if(!playing)return;
+    if(!requestedRef.current)return;
     if(restoreNativeRef.current){
       const restored=restoreNativeRef.current;restoreNativeRef.current=null;
       if(restored.pattern===pattern&&restored.key===key)return;
     }
     void start();
-  },[pattern,key]);
+  },[pattern,key,speed]);
+
+  useImperativeHandle(channel,()=>({start,stop:()=>stop(true,true)}));
+  useEffect(()=>{
+    centsRef.current=cents;
+    const source=sourceRef.current;
+    if(source)source.detune.setTargetAtTime(cents,source.context.currentTime,.025);
+  },[cents]);
 
   return <>
-    <section className="card">
-      <div className="card-head"><div><h2>Tanpura Drone</h2></div><span>{status}</span></div>
+    <section className="card" aria-labelledby="tanpura-heading">
+      <div className="card-head"><div><h2 id="tanpura-heading">Tanpura Drone</h2></div><span>{status}</span></div>
       <div className="tanpura-layout">
         <div className={`tan-visual ${playing?'playing':''}`}><div className="tan-ring"/><div className="tan-ring two"/><div className="tan-body"><div className="tan-neck"/><div className="tan-gourd"><div className="tan-om">ॐ</div></div></div></div>
         <div className="section">
-          <div className="control"><div className="control-label"><span>Drone pattern</span></div><div className="seg two"><button className={pattern==='sa-pa'?'active':''} onClick={()=>setPattern('sa-pa')}>सा पा · SA PA</button><button className={pattern==='sa-ma'?'active':''} onClick={()=>setPattern('sa-ma')}>सा मा · SA MA</button></div></div>
-          <div className="control"><div className="control-label"><span>Sa / Key</span></div><div className="key-grid">{KEYS.map(k=><button key={k} className={key===k?'active':''} onClick={()=>setKey(k)}>{k}</button>)}</div></div>
-          <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(v*.85,ctxRef.current.currentTime,.02);if(playing)void backgroundAudio()?.setVolume({volume:v}).catch(()=>{})}}/></div>
-          <button className={`primary ${playing?'danger':''}`} onClick={playing?()=>stop(true,true):start}>{playing?'Stop':'Play'}</button>
+          {channel ? <>
+            <label className="control">
+              <span className="control-label">Strings</span>
+              <select aria-label="Tanpura strings" value={pattern} onChange={event=>setPattern(event.target.value as typeof pattern)}>
+                <option value="sa-pa">Sa–Pa</option>
+                <option value="sa-ma">Sa–Ma</option>
+              </select>
+            </label>
+            <label className="control">
+              <span className="control-label"><span>Speed</span><span>{(speed/100).toFixed(2)}×</span></span>
+              <input className="range" aria-label="Tanpura speed" type="range" min="40" max="300" step="5" value={speed}
+                onChange={event=>setSpeed(Number(event.target.value))} />
+            </label>
+          </> : <div className="control"><div className="control-label"><span>Drone pattern</span></div><div className="seg two"><button className={pattern==='sa-pa'?'active':''} onClick={()=>setPattern('sa-pa')}>सा पा · SA PA</button><button className={pattern==='sa-ma'?'active':''} onClick={()=>setPattern('sa-ma')}>सा मा · SA MA</button></div></div> }
+          {!sa&&<SaPicker note={key} onChange={setKey} />}
+          <div className="control"><div className="control-label"><span>Volume</span><span>{Math.round(volume*100)}%</span></div><input className="range" type="range" min="0" max="100" value={volume*100} onChange={e=>{const v=+e.target.value/100;setVolume(v);if(masterRef.current&&ctxRef.current)masterRef.current.gain.setTargetAtTime(v*.85,ctxRef.current.currentTime,.02);if(playing&&!channel)void backgroundAudio()?.setVolume({volume:v}).catch(()=>{})}}/></div>
+          {!channel&&<button className={`primary ${playing?'danger':''}`} onClick={playing?()=>stop(true,true):start}>{playing?'Stop':'Play'}</button>}
         </div>
       </div>
     </section>

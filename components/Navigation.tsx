@@ -9,10 +9,9 @@ const items = [
   { href: '/', label: 'Ear Tuner', icon: '♪' },
   { href: '/sound-tuner', label: 'Sound Tuner', icon: '◌' },
   { href: '/scale-practice', label: 'Scale Practice', icon: 'সা' },
-  { href: '/baithak', label: 'Baithak', icon: '♫' },
+  { href: '/baithak', label: 'Taalmala', icon: '♫' },
   { href: '/tanpura', label: 'Tanpura', icon: 'ॐ' },
   { href: '/tabla', label: 'Tabla', icon: '◉' },
-  { href: '/harmonium', label: 'Harmonium', icon: '♮' },
   { href: '/swarmandal', label: 'Swarmandal', icon: '♬' },
   { href: '/exercise', label: 'Exercise', icon: '𝄞' },
   { href: '/metronome', label: 'Metronome', icon: '●' }

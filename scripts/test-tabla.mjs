@@ -6,11 +6,37 @@ const browser = await chromium.launch({
   args: ['--no-sandbox'],
 });
 try {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   await page.addInitScript(() => {
+    const fetchAudio = window.fetch;
+    const readAudio = Response.prototype.arrayBuffer;
+    const decodeAudio = AudioContext.prototype.decodeAudioData;
+    const sourcesByResponse = new WeakMap();
+    const sourcesByBytes = new WeakMap();
+    const sourcesByBuffer = new WeakMap();
+    window.fetch = async function (input, options) {
+      const response = await fetchAudio.call(this, input, options);
+      if (typeof input === 'string' && input.startsWith('/assets/tabla/')) {
+        sourcesByResponse.set(response, input.split('/').at(-1));
+      }
+      return response;
+    };
+    Response.prototype.arrayBuffer = async function () {
+      const bytes = await readAudio.call(this);
+      const source = sourcesByResponse.get(this);
+      if (source) sourcesByBytes.set(bytes, source);
+      return bytes;
+    };
+    AudioContext.prototype.decodeAudioData = async function (bytes, ...args) {
+      const source = sourcesByBytes.get(bytes);
+      const buffer = await decodeAudio.call(this, bytes, ...args);
+      if (source) sourcesByBuffer.set(buffer, source);
+      return buffer;
+    };
     const start = AudioBufferSourceNode.prototype.start;
     const stop = AudioBufferSourceNode.prototype.stop;
     window.testAudioSources = [];
+    window.playedTablaTakes = [];
     window.stoppedAudioSources = new WeakSet();
     window.microphoneRequests = 0;
     navigator.mediaDevices.getUserMedia = async () => {
@@ -19,6 +45,8 @@ try {
     };
     AudioBufferSourceNode.prototype.start = function (...args) {
       window.testAudioSources.push(this);
+      const take = sourcesByBuffer.get(this.buffer);
+      if (take) window.playedTablaTakes.push(take);
       return start.apply(this, args);
     };
     AudioBufferSourceNode.prototype.stop = function (...args) {
@@ -28,6 +56,21 @@ try {
   });
   const failures = [];
   page.on('pageerror', error => failures.push(error.message));
+  async function verifyRepeatedDha(laya, start, stop) {
+    await page.getByLabel('Taal', { exact: true }).selectOption('teentaal');
+    await page.getByRole('slider', { name: /Tempo/ }).fill('240');
+    await laya.selectOption('2');
+    await page.evaluate(() => { window.playedTablaTakes = []; });
+    await start();
+    await page.waitForFunction(() =>
+      window.playedTablaTakes.filter(take => /^Dha(?:\d+)?\.wav$/.test(take)).length >= 12);
+    await stop();
+    const dha = await page.evaluate(() =>
+      window.playedTablaTakes.filter(take => /^Dha(?:\d+)?\.wav$/.test(take)));
+    assert.ok(new Set(dha).size >= 4, 'repeated Dha uses multiple Naad recordings');
+    assert.ok(dha.slice(1).every((take, index) => take !== dha[index]),
+      'a recording cannot repeat on successive occurrences of the same bol');
+  }
   await page.goto(new URL('/baithak', process.env.VIO_TEST_URL ?? 'http://localhost:3100').href);
   const tanpuraSound = page.getByRole('switch', { name: 'Tanpura sound' });
   const tablaSound = page.getByRole('switch', { name: 'Tabla sound' });
@@ -91,11 +134,16 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await verifyRepeatedDha(tabla.getByLabel('Laya', { exact: true }),
+    () => tablaSound.check(), () => tablaSound.uncheck());
   await page.getByRole('navigation').getByRole('link', { name: 'Tabla', exact: true }).click();
   await page.waitForURL('**/tabla');
   assert.equal(await page.getByLabel('Taal', { exact: true }).locator('option').count(), 38);
+  await verifyRepeatedDha(page.getByLabel('Layakari', { exact: true }),
+    () => page.getByRole('button', { name: 'Play Tabla', exact: true }).click(),
+    () => page.getByRole('button', { name: 'Stop Tabla', exact: true }).click());
   assert.deepEqual(failures, []);
-  console.log('Tabla and Tanpura concurrent playback and mobile layout verified.');
+  console.log('Repeated Dha rotates through different recordings in Taalmala and Tabla. Concurrent playback and mobile layout verified.');
 } finally {
   await browser.close();
 }

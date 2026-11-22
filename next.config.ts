@@ -11,7 +11,7 @@ const nextConfig: NextConfig = androidBuild ? {
     return [
       { source: '/index.html', destination: '/', permanent: true },
       { source: '/sound-tuner.html', destination: '/sound-tuner', permanent: true },
-      ...['baithak', 'tabla', 'harmonium', 'swarmandal'].map(route => ({ source: `/${route}.html`, destination: `/${route}`, permanent: true })),
+      ...['baithak', 'tabla', 'swarmandal'].map(route => ({ source: `/${route}.html`, destination: `/${route}`, permanent: true })),
       { source: '/riyaz', destination: '/baithak', permanent: true },
       { source: '/riyaz.html', destination: '/baithak', permanent: true },
       { source: '/tanpura.html', destination: '/tanpura', permanent: true },

@@ -17,9 +17,6 @@
 .harmonium-controls .control {
   margin: 0;
 }
-.harmonium-key-scroll, .harmonium-power {
-  grid-column: 1 / -1;
-}
 .harmonium-key-scroll {
   overflow-x: auto;
 }
@@ -80,13 +77,4 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
-}
-.harmonium-keyboard p {
-  margin: 8px 0 0;
-  font-size: .82rem;
-}
-@media (min-width: 780px) {
-  .harmonium-card:not(.baithak-strip .harmonium-card) .harmonium-octaves {
-    display: none;
-  }
 }

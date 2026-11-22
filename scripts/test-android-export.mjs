@@ -35,7 +35,7 @@ await context.route('**/*',route=>{
 });
 try{
   await page.goto(`${origin}/index.html`);await page.waitForSelector('nav');
-  const labels=['Sound Tuner','Scale Practice','Baithak','Tanpura','Tabla','Harmonium','Swarmandal','Exercise','Metronome','Ear Tuner'];
+  const labels=['Sound Tuner','Scale Practice','Taalmala','Tanpura','Tabla','Swarmandal','Exercise','Metronome','Ear Tuner'];
   for(const label of labels){
     await page.getByRole('navigation', {name:'VIO tools'}).getByRole('link', {name:label,exact:true}).click();
     await page.waitForLoadState('load');
@@ -68,7 +68,7 @@ try{
   assert.equal(await page.evaluate(async()=> (await navigator.serviceWorker.getRegistrations()).length),0,'Native export must not register a service worker');
   await page.screenshot({path:'release/test-results/scale-practice-mobile.png'});
   assert.deepEqual(errors,[],'Uncaught browser errors');assert.deepEqual(external,[],'External network dependencies');assert.deepEqual(missing,[],'Missing bundled assets');
-  const report={passed:true,checks:['ten local HTML routes','390px mobile layout','tempo preset and start/stop','real bundled tanpura decoding','raw 440Hz microphone -> A4','Sa setup and swara reference playback','no native service worker','no external network dependencies','no page errors or missing assets'],limitations:['Synthetic browser microphone, not a physical Android microphone','Android airplane mode and background audio require on-device acceptance']};
+  const report={passed:true,checks:[`${labels.length} local HTML routes`,'390px mobile layout','tempo preset and start/stop','real bundled tanpura decoding','raw 440Hz microphone -> A4','Sa setup and swara reference playback','no native service worker','no external network dependencies','no page errors or missing assets'],limitations:['Synthetic browser microphone, not a physical Android microphone','Android airplane mode and background audio require on-device acceptance']};
   await writeFile('release/test-results/web-smoke.json',JSON.stringify(report,null,2)+'\n');
   console.log('Android static export browser smoke tests PASS');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}

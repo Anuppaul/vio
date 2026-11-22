@@ -1,9 +1,9 @@
-const VERSION='vio-pwa-v107';
+const VERSION='vio-pwa-v111';
 const APP_CACHE=`${VERSION}-app`;
 const AUDIO_CACHE=`${VERSION}-audio`;
 const RUNTIME_CACHE=`${VERSION}-runtime`;
 
-const ROUTES=['/','/sound-tuner','/scale-practice','/baithak','/tanpura','/tabla','/harmonium','/swarmandal','/exercise','/metronome','/manifest.webmanifest'];
+const ROUTES=['/','/sound-tuner','/scale-practice','/baithak','/tanpura','/tabla','/swarmandal','/exercise','/metronome','/manifest.webmanifest'];
 const TUNER_WORKERS=['/tuner-capture-worklet.js?v=3','/tuner-consensus-worker.js?v=2'];
 const EAR_NOTES=['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
 const EAR_AUDIO=[];
@@ -16,9 +16,9 @@ const METRONOME_AUDIO=[
   '/assets/metronome/tabla-na.wav','/assets/metronome/tabla-tin.wav','/assets/metronome/tabla-ge.wav',
   '/assets/metronome/drum-kick.wav','/assets/metronome/drum-snare.wav','/assets/metronome/drum-hihat.wav'
 ];
-const TABLA_AUDIO=['Dha','Dhin','Ga','Ge','Ke','Na','Ta','Ti','Tin','Tun'].map(stroke=>`/assets/tabla/${stroke}.wav`);
+const TABLA_CATALOG='/assets/tabla/samples.json';
 const ICONS=['/icon.png','/apple-icon.png','/icons/icon-192.png?v=13','/icons/icon-512.png?v=13'];
-const AUDIO=[...EAR_AUDIO,...EXERCISE_AUDIO,...TANPURA_AUDIO,...METRONOME_AUDIO,...TABLA_AUDIO];
+const AUDIO=[...EAR_AUDIO,...EXERCISE_AUDIO,...TANPURA_AUDIO,...METRONOME_AUDIO];
 
 async function cacheOne(cache,url){
   try{
@@ -45,11 +45,15 @@ async function warmApp(){
 
 async function warmAudio(){
   const cache=await caches.open(AUDIO_CACHE);
+  const response=await cacheOne(cache,TABLA_CATALOG);
+  const catalog=await response?.json().catch(()=>({})) ?? {};
+  const tabla=Object.values(catalog).flat().map(sample=>`/assets/tabla/${sample.file}`);
+  const audio=[...AUDIO,...tabla];
   const workers=6;
   let index=0;
   await Promise.all(Array.from({length:workers},async()=>{
-    while(index<AUDIO.length){
-      const current=AUDIO[index++];
+    while(index<audio.length){
+      const current=audio[index++];
       await cacheOne(cache,current);
     }
   }));

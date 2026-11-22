@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH });
 try {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => {
@@ -22,6 +22,7 @@ try {
   });
   const base = process.env.VIO_TEST_URL ?? 'http://localhost:3100';
   await page.goto(new URL('/baithak', base).href);
+  assert.equal(await page.getByRole('navigation').getByRole('link', { name: 'Harmonium', exact: true }).count(), 0);
   const instrument = page.getByRole('region', { name: 'Harmonium', exact: true });
   const modes = instrument.getByLabel('Harmonium mode').locator('option');
   const reeds = instrument.getByLabel('Reed register').locator('option');
@@ -41,9 +42,8 @@ try {
   await sound.uncheck();
   assert.equal(await instrument.getByRole('button', { name: 'Sa', exact: true }).isDisabled(), true);
 
-  await page.getByRole('navigation').getByRole('link', { name: 'Harmonium', exact: true }).click();
-  await page.waitForURL('**/harmonium');
-  const keyboard = page.getByRole('group', { name: 'Harmonium keyboard' });
+  await sound.check();
+  const keyboard = instrument.getByRole('group', { name: 'Harmonium keyboard' });
   assert.equal(await keyboard.locator('[data-harmonium-key]').count(), 37);
   await keyboard.getByRole('button', { name: 'Highest Sa', exact: true }).waitFor();
   const tonic = keyboard.getByRole('button', { name: 'Lower Sa', exact: true });
@@ -59,8 +59,12 @@ try {
   await page.waitForFunction(count => window.harmoniumReleases.length === count + 2, released);
   assert.equal(await keyboard.locator('[aria-pressed="true"]').count(), 0);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  for (const path of ['/harmonium', '/harmonium.html']) {
+    const response = await page.goto(new URL(path, base).href);
+    assert.equal(response.status(), 404, `${path} should no longer serve a standalone page`);
+  }
   assert.deepEqual(errors, []);
-  console.log('Harmonium modes, reeds, drones and 37-key polyphonic keyboard verified.');
+  console.log('Taalmala Harmonium playback and 37-key keyboard verified. Standalone Harmonium routes are gone.');
 } finally {
   await browser.close();
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
-import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
+import { resumeBrowserAudio } from '@/lib/browser-audio';
 import type { MixerChannel } from '@/lib/mixer-channel';
 import type { BaithakAudio } from '@/lib/baithak-audio';
 
@@ -32,22 +32,20 @@ type Session = {
   waves: Map<keyof typeof REEDS, PeriodicWave>;
 };
 
-export default function Harmonium({ frequency, channel, enabled: mixerEnabled, mixAudio }: {
+export default function Harmonium({ frequency, channel, enabled, mixAudio }: {
   frequency: number;
-  channel?: Ref<MixerChannel>;
-  enabled?: boolean;
-  mixAudio?: BaithakAudio;
+  channel: Ref<MixerChannel>;
+  enabled: boolean;
+  mixAudio: BaithakAudio;
 }) {
-  const [mode, setMode] = useState<Mode>(channel ? 'drone' : 'keyboard');
+  const [mode, setMode] = useState<Mode>('drone');
   const [reed, setReed] = useState<keyof typeof REEDS>('male');
   const [drone, setDrone] = useState<keyof typeof DRONES>('pa');
   const [volume, setVolume] = useState(46);
-  const [standaloneDrone, setStandaloneDrone] = useState(false);
   const [error, setError] = useState(false);
   const [pressed, setPressed] = useState<number[]>([]);
   const audio = useRef<Session | null>(null);
   const keyboardScroll = useRef<HTMLDivElement>(null);
-  const enabled = mixerEnabled ?? true;
   const settings = useRef({ frequency, reed, volume });
 
   function release() {
@@ -56,7 +54,6 @@ export default function Harmonium({ frequency, channel, enabled: mixerEnabled, m
     if (!session) return;
     for (const oscillator of session.oscillators) oscillator.stop();
     session.gain.disconnect();
-    if (!mixAudio) void session.context.close().catch(() => {});
   }
 
   function stop() {
@@ -93,12 +90,12 @@ export default function Harmonium({ frequency, channel, enabled: mixerEnabled, m
   async function play(id: string, offset: number) {
     let session = audio.current;
     if (!session) {
-      const mix = mixAudio?.get();
-      const context = mixAudio ? mix?.context : createBrowserAudioContext();
-      if (!context) { setError(true); return; }
+      const mix = mixAudio.get();
+      if (!mix) { setError(true); return; }
+      const { context, output } = mix;
       const gain = context.createGain();
       gain.gain.value = settings.current.volume * .0015;
-      gain.connect(mix?.output ?? context.destination);
+      gain.connect(output);
       session = { context, gain, oscillators: new Set(), voices: new Map(), pending: new Map(), waves: new Map() };
       audio.current = session;
     }
@@ -156,7 +153,7 @@ export default function Harmonium({ frequency, channel, enabled: mixerEnabled, m
         if (mode === 'drone' || id.startsWith('drone:')) endVoice(id);
       }
     }
-    if (enabled && (channel || standaloneDrone)) startDrone();
+    if (enabled) startDrone();
   }, [mode, drone]);
 
   useEffect(() => {
@@ -170,7 +167,6 @@ export default function Harmonium({ frequency, channel, enabled: mixerEnabled, m
     function onVisibility() {
       if (!document.hidden) return;
       stop();
-      setStandaloneDrone(false);
     }
     window.addEventListener('blur', releaseKeys);
     document.addEventListener('visibilitychange', onVisibility);
@@ -183,14 +179,10 @@ export default function Harmonium({ frequency, channel, enabled: mixerEnabled, m
 
   return (
     <section className="card harmonium-card" aria-labelledby="harmonium-heading">
-      {channel ? <h2 id="harmonium-heading" className="baithak-sr-only">Harmonium</h2>
-        : <div className="card-head"><h2 id="harmonium-heading">Harmonium</h2></div>}
+      <h2 id="harmonium-heading" className="baithak-sr-only">Harmonium</h2>
       <div className="section harmonium-controls">
         <label className="control"><span className="control-label">Mode</span>
-          <select aria-label="Harmonium mode" value={mode} onChange={event => {
-            setMode(event.target.value as Mode);
-            setStandaloneDrone(false);
-          }}>
+          <select aria-label="Harmonium mode" value={mode} onChange={event => setMode(event.target.value as Mode)}>
             <option value="drone">Drone box · sur-peti</option>
             <option value="keyboard">Full harmonium · keyboard</option>
           </select>
@@ -209,14 +201,6 @@ export default function Harmonium({ frequency, channel, enabled: mixerEnabled, m
           <input className="range" aria-label="Harmonium volume" type="range" min="0" max="100" value={volume}
             onChange={event => setVolume(Number(event.target.value))} />
         </label>
-        {!channel && mode === 'drone' && <label className="harmonium-power">
-          <input type="checkbox" role="switch" aria-label="Harmonium drone" checked={standaloneDrone}
-            onChange={event => {
-              setStandaloneDrone(event.target.checked);
-              if (event.target.checked) startDrone();
-              else stop();
-            }} /> Drone {standaloneDrone ? 'On' : 'Off'}
-        </label>}
         {mode === 'keyboard' && <div className="harmonium-keyboard">
           <div className="harmonium-octaves" role="group" aria-label="Show octave">
             {['Lower', 'Middle', 'Upper'].map((label, index) => <button key={label} type="button" onClick={() => {
@@ -264,7 +248,6 @@ export default function Harmonium({ frequency, channel, enabled: mixerEnabled, m
               })}
             </div>
           </div>
-          {!channel && <p>Press and hold a note, or focus the keyboard and use your typing keys.</p>}
         </div>}
         {error && <p role="alert">Harmonium audio could not start.</p>}
       </div>

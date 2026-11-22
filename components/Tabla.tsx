@@ -5,12 +5,7 @@ import { TAALS, type Taal } from '@/lib/tabla-taals';
 import type { MixerChannel } from '@/lib/mixer-channel';
 import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-audio';
 import type { BaithakAudio } from '@/lib/baithak-audio';
-
-const STROKES = ['Dha', 'Dhin', 'Ga', 'Ge', 'Ke', 'Na', 'Ta', 'Ti', 'Tin', 'Tun'] as const;
-type Stroke = typeof STROKES[number];
-
-// Naad's first Tun take has a dominant partial near 285 Hz (C4 target).
-const TUN_PITCH_CORRECTION = 261.626 / 285;
+import { loadTablaSamples, type Stroke } from '@/lib/tabla-samples';
 
 // Compound bols are voiced as evenly spaced Naad strokes inside one beat.
 const BOL_STROKES: Record<string, readonly Stroke[]> = {
@@ -115,11 +110,7 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
       await resumeBrowserAudio(context);
       if (playback.current !== session) return;
       if (context.state !== 'running') throw new Error('Audio context unavailable');
-      const buffers = new Map(await Promise.all(STROKES.map(async stroke => {
-        const response = await fetch(`/assets/tabla/${stroke}.wav`, { signal: session.abort.signal });
-        if (!response.ok) throw new Error(`Missing tabla stroke: ${stroke}`);
-        return [stroke, await context.decodeAudioData(await response.arrayBuffer())] as const;
-      })));
+      const nextTake = await loadTablaSamples(context, session.abort.signal);
       if (playback.current !== session) return;
 
       const gain = context.createGain();
@@ -156,10 +147,11 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
         while (nextBeat < now + .09) {
           const beat = beats[index];
           for (const [part, stroke] of beat.strokes.entries()) {
+            const take = nextTake(stroke);
             const source = session.context.createBufferSource();
-            source.buffer = buffers.get(stroke)!;
+            source.buffer = take.buffer;
             source.detune.value = current.cents;
-            source.playbackRate.value = rate * (stroke === 'Tun' ? TUN_PITCH_CORRECTION : 1);
+            source.playbackRate.value = rate * take.rate;
             source.connect(gain);
             session.sources.add(source);
             source.onended = () => {

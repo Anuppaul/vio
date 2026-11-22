@@ -59,7 +59,7 @@ function InstrumentStrip({ name, mark, selected, onSelect, children }: {
 const WHITE_KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const BLACK_KEYS = [['C#', 1], ['D#', 2], ['F#', 4], ['G#', 5], ['A#', 6]] as const;
 
-export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarmandal' | 'harmonium' }) {
+export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarmandal' }) {
   const [mixAudio] = useState(() => new BaithakAudio());
   const [note, setNote] = useState('C');
   const [cents, setCents] = useState(0);
@@ -93,8 +93,7 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
     return (
       <>
         <div className="card section"><SaPicker note={note} onChange={setNote} /></div>
-        {instrument === 'tabla' && <Tabla note={note} semitones={SA_KEYS.indexOf(note)} />}
-        {instrument === 'harmonium' && <Harmonium frequency={frequency * 2} />}
+        <Tabla note={note} semitones={SA_KEYS.indexOf(note)} />
       </>
     );
   }
@@ -120,7 +119,7 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
 
   return (
     <div className="baithak">
-      <header className="baithak-heading"><h1>Baithak</h1></header>
+      <header className="baithak-heading"><h1>Taalmala</h1></header>
       <section className="baithak-tuning" aria-labelledby="master-sa">
         <h2 id="master-sa">Master Sa</h2>
         <div className="baithak-tuning-layout">

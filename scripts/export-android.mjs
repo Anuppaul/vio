@@ -24,7 +24,7 @@ const compactTanpura = spawnSync(process.execPath, ['scripts/compact-tanpura-and
 if (compactTanpura.error) throw compactTanpura.error;
 if (compactTanpura.status !== 0) process.exit(compactTanpura.status ?? 1);
 
-const routes = ['index', 'sound-tuner', 'scale-practice', 'baithak', 'tanpura', 'tabla', 'harmonium', 'swarmandal', 'exercise', 'metronome'];
+const routes = ['index', 'sound-tuner', 'scale-practice', 'baithak', 'tanpura', 'tabla', 'swarmandal', 'exercise', 'metronome'];
 for (const route of routes) {
   const html = await readFile(resolve('out', `${route}.html`), 'utf8');
   assert.match(html, /vio-native/, `${route} is not a native export`);
@@ -34,7 +34,8 @@ for (const route of routes) {
 }
 const keys = ['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
 const tanpuraAudio = ['sa-pa','sa-ma'].flatMap(pattern => keys.map(key => `tanpura/${pattern}_${key}.mp3`));
-const tablaAudio = ['Dha', 'Dhin', 'Ga', 'Ge', 'Ke', 'Na', 'Ta', 'Ti', 'Tin', 'Tun'].map(stroke => `tabla/${stroke}.wav`);
+const tablaCatalog = JSON.parse(await readFile('out/assets/tabla/samples.json', 'utf8'));
+const tablaAudio = Object.values(tablaCatalog).flat().map(sample => `tabla/${sample.file}`);
 const audio = [...tanpuraAudio, ...tablaAudio];
 
 const compactManifest = JSON.parse(

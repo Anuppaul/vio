@@ -27,14 +27,15 @@ try {
     };
   });
   await page.goto(new URL('/baithak', process.env.VIO_TEST_URL ?? 'http://localhost:3100').href);
-  await page.getByRole('heading', { name: 'Baithak', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Taalmala', exact: true }).waitFor();
+  assert.equal(await page.title(), 'Taalmala · VIO');
   const columns = () => page.locator('.baithak-instruments').evaluate(el =>
     getComputedStyle(el).gridTemplateColumns.split(' ').length);
   assert.equal(await columns(), 1);
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.equal(await columns(), 2);
   await page.setViewportSize({ width: 390, height: 844 });
-  assert.equal(await page.getByRole('link', { name: 'Baithak', exact: true }).getAttribute('aria-current'), 'page');
+  assert.equal(await page.getByRole('link', { name: 'Taalmala', exact: true }).getAttribute('aria-current'), 'page');
   const swarmandal = page.getByRole('region', { name: 'Swarmandal', exact: true });
   await swarmandal.waitFor({ timeout: 5000 });
   const tabla = page.getByRole('region', { name: 'Tabla', exact: true });

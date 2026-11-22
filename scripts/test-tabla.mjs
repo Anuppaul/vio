@@ -35,6 +35,13 @@ try {
     };
     const start = AudioBufferSourceNode.prototype.start;
     const stop = AudioBufferSourceNode.prototype.stop;
+    const connect = AudioNode.prototype.connect;
+    const outputs = new WeakMap();
+    const meters = new WeakMap();
+    AudioNode.prototype.connect = function (destination, ...args) {
+      if (destination instanceof AudioNode) outputs.set(this, destination);
+      return connect.call(this, destination, ...args);
+    };
     window.testAudioSources = [];
     window.playedTablaTakes = [];
     window.stoppedAudioSources = new WeakSet();
@@ -46,7 +53,21 @@ try {
     AudioBufferSourceNode.prototype.start = function (...args) {
       window.testAudioSources.push(this);
       const take = sourcesByBuffer.get(this.buffer);
-      if (take) window.playedTablaTakes.push(take);
+      if (take && this.context instanceof AudioContext) {
+        window.playedTablaTakes.push(take);
+        const gain = outputs.get(this);
+        const limiter = outputs.get(gain);
+        const peakGuard = outputs.get(limiter);
+        window.tablaGain = gain.gain;
+        window.tablaLimiter = limiter;
+        window.tablaPeakGuard = peakGuard;
+        if (peakGuard instanceof WaveShaperNode && !meters.has(peakGuard)) {
+          const meter = this.context.createAnalyser();
+          connect.call(peakGuard, meter);
+          meters.set(peakGuard, meter);
+        }
+        window.tablaMeter = meters.get(peakGuard);
+      }
       return start.apply(this, args);
     };
     AudioBufferSourceNode.prototype.stop = function (...args) {
@@ -56,7 +77,7 @@ try {
   });
   const failures = [];
   page.on('pageerror', error => failures.push(error.message));
-  async function verifyRepeatedDha(laya, start, stop) {
+  async function verifyRepeatedDha(laya, start, stop, defaultVolume) {
     await page.getByLabel('Taal', { exact: true }).selectOption('teentaal');
     await page.getByRole('slider', { name: /Tempo/ }).fill('240');
     await laya.selectOption('2');
@@ -64,6 +85,55 @@ try {
     await start();
     await page.waitForFunction(() =>
       window.playedTablaTakes.filter(take => /^Dha(?:\d+)?\.wav$/.test(take)).length >= 12);
+    const volume = page.getByRole('slider', { name: /Tabla volume/ });
+    assert.equal(await volume.inputValue(), String(defaultVolume));
+    assert.ok(Math.abs(await page.evaluate(() => window.tablaGain.value) - defaultVolume * .033) < .001);
+    const boostDb = await page.evaluate(async previousGain => {
+      const limiter = window.tablaLimiter;
+      const peakCurve = window.tablaPeakGuard.curve;
+      const currentGain = window.tablaGain.value;
+      const sampleRate = limiter.context.sampleRate;
+      const response = await fetch('/assets/tabla/Dha.wav');
+      const buffer = await limiter.context.decodeAudioData(await response.arrayBuffer());
+      async function power(level) {
+        const render = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, sampleRate);
+        const source = render.createBufferSource();
+        source.buffer = buffer;
+        const gain = render.createGain();
+        gain.gain.value = level;
+        const compressor = render.createDynamicsCompressor();
+        for (const parameter of ['threshold', 'knee', 'ratio', 'attack', 'release']) {
+          compressor[parameter].value = limiter[parameter].value;
+        }
+        const peakGuard = render.createWaveShaper();
+        peakGuard.curve = peakCurve;
+        source.connect(gain).connect(compressor).connect(peakGuard).connect(render.destination);
+        source.start();
+        const output = await render.startRendering();
+        return output.getChannelData(0).reduce((sum, value) => sum + value ** 2, 0);
+      }
+      const [baseline, boosted] = await Promise.all([power(previousGain), power(currentGain)]);
+      return 10 * Math.log10(boosted / baseline);
+    }, defaultVolume * .0225);
+    assert.ok(boostDb >= 1.5, `Dha output should gain at least 1.5 dB at the default volume, got ${boostDb.toFixed(2)} dB`);
+    console.log(`Dha at ${defaultVolume}% gained ${boostDb.toFixed(2)} dB after the limiter.`);
+    for (const [percent, gain] of [['0', 0], ['100', 3.3]]) {
+      await volume.fill(percent);
+      await page.waitForFunction(target => Math.abs(window.tablaGain.value - target) < .001, gain);
+    }
+    const peak = await page.evaluate(async () => {
+      const meter = window.tablaMeter;
+      const samples = new Float32Array(meter.fftSize);
+      const end = meter.context.currentTime + 1;
+      let peak = 0;
+      while (meter.context.currentTime < end) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        meter.getFloatTimeDomainData(samples);
+        for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+      }
+      return peak;
+    });
+    assert.ok(peak > .05 && peak < 1, `fast Tabla at full volume should produce audible, unclipped output, got peak ${peak}`);
     await stop();
     const dha = await page.evaluate(() =>
       window.playedTablaTakes.filter(take => /^Dha(?:\d+)?\.wav$/.test(take)));
@@ -135,15 +205,15 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await verifyRepeatedDha(tabla.getByLabel('Laya', { exact: true }),
-    () => tablaSound.check(), () => tablaSound.uncheck());
+    () => tablaSound.check(), () => tablaSound.uncheck(), 38);
   await page.getByRole('navigation').getByRole('link', { name: 'Tabla', exact: true }).click();
   await page.waitForURL('**/tabla');
   assert.equal(await page.getByLabel('Taal', { exact: true }).locator('option').count(), 38);
   await verifyRepeatedDha(page.getByLabel('Layakari', { exact: true }),
     () => page.getByRole('button', { name: 'Play Tabla', exact: true }).click(),
-    () => page.getByRole('button', { name: 'Stop Tabla', exact: true }).click());
+    () => page.getByRole('button', { name: 'Stop Tabla', exact: true }).click(), 65);
   assert.deepEqual(failures, []);
-  console.log('Repeated Dha rotates through different recordings in Taalmala and Tabla. Concurrent playback and mobile layout verified.');
+  console.log('Tabla boost, mute, fast playback peaks, and rotating Dha takes verified in Taalmala and Tabla.');
 } finally {
   await browser.close();
 }

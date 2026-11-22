@@ -7,6 +7,14 @@ import { createBrowserAudioContext, resumeBrowserAudio } from '@/lib/browser-aud
 import type { BaithakAudio } from '@/lib/baithak-audio';
 import { loadTablaSamples, type Stroke } from '@/lib/tabla-samples';
 
+const TABLA_MAX_GAIN = 3.3;
+const TABLA_PEAK_CURVE = Float32Array.from({ length: 1025 }, (_, index) => {
+  const sample = index / 512 - 1;
+  const magnitude = Math.abs(sample);
+  if (magnitude <= .7) return sample;
+  return Math.sign(sample) * (.7 + .2 * Math.tanh((magnitude - .7) / .2));
+});
+
 // Compound bols are voiced as evenly spaced Naad strokes inside one beat.
 const BOL_STROKES: Record<string, readonly Stroke[]> = {
   '-': [],
@@ -19,8 +27,6 @@ const BOL_STROKES: Record<string, readonly Stroke[]> = {
   Tira: ['Ti', 'Ta'], Tirakita: ['Ti', 'Ta', 'Ke', 'Ta'],
   Tita: ['Ti', 'Ta'], Traka: ['Ta', 'Ti', 'Ke', 'Ta'],
 };
-
-export type TablaReadout = { name: string; bpm: number; beat: number; total: number };
 
 function rhythm(taal: Taal) {
   return TAALS[taal].beats.split(' | ').flatMap((group, division) =>
@@ -36,32 +42,52 @@ const TAAL_OPTIONS = Object.entries(TAALS).map(([id, item]) => ({
   id, label: `${item.name} — ${rhythm(id as Taal).length} beats`,
 }));
 
+const LAYAS = [
+  { rate: .5, label: 'Aadh', mark: '½×' },
+  { rate: 1, label: 'Thah', mark: '1×' },
+  { rate: 2, label: 'Dugun', mark: '2×' },
+  { rate: 3, label: 'Tigun', mark: '3×' },
+  { rate: 4, label: 'Chaugun', mark: '4×' },
+];
+
+function formatRemaining(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 type Playback = {
   context: AudioContext;
   abort: AbortController;
   gain?: GainNode;
+  limiter?: DynamicsCompressorNode;
+  peakGuard?: WaveShaperNode;
   sources: Set<AudioBufferSourceNode>;
   ownsContext: boolean;
   timer?: ReturnType<typeof setInterval>;
 };
 
-export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, onReadout }: {
+export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, onPlaybackEnd }: {
   note: string; semitones: number; cents?: number; channel?: Ref<MixerChannel>; mixAudio?: BaithakAudio;
-  onReadout?: (readout: TablaReadout) => void;
+  onPlaybackEnd?: () => void;
 }) {
   const [taal, setTaal] = useState<Taal>('teentaal');
   const [bpm, setBpm] = useState(channel ? 33 : 80);
   const [layakari, setLayakari] = useState(1);
+  const [delayMinutes, setDelayMinutes] = useState('0');
+  const [delayRemaining, setDelayRemaining] = useState<number | null>(null);
+  const [practiceEnabled, setPracticeEnabled] = useState(false);
+  const [practiceMinutes, setPracticeMinutes] = useState(LAYAS.map(() => '6'));
+  const [practice, setPractice] = useState<{ stage: number; stageRemaining: number; totalRemaining: number } | null>(null);
   const [volume, setVolume] = useState(channel ? 38 : 65);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'playing' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'playing' | 'complete' | 'invalid-duration' | 'invalid-delay' | 'error'>('idle');
   const [activeBeat, setActiveBeat] = useState(-1);
   const playback = useRef<Playback | null>(null);
   const settings = useRef({ taal, bpm, layakari, volume, semitones, cents });
+  const totalMinutes = practiceMinutes.reduce((sum, value) => sum + Number(value), 0);
 
   useEffect(() => {
     settings.current = { taal, bpm, layakari, volume, semitones, cents };
     const session = playback.current;
-    session?.gain?.gain.setTargetAtTime(volume * .0035, session.context.currentTime, .02);
+    session?.gain?.gain.setTargetAtTime(volume / 100 * TABLA_MAX_GAIN, session.context.currentTime, .02);
   }, [taal, bpm, layakari, volume, semitones, cents]);
 
   function release() {
@@ -72,12 +98,16 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
     clearInterval(session.timer);
     for (const source of session.sources) source.stop();
     session.gain?.disconnect();
+    session.limiter?.disconnect();
+    session.peakGuard?.disconnect();
     if (session.ownsContext) void session.context.close().catch(() => {});
   }
 
   function stop() {
     release();
     setActiveBeat(-1);
+    setPractice(null);
+    setDelayRemaining(null);
     setStatus('idle');
   }
 
@@ -95,10 +125,33 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
 
   async function play() {
     if (playback.current) return;
+    const delaySeconds = Number(delayMinutes) * 60;
+    if (!Number.isFinite(delaySeconds) || delaySeconds < 0) {
+      setStatus('invalid-delay');
+      onPlaybackEnd?.();
+      return;
+    }
+    let durationSeconds = 0;
+    const plan: { stage: number; end: number }[] = [];
+    if (practiceEnabled) {
+      const durations = practiceMinutes.map(value => Number(value) * 60);
+      if (!Number.isFinite(totalMinutes * 60) || totalMinutes <= 0 ||
+          durations.some(seconds => seconds !== 0 && seconds < 6)) {
+        setStatus('invalid-duration');
+        onPlaybackEnd?.();
+        return;
+      }
+      for (const [stage, seconds] of durations.entries()) {
+        if (!seconds) continue;
+        durationSeconds += seconds;
+        plan.push({ stage, end: durationSeconds });
+      }
+    }
     const mix = mixAudio?.get();
     const context = mixAudio ? mix?.context : createBrowserAudioContext();
     if (!context) {
       setStatus('error');
+      onPlaybackEnd?.();
       return;
     }
 
@@ -110,23 +163,76 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
       await resumeBrowserAudio(context);
       if (playback.current !== session) return;
       if (context.state !== 'running') throw new Error('Audio context unavailable');
+      const delayEndAt = context.currentTime + delaySeconds;
       const nextTake = await loadTablaSamples(context, session.abort.signal);
       if (playback.current !== session) return;
 
       const gain = context.createGain();
+      const limiter = context.createDynamicsCompressor();
+      const peakGuard = context.createWaveShaper();
       session.gain = gain;
-      gain.gain.value = settings.current.volume * .0035;
-      gain.connect(mix?.output ?? context.destination);
+      session.limiter = limiter;
+      session.peakGuard = peakGuard;
+      gain.gain.value = settings.current.volume / 100 * TABLA_MAX_GAIN;
+      // Fast bols can overlap. Leave headroom for the rest of the Taalmala mix.
+      limiter.threshold.value = -4;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = .001;
+      limiter.release.value = .06;
+      // Round off transients that slip through the compressor on dense bols.
+      peakGuard.curve = TABLA_PEAK_CURVE;
+      gain.connect(limiter).connect(peakGuard).connect(mix?.output ?? context.destination);
 
       let selectedTaal = settings.current.taal;
       let beats = rhythm(selectedTaal);
       let index = 0;
-      let nextBeat = context.currentTime + .04;
+      const startAt = Math.max(context.currentTime, delayEndAt) + .04;
+      const endAt = durationSeconds ? startAt + durationSeconds : Infinity;
+      let nextBeat = startAt;
+      let lastDelayRemaining: number | null = null;
+      let lastStage = -1;
+      let lastStageRemaining = -1;
+      let lastRemaining = -1;
       let pending: { index: number; time: number }[] = [];
+
+      function practiceStep(at: number) {
+        return plan.find(step => at < startAt + step.end) ?? plan[plan.length - 1];
+      }
 
       function schedule() {
         if (playback.current !== session) return;
         const now = session.context.currentTime;
+        if (now < delayEndAt) {
+          const remaining = Math.ceil(delayEndAt - now);
+          if (remaining !== lastDelayRemaining) {
+            lastDelayRemaining = remaining;
+            setDelayRemaining(remaining);
+          }
+          return;
+        }
+        if (lastDelayRemaining !== null) {
+          lastDelayRemaining = null;
+          setDelayRemaining(null);
+        }
+        if (now >= endAt) {
+          stop();
+          setStatus('complete');
+          onPlaybackEnd?.();
+          return;
+        }
+        if (durationSeconds) {
+          const { stage, end } = practiceStep(now);
+          const elapsed = Math.max(0, now - startAt);
+          const stageRemaining = Math.ceil(end - elapsed);
+          const remaining = Math.ceil(durationSeconds - elapsed);
+          if (stage !== lastStage || stageRemaining !== lastStageRemaining || remaining !== lastRemaining) {
+            setPractice({ stage, stageRemaining, totalRemaining: remaining });
+            lastStage = stage;
+            lastStageRemaining = stageRemaining;
+            lastRemaining = remaining;
+          }
+        }
         const current = settings.current;
         if (current.taal !== selectedTaal) {
           selectedTaal = current.taal;
@@ -140,13 +246,16 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
         }
 
         // Recover from a delayed timer without playing missed beats all at once.
-        const duration = 60 / (current.bpm * current.layakari);
         if (nextBeat < now) nextBeat = now + .015;
         // Na and Tin in the Naad set have a sustained partial near C5.
         const rate = 2 ** ((current.semitones > 6 ? current.semitones - 12 : current.semitones) / 12);
-        while (nextBeat < now + .09) {
+        while (nextBeat < Math.min(now + .09, endAt)) {
+          const laya = durationSeconds ? LAYAS[practiceStep(nextBeat).stage].rate : current.layakari;
+          const duration = 60 / (current.bpm * laya);
           const beat = beats[index];
           for (const [part, stroke] of beat.strokes.entries()) {
+            const at = nextBeat + part * duration / beat.strokes.length;
+            if (at >= endAt) break;
             const take = nextTake(stroke);
             const source = session.context.createBufferSource();
             source.buffer = take.buffer;
@@ -158,7 +267,6 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
               session.sources.delete(source);
               source.disconnect();
             };
-            const at = nextBeat + part * duration / beat.strokes.length;
             source.start(at);
           }
           pending.push({ index, time: nextBeat });
@@ -174,6 +282,7 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
       if (playback.current !== session) return;
       release();
       setStatus('error');
+      onPlaybackEnd?.();
     }
   }
 
@@ -182,10 +291,8 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
   const playing = status === 'playing';
   const busy = status === 'loading' || playing;
   const beats = rhythm(taal);
-  const total = beats.length;
-  useEffect(() => {
-    onReadout?.({ name: TAALS[taal].name, bpm, beat: activeBeat, total });
-  }, [onReadout, taal, bpm, activeBeat, total]);
+  const effectiveBpm = practice ? bpm * LAYAS[practice.stage].rate : bpm;
+  const firstPracticeLaya = LAYAS.find((_, index) => Number(practiceMinutes[index]) > 0)?.rate ?? LAYAS[0].rate;
 
   const cycle = beats.reduce<number[]>((groups, beat) => {
     if (!groups.length || beat.divisionStart) groups.push(1);
@@ -217,12 +324,10 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
         </label>
         <label className="control">
           <span className="control-label" id="tabla-layakari-label">{channel ? 'Laya' : 'Layakari'}</span>
-          <select aria-labelledby="tabla-layakari-label" value={layakari} onChange={event => setLayakari(Number(event.target.value))}>
-            <option value={0.5}>Aadh · ½×</option>
-            <option value={1}>Thah · 1×</option>
-            <option value={2}>Dugun · 2×</option>
-            <option value={3}>Tigun · 3×</option>
-            <option value={4}>Chaugun · 4×</option>
+          <select aria-labelledby="tabla-layakari-label" disabled={practiceEnabled}
+            value={practice ? LAYAS[practice.stage].rate : practiceEnabled ? firstPracticeLaya : layakari}
+            onChange={event => setLayakari(Number(event.target.value))}>
+            {LAYAS.map(({ rate, label, mark }) => <option key={rate} value={rate}>{label} · {mark}</option>)}
           </select>
         </label>
         {channel && <div className="baithak-cycle">
@@ -238,10 +343,51 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
           <span className="control-label"><span>Tabla volume</span><span>{volume}%</span></span>
           <input className="range" type="range" min="0" max="100" value={volume} onChange={event => setVolume(Number(event.target.value))} />
         </label>
+        <label className="control baithak-wide tabla-delay">
+          <span className="control-label">Start delay (min)</span>
+          <input type="number" min="0" step="any" value={delayMinutes} disabled={busy}
+            onChange={event => {
+              setDelayMinutes(event.target.value);
+              if (status === 'complete' || status === 'invalid-delay') setStatus('idle');
+            }} />
+        </label>
+        <label className="tabla-practice-toggle">
+          <input type="checkbox" checked={practiceEnabled} disabled={busy}
+            onChange={event => {
+              setPracticeEnabled(event.target.checked);
+              if (status === 'complete' || status === 'invalid-duration') setStatus('idle');
+            }} /> Timed practice
+        </label>
+        {practiceEnabled && <fieldset className="tabla-practice" disabled={busy}>
+          <legend>Minutes per laya</legend>
+          <div className="tabla-practice-stages">
+            {LAYAS.map(({ rate, mark }, index) => <label key={rate} aria-current={practice?.stage === index ? 'step' : undefined}>
+              <span>{mark}</span>
+              <input type="number" aria-label={`${mark} minutes`} min="0" step="any" value={practiceMinutes[index]}
+                onChange={event => {
+                  const value = event.target.value;
+                  setPracticeMinutes(previous => previous.map((minutes, i) => i === index ? value : minutes));
+                  if (status === 'complete' || status === 'invalid-duration') setStatus('idle');
+                }} />
+            </label>)}
+          </div>
+          <small>Total {Number.isFinite(totalMinutes) ? Number(totalMinutes.toFixed(2)) : '–'} min · 0 skips a laya</small>
+        </fieldset>}
+        {delayRemaining !== null && <div className="tabla-status tabla-practice-readout" aria-live="off">
+          <strong>Tabla starts in {formatRemaining(delayRemaining)}</strong>
+        </div>}
+        {practice && <div className="tabla-status tabla-practice-readout" aria-live="off">
+          <strong>Now playing {LAYAS[practice.stage].mark} · {effectiveBpm} BPM</strong>
+          <span>Laya {formatRemaining(practice.stageRemaining)} left</span>
+          <span>Total {formatRemaining(practice.totalRemaining)} left</span>
+        </div>}
+        {status === 'complete' && <p className="tabla-status" role="status">Practice complete</p>}
+        {status === 'invalid-duration' && <p className="tabla-status" role="alert">Set at least one laya to 0.1 minutes or more. Use 0 to skip a laya.</p>}
+        {status === 'invalid-delay' && <p className="tabla-status" role="alert">Enter a start delay of 0 minutes or more.</p>}
         {!channel && theka}
         {status === 'error' && <p className="tabla-status" role="alert">Tabla audio could not load. Try again.</p>}
         {!channel && <button className={`primary ${busy ? 'danger' : ''}`} onClick={busy ? stop : () => void play()}>
-          {playing ? 'Stop Tabla' : busy ? 'Cancel Loading' : 'Play Tabla'}
+          {delayRemaining !== null ? 'Cancel Start' : playing ? 'Stop Tabla' : busy ? 'Cancel Loading' : 'Play Tabla'}
         </button>}
       </div>
     </section>

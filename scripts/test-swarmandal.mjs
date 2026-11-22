@@ -5,12 +5,6 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.addInitScript(() => {
-    const oscillatorStart = OscillatorNode.prototype.start;
-    window.harmoniumTestSources = [];
-    OscillatorNode.prototype.start = function (...args) {
-      window.harmoniumTestSources.push(this);
-      return oscillatorStart.apply(this, args);
-    };
     const start = AudioBufferSourceNode.prototype.start;
     const stop = AudioBufferSourceNode.prototype.stop;
     window.swarmandalTestSources = [];
@@ -29,11 +23,30 @@ try {
   await page.goto(new URL('/baithak', process.env.VIO_TEST_URL ?? 'http://localhost:3100').href);
   await page.getByRole('heading', { name: 'Taalmala', exact: true }).waitFor();
   assert.equal(await page.title(), 'Taalmala · VIO');
+  const master = page.getByRole('region', { name: 'Master Sa', exact: true });
+  for (const text of ['Fine tune', '0¢', 'A 440.0 Hz', 'Sa 261.6 Hz', 'Master Mix']) {
+    assert.equal(await master.getByText(text, { exact: true }).count(), 1);
+  }
   const columns = () => page.locator('.baithak-instruments').evaluate(el =>
     getComputedStyle(el).gridTemplateColumns.split(' ').length);
+  const mixSound = page.getByRole('switch', { name: 'Mix sound' });
+  const fineTune = page.getByRole('slider', { name: 'Fine tune', exact: true });
+  async function verifyMasterLayout() {
+    const [fineTuneBox, masterBox] = await Promise.all([fineTune.boundingBox(), mixSound.boundingBox()]);
+    assert.ok(masterBox.x >= fineTuneBox.x + fineTuneBox.width, 'Mix switch is to the right of Fine tune');
+    assert.ok(Math.abs((masterBox.y + masterBox.height / 2) - (fineTuneBox.y + fineTuneBox.height / 2)) < 2);
+  }
   assert.equal(await columns(), 1);
+  await verifyMasterLayout();
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.equal(await columns(), 2);
+  await verifyMasterLayout();
+  const strip = name => page.locator(`.baithak-strip[data-instrument="${name}"]`);
+  assert.equal(await strip('Harmonium').count(), 0);
+  const [tanpuraBox, tablaBox, swarmandalBox] = await Promise.all(
+    ['Tanpura', 'Tabla', 'Swarmandal'].map(name => strip(name).boundingBox()));
+  assert.equal(swarmandalBox.x, tanpuraBox.x);
+  assert.ok(swarmandalBox.x < tablaBox.x && swarmandalBox.y >= tanpuraBox.y + tanpuraBox.height);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.getByRole('link', { name: 'Taalmala', exact: true }).getAttribute('aria-current'), 'page');
   const swarmandal = page.getByRole('region', { name: 'Swarmandal', exact: true });
@@ -53,17 +66,13 @@ try {
   assert.equal(await swarmandal.locator('[data-string]').count(), 0);
   await swarmandal.getByRole('slider', { name: 'Sweep Every' }).fill('2');
   await swarmandal.getByRole('slider', { name: 'Speed' }).fill('25');
-  await page.getByRole('slider', { name: 'Fine tune' }).fill('15');
-  const mixSound = page.getByRole('switch', { name: 'Mix sound' });
-  const harmoniumSound = page.getByRole('switch', { name: 'Harmonium sound' });
+  await fineTune.fill('15');
+  assert.equal(await master.getByText('+15¢', { exact: true }).count(), 1);
+  assert.equal(await master.getByText('A 443.8 Hz', { exact: true }).count(), 1);
+  const tanpuraSound = page.getByRole('switch', { name: 'Tanpura sound' });
   await mixSound.check();
-  await harmoniumSound.check();
-  await page.waitForFunction(() =>
-    window.harmoniumTestSources.some(source => source.context.state === 'running'));
   await tabla.locator('[aria-current="step"]').waitFor();
-  const transport = page.locator('.baithak-transport');
-  assert.match(await transport.innerText(), /Teentaal[\s\S]*33 BPM/);
-  assert.match(await transport.locator('output').innerText(), /^\d+\/16$/);
+  assert.doesNotMatch(await master.innerText(), /Teentaal|BPM|\/16/);
   await page.waitForFunction(() => window.swarmandalTestSources.some(source => source.loop));
 
   const activeContexts = () => page.evaluate(() =>
@@ -85,14 +94,14 @@ try {
     window.swarmandalTestSources.some(source => source.loop && !window.stoppedSources.has(source) && source.context.state === 'running'));
   for (const width of [320, 390, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
+    await verifyMasterLayout();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Horizontal overflow at ${width}px`);
   }
   await mixSound.uncheck();
   await page.waitForFunction(() => window.swarmandalTestSources.every(source => source.context.state === 'closed'));
-  assert.equal(await harmoniumSound.isChecked(), false);
-  await page.waitForFunction(() => window.harmoniumTestSources.every(source => source.context.state === 'closed'));
+  assert.equal(await tanpuraSound.isChecked(), false);
   await mixSound.check();
-  assert.equal(await harmoniumSound.isChecked(), true);
+  assert.equal(await tanpuraSound.isChecked(), true);
   assert.equal(await page.getByRole('switch', { name: 'Swarmandal sound' }).isChecked(), false);
   await mixSound.uncheck();
   const routes = { tanpura: 'Tanpura Drone', tabla: 'Tabla', swarmandal: 'Swarmandal' };
@@ -138,7 +147,7 @@ try {
       assert.equal(await page.getByRole('region', { name: other, exact: true }).count(), 0);
     }
   }
-  console.log('Swarmandal tuning, manual and timed playback, master tuning, Harmonium, mix transport, and independent stop verified.');
+  console.log('Swarmandal left-column layout, tuning, playback, mix transport, and independent stop verified.');
 } finally {
   await browser.close();
 }

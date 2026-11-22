@@ -2,34 +2,34 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Tanpura from '@/components/Tanpura';
-import Tabla, { type TablaReadout } from '@/components/Tabla';
+import Tabla from '@/components/Tabla';
 import Swarmandal from '@/components/Swarmandal';
-import Harmonium from '@/components/Harmonium';
 import type { MixerChannel } from '@/lib/mixer-channel';
 import { BaithakAudio } from '@/lib/baithak-audio';
 import SaPicker from '@/components/SaPicker';
 import { SA_KEYS, saFrequency } from '@/lib/riyaaz';
 
-const CHANNELS = ['Tanpura', 'Tabla', 'Harmonium', 'Swarmandal'] as const;
+const CHANNELS = ['Tanpura', 'Tabla', 'Swarmandal'] as const;
 type ChannelName = typeof CHANNELS[number];
 
 const PANEL_LABELS = {
   Tanpura: ['तानपुरा', 'Drone'], Tabla: ['तबला', 'Taal'],
-  Harmonium: ['हारमोनियम', 'Sur'], Swarmandal: ['स्वरमंडल', 'Strings'],
+  Swarmandal: ['स्वरमंडल', 'Strings'],
 };
 
-const SILENT = { Tanpura: false, Tabla: false, Harmonium: false, Swarmandal: false };
+const SILENT = { Tanpura: false, Tabla: false, Swarmandal: false };
 
-function SoundSwitch({ label, on, onChange }: {
+function SoundSwitch({ label, on, onChange, showState = true }: {
   label: string;
   on: boolean;
   onChange: (on: boolean) => void;
+  showState?: boolean;
 }) {
   return (
     <label className="baithak-switch">
       <input type="checkbox" role="switch" aria-label={label} checked={on}
         onChange={event => onChange(event.target.checked)} />
-      <span aria-hidden="true">{on ? 'On' : 'Off'}</span>
+      {showState && <span aria-hidden="true">{on ? 'On' : 'Off'}</span>}
     </label>
   );
 }
@@ -42,7 +42,7 @@ function InstrumentStrip({ name, mark, selected, onSelect, children }: {
   children: ReactNode;
 }) {
   return (
-    <div className="baithak-strip" data-enabled={selected}>
+    <div className="baithak-strip" data-instrument={name} data-enabled={selected}>
       <header>
         <span className="baithak-mark" aria-hidden="true">{mark}</span>
         <div className="baithak-strip-name">
@@ -63,18 +63,17 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
   const [mixAudio] = useState(() => new BaithakAudio());
   const [note, setNote] = useState('C');
   const [cents, setCents] = useState(0);
-  const [tablaReadout, setTablaReadout] = useState<TablaReadout | null>(null);
+  const tuningRatio = 2 ** (cents / 1200);
   const [enabled, setEnabled] = useState(SILENT);
-  const lastMix = useRef({ Tanpura: true, Tabla: true, Harmonium: false, Swarmandal: true });
+  const lastMix = useRef({ Tanpura: true, Tabla: true, Swarmandal: true });
   const tanpura = useRef<MixerChannel>(null);
   const tabla = useRef<MixerChannel>(null);
-  const harmonium = useRef<MixerChannel>(null);
   const swarmandal = useRef<MixerChannel>(null);
   useEffect(() => {
     if (instrument) return;
     function silenceOnHide() {
       if (!document.hidden) return;
-      [tanpura, tabla, harmonium, swarmandal].forEach(channel => channel.current?.stop());
+      [tanpura, tabla, swarmandal].forEach(channel => channel.current?.stop());
       mixAudio.close();
       setEnabled(SILENT);
     }
@@ -84,8 +83,6 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
       mixAudio.close();
     };
   }, [instrument, mixAudio]);
-
-  const frequency = saFrequency(note) * 2 ** (cents / 1200);
 
   if (instrument === 'swarmandal') return <Swarmandal note={note} onNoteChange={setNote} />;
 
@@ -98,7 +95,7 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
     );
   }
 
-  const channels = { Tanpura: tanpura, Tabla: tabla, Harmonium: harmonium, Swarmandal: swarmandal };
+  const channels = { Tanpura: tanpura, Tabla: tabla, Swarmandal: swarmandal };
   function select(name: ChannelName, selected: boolean) {
     setEnabled(previous => ({ ...previous, [name]: selected }));
     if (selected) channels[name].current?.start();
@@ -107,8 +104,8 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
 
   function toggleMix(on: boolean) {
     if (on) {
-      CHANNELS.forEach(name => { if (lastMix.current[name]) channels[name].current?.start(); });
       setEnabled(lastMix.current);
+      CHANNELS.forEach(name => { if (lastMix.current[name]) channels[name].current?.start(); });
     } else {
       lastMix.current = enabled;
       CHANNELS.forEach(name => channels[name].current?.stop());
@@ -130,11 +127,15 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
               style={{ left: `${edge / 7 * 100}%` }} aria-pressed={note === key} onClick={() => setNote(key)}>{key}</button>)}
           </div>
           <label className="baithak-fine">
-            <span><strong>Fine tune</strong><output>{cents > 0 ? '+' : ''}{cents}¢</output></span>
-            <input type="range" className="range" aria-label="Fine tune" min="-50" max="50" value={cents}
-              onChange={event => setCents(Number(event.target.value))} />
-            <span><span>A { (440 * 2 ** (cents / 1200)).toFixed(1) } Hz</span><span>Sa { (frequency * 2).toFixed(1) } Hz</span></span>
+            <span><strong>Fine tune</strong><output aria-live="off">{cents > 0 ? '+' : ''}{cents}¢</output></span>
+            <input type="range" className="range" aria-label="Fine tune" aria-valuetext={`${cents} cents`}
+              min="-50" max="50" value={cents} onChange={event => setCents(Number(event.target.value))} />
+            <span><span>A {(440 * tuningRatio).toFixed(1)} Hz</span><span>Sa {(saFrequency(note) * 2 * tuningRatio).toFixed(1)} Hz</span></span>
           </label>
+          <div className="baithak-master-mix">
+            <strong>Master Mix</strong>
+            <SoundSwitch label="Mix sound" showState={false} on={CHANNELS.some(name => enabled[name])} onChange={toggleMix} />
+          </div>
         </div>
       </section>
       <div className="baithak-instruments">
@@ -142,25 +143,13 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
           <Tanpura sa={{ note, onChange: setNote }} cents={cents} channel={tanpura} mixAudio={mixAudio} />
         </InstrumentStrip>
         <InstrumentStrip name="Tabla" mark="◉" selected={enabled.Tabla} onSelect={value => select('Tabla', value)}>
-          <Tabla note={note} semitones={SA_KEYS.indexOf(note)} cents={cents} channel={tabla} mixAudio={mixAudio} onReadout={setTablaReadout} />
-        </InstrumentStrip>
-        <InstrumentStrip name="Harmonium" mark="♩" selected={enabled.Harmonium} onSelect={value => select('Harmonium', value)}>
-          <Harmonium frequency={frequency * 2} channel={harmonium} enabled={enabled.Harmonium} mixAudio={mixAudio} />
+          <Tabla note={note} semitones={SA_KEYS.indexOf(note)} cents={cents} channel={tabla} mixAudio={mixAudio}
+            onPlaybackEnd={() => setEnabled(previous => ({ ...previous, Tabla: false }))} />
         </InstrumentStrip>
         <InstrumentStrip name="Swarmandal" mark="♬" selected={enabled.Swarmandal} onSelect={value => select('Swarmandal', value)}>
           <Swarmandal mode="mix" note={note} cents={cents} channel={swarmandal} mixAudio={mixAudio} />
         </InstrumentStrip>
       </div>
-      <footer className="baithak-transport" aria-label="Mix transport">
-        <div className="baithak-mix-readout">
-          <strong>{tablaReadout?.name ?? 'Mix'}</strong>
-          <span>{tablaReadout?.bpm || '–'} BPM <span aria-hidden="true">·</span> Sa {note}</span>
-        </div>
-        {tablaReadout && <output className="baithak-transport-beat" aria-label="Tabla beat">
-          {tablaReadout.beat < 0 ? '–' : tablaReadout.beat + 1}<span>/{tablaReadout.total}</span>
-        </output>}
-        <SoundSwitch label="Mix sound" on={CHANNELS.some(name => enabled[name])} onChange={toggleMix} />
-      </footer>
     </div>
   );
 }

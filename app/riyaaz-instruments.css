@@ -9,7 +9,9 @@
 .tabla-controls .control {
   margin: 0;
 }
-.tabla-controls select {
+.tabla-controls select,
+.tabla-practice input[type="number"],
+.tabla-delay input {
   width: 100%;
   min-height: 42px;
   padding: 6px 10px;
@@ -48,8 +50,53 @@
   color: #fff;
 }
 .tabla-controls > .primary,
-.tabla-status {
+.tabla-status,
+.tabla-practice,
+.tabla-practice-toggle {
   grid-column: 1 / -1;
+}
+.tabla-practice-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tabla-practice {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+}
+.tabla-practice-stages {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.tabla-controls > .tabla-delay { grid-column: 1 / -1; }
+.tabla-practice-stages label {
+  display: grid;
+  gap: 3px;
+  text-align: center;
+}
+.tabla-practice-stages label[aria-current="step"] {
+  color: var(--focus, #553b87);
+  font-weight: 700;
+}
+.tabla-practice input[type="number"] {
+  min-width: 0;
+  padding-inline: 3px;
+  text-align: center;
+}
+.tabla-practice label[aria-current="step"] input {
+  border-color: currentColor;
+}
+.tabla-practice-readout {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 2px;
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 480px) {
   .tabla-controls { gap: 10px; }

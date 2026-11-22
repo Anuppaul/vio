@@ -141,7 +141,7 @@ try {
     assert.ok(dha.slice(1).every((take, index) => take !== dha[index]),
       'a recording cannot repeat on successive occurrences of the same bol');
   }
-  await page.goto(new URL('/baithak', process.env.VIO_TEST_URL ?? 'http://localhost:3100').href);
+  await page.goto(new URL('/taalmala', process.env.VIO_TEST_URL ?? 'http://localhost:3100').href);
   const tanpuraSound = page.getByRole('switch', { name: 'Tanpura sound' });
   const tablaSound = page.getByRole('switch', { name: 'Tabla sound' });
   const tabla = page.getByRole('region', { name: 'Tabla', exact: true });

@@ -24,7 +24,7 @@ const compactTanpura = spawnSync(process.execPath, ['scripts/compact-tanpura-and
 if (compactTanpura.error) throw compactTanpura.error;
 if (compactTanpura.status !== 0) process.exit(compactTanpura.status ?? 1);
 
-const routes = ['index', 'sound-tuner', 'scale-practice', 'baithak', 'tanpura', 'tabla', 'swarmandal', 'exercise', 'metronome'];
+const routes = ['index', 'sound-tuner', 'scale-practice', 'taalmala', 'tanpura', 'tabla', 'swarmandal', 'exercise', 'metronome'];
 for (const route of routes) {
   const html = await readFile(resolve('out', `${route}.html`), 'utf8');
   assert.match(html, /vio-native/, `${route} is not a native export`);

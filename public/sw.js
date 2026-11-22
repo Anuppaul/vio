@@ -1,9 +1,10 @@
-const VERSION='vio-pwa-v120';
+const VERSION='vio-pwa-v121';
 const APP_CACHE=`${VERSION}-app`;
 const AUDIO_CACHE=`${VERSION}-audio`;
 const RUNTIME_CACHE=`${VERSION}-runtime`;
 
-const ROUTES=['/','/sound-tuner','/scale-practice','/baithak','/tanpura','/tabla','/swarmandal','/exercise','/metronome','/manifest.webmanifest'];
+const ROUTES=['/','/sound-tuner','/scale-practice','/taalmala','/tanpura','/tabla','/swarmandal','/exercise','/metronome','/manifest.webmanifest'];
+const TAALMALA_ALIASES=new Set(['/taalmala.html','/baithak','/baithak.html','/riyaz','/riyaz.html']);
 const TUNER_WORKERS=['/tuner-capture-worklet.js?v=3','/tuner-consensus-worker.js?v=2'];
 const EAR_NOTES=['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
 const EAR_AUDIO=[];
@@ -107,6 +108,11 @@ self.addEventListener('fetch',event=>{
   if(url.origin!==self.location.origin) return;
 
   if(request.mode==='navigate'){
+    if(TAALMALA_ALIASES.has(url.pathname.replace(/\/$/,''))){
+      url.pathname='/taalmala';
+      event.respondWith(Response.redirect(url.href,308));
+      return;
+    }
     event.respondWith(networkFirst(request));
     return;
   }

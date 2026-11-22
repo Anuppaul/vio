@@ -20,7 +20,17 @@ try {
       return stop.apply(this, args);
     };
   });
-  await page.goto(new URL('/baithak', process.env.VIO_TEST_URL ?? 'http://localhost:3100').href);
+  const base = process.env.VIO_TEST_URL ?? 'http://localhost:3100';
+  for (const alias of ['/taalmala.html', '/baithak', '/baithak.html', '/riyaz', '/riyaz.html']) {
+    const response = await page.request.get(new URL(`${alias}?source=bookmark`, base).href, { maxRedirects: 0 });
+    assert.equal(response.status(), 308);
+    assert.equal(response.headers().location, '/taalmala?source=bookmark');
+  }
+  await page.goto(base);
+  const taalmalaLink = page.getByRole('link', { name: 'Taalmala', exact: true });
+  assert.equal(await taalmalaLink.getAttribute('href'), '/taalmala');
+  await taalmalaLink.click();
+  await page.waitForURL('**/taalmala');
   await page.getByRole('heading', { name: 'Taalmala', exact: true }).waitFor();
   assert.equal(await page.title(), 'Taalmala · VIO');
   const master = page.getByRole('region', { name: 'Master Sa', exact: true });
@@ -48,7 +58,7 @@ try {
   assert.equal(swarmandalBox.x, tanpuraBox.x);
   assert.ok(swarmandalBox.x < tablaBox.x && swarmandalBox.y >= tanpuraBox.y + tanpuraBox.height);
   await page.setViewportSize({ width: 390, height: 844 });
-  assert.equal(await page.getByRole('link', { name: 'Taalmala', exact: true }).getAttribute('aria-current'), 'page');
+  assert.equal(await taalmalaLink.getAttribute('aria-current'), 'page');
   const swarmandal = page.getByRole('region', { name: 'Swarmandal', exact: true });
   await swarmandal.waitFor({ timeout: 5000 });
   const tabla = page.getByRole('region', { name: 'Tabla', exact: true });

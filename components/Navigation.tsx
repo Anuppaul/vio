@@ -9,7 +9,7 @@ const items = [
   { href: '/', label: 'Ear Tuner', icon: '♪' },
   { href: '/sound-tuner', label: 'Sound Tuner', icon: '◌' },
   { href: '/scale-practice', label: 'Scale Practice', icon: 'সা' },
-  { href: '/baithak', label: 'Taalmala', icon: '♫' },
+  { href: '/taalmala', label: 'Taalmala', icon: '♫' },
   { href: '/tanpura', label: 'Tanpura', icon: 'ॐ' },
   { href: '/tabla', label: 'Tabla', icon: '◉' },
   { href: '/swarmandal', label: 'Swarmandal', icon: '♬' },

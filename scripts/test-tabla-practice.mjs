@@ -22,7 +22,7 @@ async function verifyPractice(route, durations) {
 
     await page.goto(new URL(route, base).href);
     const tabla = page.getByRole('region', { name: 'Tabla', exact: true });
-    const inMix = route === '/baithak';
+    const inMix = route === '/taalmala';
     const power = page.getByRole('switch', { name: 'Tabla sound', exact: true });
     const tanpura = page.getByRole('switch', { name: 'Tanpura sound', exact: true });
     const laya = tabla.getByLabel(inMix ? 'Laya' : 'Layakari', { exact: true });
@@ -122,7 +122,7 @@ async function verifyPractice(route, durations) {
 async function verifyInvalidMixTimer() {
   const page = await browser.newPage({ serviceWorkers: 'block' });
   try {
-    await page.goto(new URL('/baithak', base).href);
+    await page.goto(new URL('/taalmala', base).href);
     const tabla = page.getByRole('region', { name: 'Tabla', exact: true });
     await tabla.getByRole('checkbox', { name: 'Timed practice' }).check();
     for (const [mark] of layas) await tabla.getByRole('spinbutton', { name: `${mark} minutes` }).fill('0');
@@ -137,7 +137,7 @@ async function verifyInvalidMixTimer() {
 
 try {
   await Promise.all([
-    verifyPractice('/baithak', [.1, .15, .1, .1, .1]),
+    verifyPractice('/taalmala', [.1, .15, .1, .1, .1]),
     verifyPractice('/tabla', [.1, .15, .1, 0, .1]),
     verifyInvalidMixTimer(),
   ]);

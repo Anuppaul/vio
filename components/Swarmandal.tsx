@@ -72,6 +72,7 @@ export default function Swarmandal({ note, cents = 0, mode = 'standalone', chann
   }
 
   useEffect(() => {
+    if (mixAudio) return release;
     function onVisibility() {
       if (document.hidden) stop();
     }
@@ -170,7 +171,12 @@ export default function Swarmandal({ note, cents = 0, mode = 'standalone', chann
     if (!auto || seconds === 0 || (!inMix && !repeat)) return;
     const sweepLength = direction === 'pakad' ? speed * 14 : speed * 32;
     const period = Math.max(seconds * 1000, sweepLength);
-    const timer = window.setInterval(() => void strum(direction), period);
+    const timer = window.setInterval(() => {
+      // The mixer resumes a shared context after an OS interruption. Do not
+      // queue a new sweep every interval while its audio clock is paused.
+      if (inMix && audio.current?.context.state !== 'running') return;
+      void strum(direction);
+    }, period);
     return () => window.clearInterval(timer);
   }, [auto, direction, note, raga, seconds, speed, volume, cents, repeat, ring, sound, room, inMix]);
 

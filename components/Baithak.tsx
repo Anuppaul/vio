@@ -69,20 +69,21 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
   const tanpura = useRef<MixerChannel>(null);
   const tabla = useRef<MixerChannel>(null);
   const swarmandal = useRef<MixerChannel>(null);
+  const mixEnabled = CHANNELS.some(name => enabled[name]);
   useEffect(() => {
     if (instrument) return;
-    function silenceOnHide() {
-      if (!document.hidden) return;
-      [tanpura, tabla, swarmandal].forEach(channel => channel.current?.stop());
-      mixAudio.close();
-      setEnabled(SILENT);
+    function resumeOnReturn() {
+      if (!document.hidden) mixAudio.resume();
     }
-    document.addEventListener('visibilitychange', silenceOnHide);
+    document.addEventListener('visibilitychange', resumeOnReturn);
     return () => {
-      document.removeEventListener('visibilitychange', silenceOnHide);
+      document.removeEventListener('visibilitychange', resumeOnReturn);
       mixAudio.close();
     };
   }, [instrument, mixAudio]);
+  useEffect(() => {
+    if (!mixEnabled) mixAudio.close();
+  }, [mixEnabled, mixAudio]);
 
   if (instrument === 'swarmandal') return <Swarmandal note={note} onNoteChange={setNote} />;
 
@@ -134,7 +135,7 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
           </label>
           <div className="baithak-master-mix">
             <strong>Master Mix</strong>
-            <SoundSwitch label="Mix sound" showState={false} on={CHANNELS.some(name => enabled[name])} onChange={toggleMix} />
+            <SoundSwitch label="Mix sound" showState={false} on={mixEnabled} onChange={toggleMix} />
           </div>
         </div>
       </section>

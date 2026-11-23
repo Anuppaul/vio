@@ -187,7 +187,7 @@ export default function Tanpura({ sa, cents = 0, channel, mixAudio }: { sa?: { n
       setStatus('Background audio · continues with screen off');
     }).catch(()=>{});
     const onHidden=()=>{
-      if(!Capacitor.isNativePlatform())return;
+      if(mixAudio||!Capacitor.isNativePlatform())return;
       if(document.hidden){
         if(channel||!backgroundAudio())stop(true,true,false);
         return;
@@ -200,7 +200,7 @@ export default function Tanpura({ sa, cents = 0, channel, mixAudio }: { sa?: { n
       }).catch(()=>{});
     };
     const onPageHide=()=>{
-      if(Capacitor.isNativePlatform()&&(channel||!backgroundAudio()))stop(true,true,false);
+      if(!mixAudio&&Capacitor.isNativePlatform()&&(channel||!backgroundAudio()))stop(true,true,false);
     };
     document.addEventListener('visibilitychange',onHidden);
     window.addEventListener('pagehide',onPageHide);

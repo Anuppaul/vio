@@ -10,6 +10,15 @@ try {
     window.swarmandalTestSources = [];
     window.swarmandalStartTimes = new WeakMap();
     window.stoppedSources = new WeakSet();
+    let hidden = false;
+    Object.defineProperties(document, {
+      hidden: { get: () => hidden },
+      visibilityState: { get: () => hidden ? 'hidden' : 'visible' },
+    });
+    window.setTestPageHidden = value => {
+      hidden = value;
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
     AudioBufferSourceNode.prototype.start = function (...args) {
       window.swarmandalTestSources.push(this);
       window.swarmandalStartTimes.set(this, args[0]);
@@ -96,8 +105,29 @@ try {
   assert.ok(Math.abs(stringSpacing - .04) < .0001, '25 strings per second schedules notes 40ms apart');
   assert.equal(await page.evaluate(() => window.swarmandalTestSources.some(source => source.loop && source.detune.value === 15)), true);
   assert.equal(await page.evaluate(() => window.swarmandalTestSources.some(source => !source.loop && source.detune.value === 15)), true);
-  await page.waitForFunction(() =>
-    window.swarmandalTestSources.filter(source => !source.loop && source.detune.value === 0).length >= 64);
+  const beforeHide = await page.evaluate(() => {
+    const offset = window.swarmandalTestSources.length;
+    window.setTestPageHidden(true);
+    return offset;
+  });
+  for (const name of ['Mix', 'Tanpura', 'Tabla', 'Swarmandal']) {
+    await page.getByRole('switch', { name: `${name} sound` }).waitFor();
+    assert.equal(await page.getByRole('switch', { name: `${name} sound` }).isChecked(), true,
+      `${name} should stay on when the page is hidden`);
+  }
+  await page.waitForFunction(offset => {
+    const [drone] = window.swarmandalTestSources.filter(source => source.loop);
+    const newSources = window.swarmandalTestSources.slice(offset);
+    return drone?.context.state === 'running' && !window.stoppedSources.has(drone) &&
+      newSources.filter(source => !source.loop && source.detune.value === 0).length >= 32 &&
+      newSources.some(source => !source.loop && source.detune.value === 15);
+  }, beforeHide);
+  await page.evaluate(async () => {
+    const drone = window.swarmandalTestSources.find(source => source.loop);
+    await drone.context.suspend();
+    window.setTestPageHidden(false);
+  });
+  await page.waitForFunction(() => window.swarmandalTestSources.find(source => source.loop)?.context.state === 'running');
   await page.getByRole('switch', { name: 'Swarmandal sound' }).uncheck();
   await page.waitForFunction(() =>
     window.swarmandalTestSources.some(source => !source.loop && source.detune.value === 0 && window.stoppedSources.has(source)) &&

@@ -112,6 +112,7 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
   }
 
   useEffect(() => {
+    if (mixAudio) return release;
     function onVisibilityChange() {
       if (document.hidden && playback.current) stop();
     }

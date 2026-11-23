@@ -99,6 +99,7 @@
   font-variant-numeric: tabular-nums;
 }
 .tabla-countdown-corner {
+  --countdown-blue: #0065f5;
   --countdown-green: #08774d;
   --countdown-red: #c62e4d;
   position: fixed;
@@ -176,13 +177,36 @@
   36% { scale: 1.09; }
 }
 .tabla-countdown {
-  background: transparent;
-  color: var(--countdown-green);
-  font-size: clamp(1.25rem, 5vw, 2rem);
+  position: relative;
+  container-type: inline-size;
+  display: grid;
+  place-items: center;
+  width: clamp(6rem, 39vmin, 16rem);
+  aspect-ratio: 1;
+  color: #111827;
+  transition: color 220ms ease;
+}
+.tabla-countdown > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  fill: none;
+  stroke-width: 8;
+}
+.tabla-countdown-track { stroke: #edeff3; }
+.tabla-countdown-progress {
+  stroke: var(--countdown-blue);
+  stroke-linecap: round;
+  stroke-dasharray: 100 100;
+  transition: stroke-dashoffset 950ms linear, stroke 220ms ease;
+}
+.tabla-countdown-time {
+  font-size: min(calc(130cqw / var(--tabla-digit-count)), 4rem);
   font-weight: 800;
   line-height: 1;
   white-space: nowrap;
-  transition: font-size 160ms ease;
 }
 .tabla-countdown-stage[data-compact="true"] {
   position: static;
@@ -198,9 +222,11 @@
 }
 .tabla-countdown-stage[data-compact="true"] .tabla-countdown-current,
 .tabla-countdown-stage[data-compact="true"] .tabla-countdown-next { font-size: .7rem; }
+.tabla-countdown-stage[data-compact="true"] .tabla-countdown { width: 2rem; }
 .tabla-countdown[data-ending="true"] { color: var(--countdown-red); }
+.tabla-countdown[data-ending="true"] .tabla-countdown-progress { stroke: var(--countdown-red); }
 @media (prefers-reduced-motion: reduce) {
-  .tabla-countdown { transition: none; }
+  .tabla-countdown, .tabla-countdown-progress { transition: none; }
 }
 @media (max-width: 480px) {
   .tabla-controls { gap: 10px; }

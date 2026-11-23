@@ -62,6 +62,9 @@ async function verifyPractice(route, durations) {
     const total = page.getByRole('timer', { name: 'Total session remaining' });
     const practiceSeconds = Math.round(durations.reduce((sum, minutes) => sum + minutes * 60, 0));
     await digits.waitFor({ timeout: 5000 });
+    const progress = digits.locator('.tabla-countdown-progress');
+    assert.equal(await progress.evaluate(el => getComputedStyle(el).strokeLinecap), 'round');
+    assert.equal(await digits.locator('.tabla-countdown-track').evaluate(el => getComputedStyle(el).stroke), 'rgb(237, 239, 243)');
     await total.waitFor({ timeout: 5000 });
     assert.match(await digits.innerText(), /^00:0[1-3]$/);
     assert.ok(Number((await total.innerText()).split(':')[1]) > practiceSeconds);
@@ -82,9 +85,10 @@ async function verifyPractice(route, durations) {
     assert.ok(Number((await total.innerText()).split(':')[1]) > 10);
     await page.getByText('Now playing · ½× laya', { exact: true }).waitFor();
     await page.getByText('Next · 1× laya · 00:09', { exact: true }).waitFor();
-    const fontSize = () => digits.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
-    const largeSize = await fontSize();
+    const largeSize = (await digits.boundingBox()).width;
     assert.ok(largeSize > 90);
+    const fill = await progress.evaluate(el => 100 - parseFloat(getComputedStyle(el).strokeDashoffset));
+    assert.ok(fill >= 60 && fill <= 100, 'The laya refills its own countdown after the delay');
     assert.equal(await digits.evaluate(el => getComputedStyle(el.parentElement).backgroundColor), 'rgba(255, 255, 255, 0.38)');
     const totalBox = await total.boundingBox();
     const timerCard = page.locator('.tabla-countdown-corner');
@@ -98,7 +102,7 @@ async function verifyPractice(route, durations) {
     const cornerTimer = () => {
       const timer = document.querySelector('[role="timer"][aria-label="Tabla countdown"]');
       const box = timer?.getBoundingClientRect();
-      return box && box.top < 150 && box.right >= innerWidth - 40 && parseFloat(getComputedStyle(timer).fontSize) <= 25;
+      return box && box.top < 150 && box.right >= innerWidth - 40 && box.width <= 36;
     };
     await page.waitForFunction(cornerTimer, null, { polling: 50, timeout: 1500 });
     const [stageBox, cardBox, compactTotal] = await Promise.all([digits.boundingBox(), timerCard.boundingBox(), total.boundingBox()]);
@@ -111,7 +115,7 @@ async function verifyPractice(route, durations) {
     assert.ok(await page.evaluate(cornerTimer), 'Scrolling resets the inactivity delay');
     await page.waitForFunction(() => {
       const timer = document.querySelector('[role="timer"][aria-label="Tabla countdown"]');
-      return timer && parseFloat(getComputedStyle(timer).fontSize) > 90;
+      return timer && timer.getBoundingClientRect().width > 90;
     }, null, { polling: 50, timeout: 3000 });
     assert.ok(Date.now() - scrollAt >= 1900, 'Timer grows after two seconds of inactivity');
     assert.equal(await tabla.locator('.tabla-practice-stages [aria-current="step"] input').getAttribute('aria-label'), '½× minutes');

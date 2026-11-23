@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { TAALS, type Taal } from '@/lib/tabla-taals';
 import type { MixerChannel } from '@/lib/mixer-channel';
@@ -59,8 +59,8 @@ function formatClock(seconds: number) {
   return formatRemaining(seconds).padStart(5, '0');
 }
 
-function TablaCountdown({ seconds, total, current, next }: {
-  seconds: number; total: number | null; current: string; next: string;
+function TablaCountdown({ seconds, duration, total, current, next }: {
+  seconds: number; duration: number; total: number | null; current: string; next: string;
 }) {
   const [compact, setCompact] = useState(false);
   const time = formatClock(seconds);
@@ -90,10 +90,15 @@ function TablaCountdown({ seconds, total, current, next }: {
           <strong role="timer" aria-label="Total session remaining">{formatClock(total)}</strong>
         </div>}
         <strong className="tabla-countdown-current">{current}</strong>
-        <div role="timer" aria-label="Tabla countdown" className="tabla-countdown"
+        <div key={current} role="timer" aria-label="Tabla countdown" className="tabla-countdown"
           data-ending={seconds <= 10}
-          style={compact ? undefined : { fontSize: `min(32vmin, ${145 / time.length}vw)` }}>
-          {time}
+          style={{ '--tabla-digit-count': time.length } as CSSProperties}>
+          <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+            <circle className="tabla-countdown-track" cx="50" cy="50" r="45" />
+            <circle className="tabla-countdown-progress" cx="50" cy="50" r="45" pathLength="100"
+              strokeDashoffset={(1 - Math.min(1, seconds / duration)) * 100} />
+          </svg>
+          <span className="tabla-countdown-time">{time}</span>
         </div>
         <span className="tabla-countdown-next">Next · {next}</span>
       </div>
@@ -103,8 +108,8 @@ function TablaCountdown({ seconds, total, current, next }: {
 }
 
 type PracticeStep = { stage: number; duration: number; end: number };
-type DelayReadout = { remaining: number; totalRemaining: number | null; nextStep?: PracticeStep };
-type PracticeReadout = { stage: number; stageRemaining: number; totalRemaining: number; nextStep?: PracticeStep };
+type DelayReadout = { remaining: number; duration: number; totalRemaining: number | null; nextStep?: PracticeStep };
+type PracticeReadout = { stage: number; stageRemaining: number; duration: number; totalRemaining: number; nextStep?: PracticeStep };
 
 type Playback = {
   context: AudioContext;
@@ -261,7 +266,7 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
           const remaining = Math.ceil(delayEndAt - now);
           const totalRemaining = durationSeconds ? Math.ceil(endAt - now) : null;
           if (remaining !== lastDelay?.remaining || totalRemaining !== lastDelay?.totalRemaining) {
-            lastDelay = { remaining, totalRemaining, nextStep: plan[0] };
+            lastDelay = { remaining, duration: delaySeconds, totalRemaining, nextStep: plan[0] };
             setDelay(lastDelay);
           }
           return;
@@ -283,7 +288,7 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
           const stageRemaining = Math.ceil(end - elapsed);
           const remaining = Math.ceil(durationSeconds - elapsed);
           if (stage !== lastStage || stageRemaining !== lastStageRemaining || remaining !== lastRemaining) {
-            setPractice({ stage, stageRemaining, totalRemaining: remaining, nextStep: plan[plan.indexOf(step) + 1] });
+            setPractice({ stage, stageRemaining, duration: step.duration, totalRemaining: remaining, nextStep: plan[plan.indexOf(step) + 1] });
             lastStage = stage;
             lastStageRemaining = stageRemaining;
             lastRemaining = remaining;
@@ -451,6 +456,7 @@ export default function Tabla({ note, semitones, cents = 0, channel, mixAudio, o
         </button>}
       </div>
       {countdown !== null && <TablaCountdown seconds={countdown}
+        duration={delay?.duration ?? practice?.duration ?? 1}
         total={delay ? delay.totalRemaining : practice?.totalRemaining ?? null}
         current={practice ? `Now playing · ${LAYAS[practice.stage].mark} laya` : 'Start delay'}
         next={nextPhase} />}

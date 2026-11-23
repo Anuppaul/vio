@@ -6,7 +6,7 @@ const base = process.env.VIO_TEST_URL ?? 'http://localhost:3100';
 const layas = [['½×', .5], ['1×', 1], ['2×', 2], ['3×', 3], ['4×', 4]];
 
 async function verifyPractice(route, durations) {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
   try {
     await page.addInitScript(() => {
       const start = AudioBufferSourceNode.prototype.start;
@@ -58,6 +58,17 @@ async function verifyPractice(route, durations) {
     }
 
     const readout = tabla.locator('.tabla-practice-readout');
+    const digits = page.getByRole('timer', { name: 'Tabla countdown' });
+    const total = page.getByRole('timer', { name: 'Total session remaining' });
+    const practiceSeconds = Math.round(durations.reduce((sum, minutes) => sum + minutes * 60, 0));
+    await digits.waitFor({ timeout: 5000 });
+    await total.waitFor({ timeout: 5000 });
+    assert.match(await digits.innerText(), /^00:0[1-3]$/);
+    assert.ok(Number((await total.innerText()).split(':')[1]) > practiceSeconds);
+    await page.getByText('Start delay', { exact: true }).waitFor();
+    await page.getByText('Next · Tabla starts at ½× laya · 00:06', { exact: true }).waitFor();
+    assert.equal(await digits.evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+    assert.equal(await digits.evaluate(el => getComputedStyle(el).color), 'rgb(198, 46, 77)');
     await readout.getByText(/^Tabla starts in /).waitFor();
     assert.equal(await page.evaluate(() => window.tablaTimes.length), 0);
     assert.equal(await tabla.locator('.tabla-beats [aria-current="step"]').count(), 0);
@@ -67,6 +78,42 @@ async function verifyPractice(route, durations) {
     assert.equal(await fields[0].isDisabled(), true);
     await readout.getByText(/^Laya \d+:\d\d left$/).waitFor();
     await readout.getByText(/^Total \d+:\d\d left$/).waitFor();
+    assert.match(await digits.innerText(), /^00:0[4-6]$/);
+    assert.ok(Number((await total.innerText()).split(':')[1]) > 10);
+    await page.getByText('Now playing · ½× laya', { exact: true }).waitFor();
+    await page.getByText('Next · 1× laya · 00:09', { exact: true }).waitFor();
+    const fontSize = () => digits.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+    const largeSize = await fontSize();
+    assert.ok(largeSize > 90);
+    assert.equal(await digits.evaluate(el => getComputedStyle(el.parentElement).backgroundColor), 'rgba(255, 255, 255, 0.38)');
+    const totalBox = await total.boundingBox();
+    const timerCard = page.locator('.tabla-countdown-corner');
+    const expandedCard = await page.locator('.tabla-countdown-stage').boundingBox();
+    assert.ok(totalBox.y >= expandedCard.y && totalBox.y < expandedCard.y + 30 &&
+      totalBox.x + totalBox.width >= expandedCard.x + expandedCard.width - 20);
+    assert.equal(await digits.evaluate(el => getComputedStyle(el).color), 'rgb(198, 46, 77)');
+    assert.equal(await total.evaluate(el => getComputedStyle(el).color), 'rgb(169, 75, 11)');
+    assert.equal(await page.evaluate(() => document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('[role="timer"]')), null);
+    await page.mouse.move(75, 75);
+    const cornerTimer = () => {
+      const timer = document.querySelector('[role="timer"][aria-label="Tabla countdown"]');
+      const box = timer?.getBoundingClientRect();
+      return box && box.top < 150 && box.right >= innerWidth - 40 && parseFloat(getComputedStyle(timer).fontSize) <= 25;
+    };
+    await page.waitForFunction(cornerTimer, null, { polling: 50, timeout: 1500 });
+    const [stageBox, cardBox, compactTotal] = await Promise.all([digits.boundingBox(), timerCard.boundingBox(), total.boundingBox()]);
+    assert.ok(compactTotal.y >= cardBox.y && stageBox.y > compactTotal.y + compactTotal.height && stageBox.y + stageBox.height < cardBox.y + cardBox.height);
+    assert.match(await timerCard.evaluate(el => getComputedStyle(el).backgroundImage), /^linear-gradient/);
+    await page.waitForTimeout(1100);
+    await page.mouse.wheel(0, 150);
+    const scrollAt = Date.now();
+    await page.waitForTimeout(1100);
+    assert.ok(await page.evaluate(cornerTimer), 'Scrolling resets the inactivity delay');
+    await page.waitForFunction(() => {
+      const timer = document.querySelector('[role="timer"][aria-label="Tabla countdown"]');
+      return timer && parseFloat(getComputedStyle(timer).fontSize) > 90;
+    }, null, { polling: 50, timeout: 3000 });
+    assert.ok(Date.now() - scrollAt >= 1900, 'Timer grows after two seconds of inactivity');
     assert.equal(await tabla.locator('.tabla-practice-stages [aria-current="step"] input').getAttribute('aria-label'), '½× minutes');
 
     let elapsed = 0;
@@ -75,6 +122,10 @@ async function verifyPractice(route, durations) {
       const seconds = durations[index] * 60;
       if (!seconds) continue;
       await readout.getByText(`Now playing ${mark} · ${120 * rate} BPM`, { exact: true }).waitFor({ timeout: 15000 });
+      await page.getByText(`Now playing · ${mark} laya`, { exact: true }).waitFor();
+      const next = durations.findIndex((minutes, nextIndex) => nextIndex > index && minutes > 0);
+      await page.getByText(next === -1 ? 'Next · Practice ends' :
+        `Next · ${layas[next][0]} laya · 00:${String(Math.round(durations[next] * 60)).padStart(2, '0')}`, { exact: true }).waitFor();
       await laya.locator(`option[value="${rate}"]:checked`).waitFor({ state: 'attached' });
       stages.push({ rate, start: elapsed, end: elapsed + seconds });
       elapsed += seconds;
@@ -82,6 +133,8 @@ async function verifyPractice(route, durations) {
 
     await tabla.getByText('Practice complete', { exact: true }).waitFor({ timeout: 15000 });
     assert.equal(await readout.count(), 0);
+    assert.equal(await digits.count(), 0);
+    assert.equal(await total.count(), 0);
     if (inMix) {
       assert.equal(await power.isChecked(), false);
       assert.equal(await tanpura.isChecked(), true);
@@ -97,19 +150,34 @@ async function verifyPractice(route, durations) {
       assert.ok(within.slice(1).every((at, index) => Math.abs(at - within[index] - expected) < .005),
         `${route} actual audio scheduling must follow ${stage.rate}×`);
     }
+    if (inMix) {
+      const master = page.getByRole('switch', { name: 'Mix sound', exact: true });
+      await master.uncheck();
+      await page.evaluate(() => { window.tablaTimes = []; });
+      await master.check();
+      assert.equal(await power.isChecked(), true, 'Master Mix restarts Tabla after timed practice completes');
+      await readout.getByText(/^Tabla starts in /).waitFor();
+      await digits.waitFor();
+      await page.waitForFunction(() => window.tablaTimes.length > 0, null, { timeout: 6000 });
+      await master.uncheck();
+    }
     await timer.uncheck();
     assert.equal(await laya.inputValue(), '3', 'manual laya is restored after turning timed practice off');
     if (!inMix) {
       await page.evaluate(() => { window.tablaTimes = []; });
       await tabla.getByRole('button', { name: 'Play Tabla', exact: true }).click();
       await readout.getByText(/^Tabla starts in /).waitFor();
+      await page.getByText('Next · Tabla starts', { exact: true }).waitFor();
+      assert.equal(await total.count(), 0);
       await tabla.getByRole('button', { name: 'Cancel Start', exact: true }).click();
+      await digits.waitFor({ state: 'hidden' });
       assert.equal(await readout.count(), 0);
       assert.equal(await page.evaluate(() => window.tablaTimes.length), 0);
       await delay.fill('0.02');
       await tabla.getByRole('button', { name: 'Play Tabla', exact: true }).click();
       await readout.getByText(/^Tabla starts in /).waitFor();
       await tabla.locator('.tabla-beats [aria-current="step"]').first().waitFor();
+      await digits.waitFor({ state: 'hidden' });
       await tabla.getByRole('button', { name: 'Stop Tabla', exact: true }).click();
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

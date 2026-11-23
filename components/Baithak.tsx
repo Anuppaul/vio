@@ -66,6 +66,7 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
   const tuningRatio = 2 ** (cents / 1200);
   const [enabled, setEnabled] = useState(SILENT);
   const lastMix = useRef({ Tanpura: true, Tabla: true, Swarmandal: true });
+  const tablaFinished = useRef(false);
   const tanpura = useRef<MixerChannel>(null);
   const tabla = useRef<MixerChannel>(null);
   const swarmandal = useRef<MixerChannel>(null);
@@ -76,8 +77,10 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
       if (!document.hidden) mixAudio.resume();
     }
     document.addEventListener('visibilitychange', resumeOnReturn);
+    window.addEventListener('focus', resumeOnReturn);
     return () => {
       document.removeEventListener('visibilitychange', resumeOnReturn);
+      window.removeEventListener('focus', resumeOnReturn);
       mixAudio.close();
     };
   }, [instrument, mixAudio]);
@@ -98,6 +101,7 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
 
   const channels = { Tanpura: tanpura, Tabla: tabla, Swarmandal: swarmandal };
   function select(name: ChannelName, selected: boolean) {
+    if (name === 'Tabla') tablaFinished.current = false;
     setEnabled(previous => ({ ...previous, [name]: selected }));
     if (selected) channels[name].current?.start();
     else channels[name].current?.stop();
@@ -105,10 +109,12 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
 
   function toggleMix(on: boolean) {
     if (on) {
-      setEnabled(lastMix.current);
-      CHANNELS.forEach(name => { if (lastMix.current[name]) channels[name].current?.start(); });
+      const selection = { ...lastMix.current, Tabla: lastMix.current.Tabla || tablaFinished.current };
+      tablaFinished.current = false;
+      setEnabled(selection);
+      CHANNELS.forEach(name => { if (selection[name]) channels[name].current?.start(); });
     } else {
-      lastMix.current = enabled;
+      lastMix.current = { ...enabled, Tabla: enabled.Tabla || tablaFinished.current };
       CHANNELS.forEach(name => channels[name].current?.stop());
       mixAudio.close();
       setEnabled(SILENT);
@@ -145,7 +151,10 @@ export default function Baithak({ instrument }: { instrument?: 'tabla' | 'swarma
         </InstrumentStrip>
         <InstrumentStrip name="Tabla" mark="◉" selected={enabled.Tabla} onSelect={value => select('Tabla', value)}>
           <Tabla note={note} semitones={SA_KEYS.indexOf(note)} cents={cents} channel={tabla} mixAudio={mixAudio}
-            onPlaybackEnd={() => setEnabled(previous => ({ ...previous, Tabla: false }))} />
+            onPlaybackEnd={reason => {
+              tablaFinished.current = reason === 'complete';
+              setEnabled(previous => ({ ...previous, Tabla: false }));
+            }} />
         </InstrumentStrip>
         <InstrumentStrip name="Swarmandal" mark="♬" selected={enabled.Swarmandal} onSelect={value => select('Swarmandal', value)}>
           <Swarmandal mode="mix" note={note} cents={cents} channel={swarmandal} mixAudio={mixAudio} />

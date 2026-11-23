@@ -90,9 +90,27 @@ try {
   assert.equal(await master.getByText('A 443.8 Hz', { exact: true }).count(), 1);
   const tanpuraSound = page.getByRole('switch', { name: 'Tanpura sound' });
   await mixSound.check();
+  const player = page.locator('audio');
+  await page.waitForFunction(() => {
+    const audio = document.querySelector('audio');
+    return audio?.srcObject instanceof MediaStream && !audio.paused && audio.currentTime > 0;
+  }, null, { timeout: 5000 });
+  const mediaTrack = await player.evaluateHandle(audio => audio.srcObject.getAudioTracks()[0]);
   await tabla.locator('[aria-current="step"]').waitFor();
   assert.doesNotMatch(await master.innerText(), /Teentaal|BPM|\/16/);
   await page.waitForFunction(() => window.swarmandalTestSources.some(source => source.loop));
+  const streamAnalyser = await player.evaluateHandle(audio => {
+    const { context } = window.swarmandalTestSources.find(source => source.loop);
+    const analyser = context.createAnalyser();
+    context.createMediaStreamSource(audio.srcObject).connect(analyser);
+    return analyser;
+  });
+  await page.waitForFunction(analyser => {
+    const frames = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(frames);
+    return frames.some(sample => Math.abs(sample) > .001);
+  }, streamAnalyser);
+  await streamAnalyser.dispose();
 
   const activeContexts = () => page.evaluate(() =>
     new Set(window.swarmandalTestSources.filter(source => source.context.state === 'running')
@@ -124,10 +142,12 @@ try {
   }, beforeHide);
   await page.evaluate(async () => {
     const drone = window.swarmandalTestSources.find(source => source.loop);
+    document.querySelector('audio').pause();
     await drone.context.suspend();
     window.setTestPageHidden(false);
   });
   await page.waitForFunction(() => window.swarmandalTestSources.find(source => source.loop)?.context.state === 'running');
+  await page.waitForFunction(() => document.querySelector('audio')?.paused === false);
   await page.getByRole('switch', { name: 'Swarmandal sound' }).uncheck();
   await page.waitForFunction(() =>
     window.swarmandalTestSources.some(source => !source.loop && source.detune.value === 0 && window.stoppedSources.has(source)) &&
@@ -139,6 +159,9 @@ try {
   }
   await mixSound.uncheck();
   await page.waitForFunction(() => window.swarmandalTestSources.every(source => source.context.state === 'closed'));
+  assert.equal(await player.count(), 0);
+  assert.equal(await mediaTrack.evaluate(track => track.readyState), 'ended');
+  await mediaTrack.dispose();
   assert.equal(await tanpuraSound.isChecked(), false);
   await mixSound.check();
   assert.equal(await tanpuraSound.isChecked(), true);

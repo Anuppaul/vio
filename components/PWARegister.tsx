@@ -25,6 +25,16 @@ export default function PWARegister(){
       if(Capacitor.isNativePlatform())void NativeUi.configureInsets().catch(()=>{});
       return;
     }
+    if(process.env.NODE_ENV==='development'){
+      // Next dev reuses asset URLs. A cache-first worker can keep serving old code.
+      if('serviceWorker' in navigator&&window.isSecureContext){
+        const scriptUrl=new URL('/sw.js',location.origin).href;
+        void navigator.serviceWorker.getRegistration('/').then(registration=>{
+          if(registration?.active?.scriptURL===scriptUrl) return registration.unregister();
+        }).catch(()=>{});
+      }
+      return;
+    }
     if('serviceWorker' in navigator&&window.isSecureContext){
       navigator.serviceWorker.register('/sw.js',{scope:'/'}).then(registration=>{
         registration.update().catch(()=>{});

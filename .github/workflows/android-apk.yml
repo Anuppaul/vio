@@ -51,7 +51,7 @@ jobs:
       - name: Test bundled pages, audio and raw tuner
         run: npm run test:android:web
       - name: Upload APK and verification results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: vio-android-apk
           path: |
@@ -67,7 +67,7 @@ jobs:
           mkdir -p native-publish/android
           rsync -a --exclude='.gradle' --exclude='.idea' --exclude='build' --exclude='local.properties' --exclude='capacitor-cordova-android-plugins' --exclude='app/src/main/assets/' android/ native-publish/android/
           cp package-lock.json native-publish/
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: vio-native-source
           path: native-publish/
@@ -76,7 +76,7 @@ jobs:
           retention-days: 3
       - name: Upload failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: vio-android-build-diagnostics
           path: |
